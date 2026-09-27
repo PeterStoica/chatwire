@@ -58,10 +58,8 @@ func MediaType(m *wire.Message) string {
 		return "video"
 	case m.GetPtvMessage() != nil:
 		return "ptv"
-	case m.GetButtonsMessage() != nil:
-		return "button"
 	case m.GetButtonsResponseMessage() != nil:
-		return "button_response"
+		return "buttons_response"
 	case m.GetListMessage() != nil:
 		return "list"
 	case m.GetListResponseMessage() != nil:
