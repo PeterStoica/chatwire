@@ -1,0 +1,6 @@
+[extend]
+useDefault = true
+
+[[allowlists]]
+description = "WhatsApp's protocol token table carries a public key string that every WhatsApp client ships"
+paths = ['''internal/node/tokens\.json''']
