@@ -1063,11 +1063,25 @@ func TestContactsFromTheAddressBook(t *testing.T) {
 		if kept.saves != saves {
 			t.Fatal("a collection under a key we were never given was saved")
 		}
+		asked := r.deliveredTo(r.account)
+		if len(asked) != 1 {
+			t.Fatalf("%d messages to our phone, want one key request", len(asked))
+		}
+		_, request, err := r.ourPhone.Receive(asked[0])
+		if ids := request.GetProtocolMessage().GetAppStateSyncKeyRequest().GetKeyIds(); err != nil || len(ids) != 1 || !bytes.Equal(ids[0].GetKeyId(), []byte{9, 9}) {
+			t.Fatalf("our phone got %v: %v", request, err)
+		}
+		deliverPeer(keyShare([]byte{9, 9}, bytes.Repeat([]byte{8}, 32)))
+		synctest.Wait()
+		if got := kept.names(appstate.Regular); got["1@s.whatsapp.net"] != "X" {
+			t.Fatalf("after our phone shared the missing key: %v", got)
+		}
+		before := stranger.Requests
 		r.server.Inbox <- node.Node{Tag: "notification", Attrs: []node.Attr{{Key: "type", Value: node.Text("devices")}, {Key: "id", Value: node.Text("n4")}},
 			Children: []node.Node{{Tag: "collection", Attrs: []node.Attr{{Key: "name", Value: node.Text(appstate.Regular)}}}}}
 		synctest.Wait()
-		if stranger.Requests != 1 {
-			t.Fatalf("%d sync requests; only server_sync notifications start one", stranger.Requests)
+		if stranger.Requests != before {
+			t.Fatalf("%d sync requests; only server_sync notifications start one", stranger.Requests-before)
 		}
 	})
 }
@@ -2131,6 +2145,43 @@ func TestAConnectionThatAcknowledgesNothingIsReplaced(t *testing.T) {
 		}
 		if !errors.Is(c.Err(), client.ErrClosed) || !strings.Contains(c.Err().Error(), "acknowledged none") {
 			t.Fatalf("ended with %v", c.Err())
+		}
+	})
+}
+
+func TestPeerMessagesReachOurPhoneAlone(t *testing.T) {
+	synctest.Test(t, func(t *testing.T) {
+		r := newRig(t)
+		c := r.connect()
+		request := message.KeyRequest([][]byte{{1, 2, 3}})
+		id, err := c.SendPeer(t.Context(), request)
+		if err != nil {
+			t.Fatal(err)
+		}
+		stanza := r.sentStanza(id)
+		for _, want := range []string{"category=peer", "push_priority=high"} {
+			k, v, _ := strings.Cut(want, "=")
+			if got := stanza.Attr(k).String(); got != v {
+				t.Fatalf("%s = %q in %s", k, got, stanza)
+			}
+		}
+		if to := stanza.Attr("to").String(); to != r.account.String() {
+			t.Fatalf("sent to %s, want our phone %s", to, r.account)
+		}
+		if meta, ok := stanza.Child("meta"); !ok || meta.Attr("appdata").String() != "default" {
+			t.Fatalf("meta = %s", meta)
+		}
+		if got := r.deliveredTo(r.bob); len(got) != 0 {
+			t.Fatalf("a peer message went to bob: %d", len(got))
+		}
+		toPhone := r.deliveredTo(r.account)
+		if len(toPhone) != 1 {
+			t.Fatalf("%d deliveries to our phone", len(toPhone))
+		}
+		_, m, err := r.ourPhone.Receive(toPhone[0])
+		if err != nil || m.GetDeviceSentMessage() != nil || m.GetProtocolMessage().GetType() != wire.Message_ProtocolMessage_APP_STATE_SYNC_KEY_REQUEST ||
+			!bytes.Equal(m.GetProtocolMessage().GetAppStateSyncKeyRequest().GetKeyIds()[0].GetKeyId(), []byte{1, 2, 3}) {
+			t.Fatalf("our phone read %v: %v", m, err)
 		}
 	})
 }

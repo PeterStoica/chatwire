@@ -160,6 +160,7 @@ type Client struct {
 	resends     map[string]int
 	recreated   map[address]time.Time
 	given       map[node.JID]time.Time
+	askedKeys   map[string]time.Time
 	unacked     int
 	groups      map[senderName]*signal.SenderKeys
 	ownKeys     map[node.JID]*signal.SenderKey
@@ -189,7 +190,7 @@ func Connect(ctx context.Context, cfg Config, state State) (*Client, error) {
 		cfg: cfg, identity: identity, done: make(chan struct{}), state: state,
 		sessions: map[address]*signal.Session{}, lids: map[string]string{}, groups: map[senderName]*signal.SenderKeys{}, acks: map[string]chan node.Node{}, retries: map[string]chan mediaretry.Notification{},
 		ownKeys: map[node.JID]*signal.SenderKey{}, holders: map[node.JID]map[address]bool{},
-		recent: map[string]sentMessage{}, resends: map[string]int{}, recreated: map[address]time.Time{}, given: map[node.JID]time.Time{},
+		recent: map[string]sentMessage{}, resends: map[string]int{}, recreated: map[address]time.Time{}, given: map[node.JID]time.Time{}, askedKeys: map[string]time.Time{},
 	}
 	account := state.Linked.Account
 	pairs := map[node.JID]node.JID{account.LID.WithoutDevice(): account.JID.WithoutDevice()}

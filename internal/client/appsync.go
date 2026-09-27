@@ -5,17 +5,22 @@ import (
 	"encoding/hex"
 	"errors"
 	"fmt"
+	"time"
 
 	"google.golang.org/protobuf/proto"
 
 	"github.com/PeterStoica/chatwire/internal/appstate"
 	"github.com/PeterStoica/chatwire/internal/media"
+	"github.com/PeterStoica/chatwire/internal/message"
 	"github.com/PeterStoica/chatwire/internal/node"
 	"github.com/PeterStoica/chatwire/internal/privacy"
 	"github.com/PeterStoica/chatwire/internal/wire"
 )
 
-const maxSyncRounds = 8
+const (
+	maxSyncRounds = 8
+	askKeyEvery   = 10 * time.Minute
+)
 
 type AppStateStore interface {
 	SyncState(ctx context.Context, collection string) (appstate.State, error)
@@ -164,7 +169,11 @@ func (c *Client) settle(ctx context.Context, r appstate.Response, st appstate.St
 		return false, nil
 	}
 	next, mutations, err := c.applySync(ctx, r, st)
+	var missing appstate.MissingKey
 	switch {
+	case errors.As(err, &missing):
+		c.askForKey(ctx, missing.ID)
+		return false, nil
 	case errors.Is(err, appstate.ErrMissingKey):
 		return false, nil
 	case errors.Is(err, appstate.ErrSnapshotMAC), errors.Is(err, appstate.ErrPatchMAC), errors.Is(err, appstate.ErrValueMAC), errors.Is(err, appstate.ErrIndexMAC):
@@ -231,4 +240,25 @@ func (c *Client) downloadBlob(ctx context.Context, ref *wire.ExternalBlobReferen
 		return fmt.Errorf("client: app state blob: %w", err)
 	}
 	return nil
+}
+
+func (c *Client) askForKey(ctx context.Context, id []byte) {
+	if len(id) == 0 {
+		return
+	}
+	now := c.cfg.Link.Now()
+	name := hex.EncodeToString(id)
+	c.mu.Lock()
+	last, asked := c.askedKeys[name]
+	if asked && now.Sub(last) < askKeyEvery {
+		c.mu.Unlock()
+		return
+	}
+	c.askedKeys[name] = now
+	c.mu.Unlock()
+	if _, err := c.SendPeer(ctx, message.KeyRequest([][]byte{id})); err != nil {
+		c.mu.Lock()
+		delete(c.askedKeys, name)
+		c.mu.Unlock()
+	}
 }

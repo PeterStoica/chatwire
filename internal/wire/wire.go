@@ -265,6 +265,98 @@ func (Message_HistorySyncType) EnumDescriptor() ([]byte, []int) {
 	return file_github_com_PeterStoica_chatwire_wire_proto_rawDescGZIP(), []int{14, 0}
 }
 
+type Message_PeerDataOperationRequestType int32
+
+const (
+	Message_UPLOAD_STICKER                           Message_PeerDataOperationRequestType = 0
+	Message_SEND_RECENT_STICKER_BOOTSTRAP            Message_PeerDataOperationRequestType = 1
+	Message_GENERATE_LINK_PREVIEW                    Message_PeerDataOperationRequestType = 2
+	Message_HISTORY_SYNC_ON_DEMAND                   Message_PeerDataOperationRequestType = 3
+	Message_PLACEHOLDER_MESSAGE_RESEND               Message_PeerDataOperationRequestType = 4
+	Message_WAFFLE_LINKING_NONCE_FETCH               Message_PeerDataOperationRequestType = 5
+	Message_FULL_HISTORY_SYNC_ON_DEMAND              Message_PeerDataOperationRequestType = 6
+	Message_COMPANION_META_NONCE_FETCH               Message_PeerDataOperationRequestType = 7
+	Message_COMPANION_SYNCD_SNAPSHOT_FATAL_RECOVERY  Message_PeerDataOperationRequestType = 8
+	Message_COMPANION_CANONICAL_USER_NONCE_FETCH     Message_PeerDataOperationRequestType = 9
+	Message_HISTORY_SYNC_CHUNK_RETRY                 Message_PeerDataOperationRequestType = 10
+	Message_GALAXY_FLOW_ACTION                       Message_PeerDataOperationRequestType = 11
+	Message_BUSINESS_BROADCAST_INSIGHTS_DELIVERED_TO Message_PeerDataOperationRequestType = 12
+	Message_BUSINESS_BROADCAST_INSIGHTS_REFRESH      Message_PeerDataOperationRequestType = 13
+	Message_CONTACT_REFRESH_REQUEST                  Message_PeerDataOperationRequestType = 14
+)
+
+var (
+	Message_PeerDataOperationRequestType_name = map[int32]string{
+		0:  "UPLOAD_STICKER",
+		1:  "SEND_RECENT_STICKER_BOOTSTRAP",
+		2:  "GENERATE_LINK_PREVIEW",
+		3:  "HISTORY_SYNC_ON_DEMAND",
+		4:  "PLACEHOLDER_MESSAGE_RESEND",
+		5:  "WAFFLE_LINKING_NONCE_FETCH",
+		6:  "FULL_HISTORY_SYNC_ON_DEMAND",
+		7:  "COMPANION_META_NONCE_FETCH",
+		8:  "COMPANION_SYNCD_SNAPSHOT_FATAL_RECOVERY",
+		9:  "COMPANION_CANONICAL_USER_NONCE_FETCH",
+		10: "HISTORY_SYNC_CHUNK_RETRY",
+		11: "GALAXY_FLOW_ACTION",
+		12: "BUSINESS_BROADCAST_INSIGHTS_DELIVERED_TO",
+		13: "BUSINESS_BROADCAST_INSIGHTS_REFRESH",
+		14: "CONTACT_REFRESH_REQUEST",
+	}
+	Message_PeerDataOperationRequestType_value = map[string]int32{
+		"UPLOAD_STICKER":                           0,
+		"SEND_RECENT_STICKER_BOOTSTRAP":            1,
+		"GENERATE_LINK_PREVIEW":                    2,
+		"HISTORY_SYNC_ON_DEMAND":                   3,
+		"PLACEHOLDER_MESSAGE_RESEND":               4,
+		"WAFFLE_LINKING_NONCE_FETCH":               5,
+		"FULL_HISTORY_SYNC_ON_DEMAND":              6,
+		"COMPANION_META_NONCE_FETCH":               7,
+		"COMPANION_SYNCD_SNAPSHOT_FATAL_RECOVERY":  8,
+		"COMPANION_CANONICAL_USER_NONCE_FETCH":     9,
+		"HISTORY_SYNC_CHUNK_RETRY":                 10,
+		"GALAXY_FLOW_ACTION":                       11,
+		"BUSINESS_BROADCAST_INSIGHTS_DELIVERED_TO": 12,
+		"BUSINESS_BROADCAST_INSIGHTS_REFRESH":      13,
+		"CONTACT_REFRESH_REQUEST":                  14,
+	}
+)
+
+func (x Message_PeerDataOperationRequestType) Enum() *Message_PeerDataOperationRequestType {
+	p := new(Message_PeerDataOperationRequestType)
+	*p = x
+	return p
+}
+
+func (x Message_PeerDataOperationRequestType) String() string {
+	return protoimpl.X.EnumStringOf(x.Descriptor(), protoreflect.EnumNumber(x))
+}
+
+func (Message_PeerDataOperationRequestType) Descriptor() protoreflect.EnumDescriptor {
+	return file_github_com_PeterStoica_chatwire_wire_proto_enumTypes[4].Descriptor()
+}
+
+func (Message_PeerDataOperationRequestType) Type() protoreflect.EnumType {
+	return &file_github_com_PeterStoica_chatwire_wire_proto_enumTypes[4]
+}
+
+func (x Message_PeerDataOperationRequestType) Number() protoreflect.EnumNumber {
+	return protoreflect.EnumNumber(x)
+}
+
+func (x *Message_PeerDataOperationRequestType) UnmarshalJSON(b []byte) error {
+	num, err := protoimpl.X.UnmarshalJSONEnum(x.Descriptor(), b)
+	if err != nil {
+		return err
+	}
+	*x = Message_PeerDataOperationRequestType(num)
+	return nil
+}
+
+func (Message_PeerDataOperationRequestType) EnumDescriptor() ([]byte, []int) {
+	return file_github_com_PeterStoica_chatwire_wire_proto_rawDescGZIP(), []int{14, 1}
+}
+
 type Message_PollContentType int32
 
 const (
@@ -297,11 +389,11 @@ func (x Message_PollContentType) String() string {
 }
 
 func (Message_PollContentType) Descriptor() protoreflect.EnumDescriptor {
-	return file_github_com_PeterStoica_chatwire_wire_proto_enumTypes[4].Descriptor()
+	return file_github_com_PeterStoica_chatwire_wire_proto_enumTypes[5].Descriptor()
 }
 
 func (Message_PollContentType) Type() protoreflect.EnumType {
-	return &file_github_com_PeterStoica_chatwire_wire_proto_enumTypes[4]
+	return &file_github_com_PeterStoica_chatwire_wire_proto_enumTypes[5]
 }
 
 func (x Message_PollContentType) Number() protoreflect.EnumNumber {
@@ -318,7 +410,7 @@ func (x *Message_PollContentType) UnmarshalJSON(b []byte) error {
 }
 
 func (Message_PollContentType) EnumDescriptor() ([]byte, []int) {
-	return file_github_com_PeterStoica_chatwire_wire_proto_rawDescGZIP(), []int{14, 1}
+	return file_github_com_PeterStoica_chatwire_wire_proto_rawDescGZIP(), []int{14, 2}
 }
 
 type Message_PollType int32
@@ -350,11 +442,11 @@ func (x Message_PollType) String() string {
 }
 
 func (Message_PollType) Descriptor() protoreflect.EnumDescriptor {
-	return file_github_com_PeterStoica_chatwire_wire_proto_enumTypes[5].Descriptor()
+	return file_github_com_PeterStoica_chatwire_wire_proto_enumTypes[6].Descriptor()
 }
 
 func (Message_PollType) Type() protoreflect.EnumType {
-	return &file_github_com_PeterStoica_chatwire_wire_proto_enumTypes[5]
+	return &file_github_com_PeterStoica_chatwire_wire_proto_enumTypes[6]
 }
 
 func (x Message_PollType) Number() protoreflect.EnumNumber {
@@ -371,7 +463,7 @@ func (x *Message_PollType) UnmarshalJSON(b []byte) error {
 }
 
 func (Message_PollType) EnumDescriptor() ([]byte, []int) {
-	return file_github_com_PeterStoica_chatwire_wire_proto_rawDescGZIP(), []int{14, 2}
+	return file_github_com_PeterStoica_chatwire_wire_proto_rawDescGZIP(), []int{14, 3}
 }
 
 type Message_ProtocolMessage_Type int32
@@ -502,11 +594,11 @@ func (x Message_ProtocolMessage_Type) String() string {
 }
 
 func (Message_ProtocolMessage_Type) Descriptor() protoreflect.EnumDescriptor {
-	return file_github_com_PeterStoica_chatwire_wire_proto_enumTypes[6].Descriptor()
+	return file_github_com_PeterStoica_chatwire_wire_proto_enumTypes[7].Descriptor()
 }
 
 func (Message_ProtocolMessage_Type) Type() protoreflect.EnumType {
-	return &file_github_com_PeterStoica_chatwire_wire_proto_enumTypes[6]
+	return &file_github_com_PeterStoica_chatwire_wire_proto_enumTypes[7]
 }
 
 func (x Message_ProtocolMessage_Type) Number() protoreflect.EnumNumber {
@@ -523,7 +615,7 @@ func (x *Message_ProtocolMessage_Type) UnmarshalJSON(b []byte) error {
 }
 
 func (Message_ProtocolMessage_Type) EnumDescriptor() ([]byte, []int) {
-	return file_github_com_PeterStoica_chatwire_wire_proto_rawDescGZIP(), []int{14, 43, 0}
+	return file_github_com_PeterStoica_chatwire_wire_proto_rawDescGZIP(), []int{14, 46, 0}
 }
 
 type Message_SecretEncryptedMessage_SecretEncType int32
@@ -567,11 +659,11 @@ func (x Message_SecretEncryptedMessage_SecretEncType) String() string {
 }
 
 func (Message_SecretEncryptedMessage_SecretEncType) Descriptor() protoreflect.EnumDescriptor {
-	return file_github_com_PeterStoica_chatwire_wire_proto_enumTypes[7].Descriptor()
+	return file_github_com_PeterStoica_chatwire_wire_proto_enumTypes[8].Descriptor()
 }
 
 func (Message_SecretEncryptedMessage_SecretEncType) Type() protoreflect.EnumType {
-	return &file_github_com_PeterStoica_chatwire_wire_proto_enumTypes[7]
+	return &file_github_com_PeterStoica_chatwire_wire_proto_enumTypes[8]
 }
 
 func (x Message_SecretEncryptedMessage_SecretEncType) Number() protoreflect.EnumNumber {
@@ -588,7 +680,7 @@ func (x *Message_SecretEncryptedMessage_SecretEncType) UnmarshalJSON(b []byte) e
 }
 
 func (Message_SecretEncryptedMessage_SecretEncType) EnumDescriptor() ([]byte, []int) {
-	return file_github_com_PeterStoica_chatwire_wire_proto_rawDescGZIP(), []int{14, 46, 0}
+	return file_github_com_PeterStoica_chatwire_wire_proto_rawDescGZIP(), []int{14, 49, 0}
 }
 
 type MessageAddOn_MessageAddOnType int32
@@ -629,11 +721,11 @@ func (x MessageAddOn_MessageAddOnType) String() string {
 }
 
 func (MessageAddOn_MessageAddOnType) Descriptor() protoreflect.EnumDescriptor {
-	return file_github_com_PeterStoica_chatwire_wire_proto_enumTypes[8].Descriptor()
+	return file_github_com_PeterStoica_chatwire_wire_proto_enumTypes[9].Descriptor()
 }
 
 func (MessageAddOn_MessageAddOnType) Type() protoreflect.EnumType {
-	return &file_github_com_PeterStoica_chatwire_wire_proto_enumTypes[8]
+	return &file_github_com_PeterStoica_chatwire_wire_proto_enumTypes[9]
 }
 
 func (x MessageAddOn_MessageAddOnType) Number() protoreflect.EnumNumber {
@@ -682,11 +774,11 @@ func (x SyncdMutation_SyncdOperation) String() string {
 }
 
 func (SyncdMutation_SyncdOperation) Descriptor() protoreflect.EnumDescriptor {
-	return file_github_com_PeterStoica_chatwire_wire_proto_enumTypes[9].Descriptor()
+	return file_github_com_PeterStoica_chatwire_wire_proto_enumTypes[10].Descriptor()
 }
 
 func (SyncdMutation_SyncdOperation) Type() protoreflect.EnumType {
-	return &file_github_com_PeterStoica_chatwire_wire_proto_enumTypes[9]
+	return &file_github_com_PeterStoica_chatwire_wire_proto_enumTypes[10]
 }
 
 func (x SyncdMutation_SyncdOperation) Number() protoreflect.EnumNumber {
@@ -3908,27 +4000,27 @@ func (x *Message_AppStateSyncKeyId) GetKeyId() []byte {
 	return nil
 }
 
-type Message_AppStateSyncKeyShare struct {
-	state         protoimpl.MessageState     `protogen:"open.v1"`
-	Keys          []*Message_AppStateSyncKey `protobuf:"bytes,1,rep,name=keys" json:"keys,omitempty"`
+type Message_AppStateSyncKeyRequest struct {
+	state         protoimpl.MessageState       `protogen:"open.v1"`
+	KeyIds        []*Message_AppStateSyncKeyId `protobuf:"bytes,1,rep,name=keyIds" json:"keyIds,omitempty"`
 	unknownFields protoimpl.UnknownFields
 	sizeCache     protoimpl.SizeCache
 }
 
-func (x *Message_AppStateSyncKeyShare) Reset() {
-	*x = Message_AppStateSyncKeyShare{}
+func (x *Message_AppStateSyncKeyRequest) Reset() {
+	*x = Message_AppStateSyncKeyRequest{}
 	mi := &file_github_com_PeterStoica_chatwire_wire_proto_msgTypes[43]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
 
-func (x *Message_AppStateSyncKeyShare) String() string {
+func (x *Message_AppStateSyncKeyRequest) String() string {
 	return protoimpl.X.MessageStringOf(x)
 }
 
-func (*Message_AppStateSyncKeyShare) ProtoMessage() {}
+func (*Message_AppStateSyncKeyRequest) ProtoMessage() {}
 
-func (x *Message_AppStateSyncKeyShare) ProtoReflect() protoreflect.Message {
+func (x *Message_AppStateSyncKeyRequest) ProtoReflect() protoreflect.Message {
 	mi := &file_github_com_PeterStoica_chatwire_wire_proto_msgTypes[43]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
@@ -3940,8 +4032,51 @@ func (x *Message_AppStateSyncKeyShare) ProtoReflect() protoreflect.Message {
 	return mi.MessageOf(x)
 }
 
-func (*Message_AppStateSyncKeyShare) Descriptor() ([]byte, []int) {
+func (*Message_AppStateSyncKeyRequest) Descriptor() ([]byte, []int) {
 	return file_github_com_PeterStoica_chatwire_wire_proto_rawDescGZIP(), []int{14, 4}
+}
+
+func (x *Message_AppStateSyncKeyRequest) GetKeyIds() []*Message_AppStateSyncKeyId {
+	if x != nil {
+		return x.KeyIds
+	}
+	return nil
+}
+
+type Message_AppStateSyncKeyShare struct {
+	state         protoimpl.MessageState     `protogen:"open.v1"`
+	Keys          []*Message_AppStateSyncKey `protobuf:"bytes,1,rep,name=keys" json:"keys,omitempty"`
+	unknownFields protoimpl.UnknownFields
+	sizeCache     protoimpl.SizeCache
+}
+
+func (x *Message_AppStateSyncKeyShare) Reset() {
+	*x = Message_AppStateSyncKeyShare{}
+	mi := &file_github_com_PeterStoica_chatwire_wire_proto_msgTypes[44]
+	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+	ms.StoreMessageInfo(mi)
+}
+
+func (x *Message_AppStateSyncKeyShare) String() string {
+	return protoimpl.X.MessageStringOf(x)
+}
+
+func (*Message_AppStateSyncKeyShare) ProtoMessage() {}
+
+func (x *Message_AppStateSyncKeyShare) ProtoReflect() protoreflect.Message {
+	mi := &file_github_com_PeterStoica_chatwire_wire_proto_msgTypes[44]
+	if x != nil {
+		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+		if ms.LoadMessageInfo() == nil {
+			ms.StoreMessageInfo(mi)
+		}
+		return ms
+	}
+	return mi.MessageOf(x)
+}
+
+func (*Message_AppStateSyncKeyShare) Descriptor() ([]byte, []int) {
+	return file_github_com_PeterStoica_chatwire_wire_proto_rawDescGZIP(), []int{14, 5}
 }
 
 func (x *Message_AppStateSyncKeyShare) GetKeys() []*Message_AppStateSyncKey {
@@ -3971,7 +4106,7 @@ type Message_AudioMessage struct {
 
 func (x *Message_AudioMessage) Reset() {
 	*x = Message_AudioMessage{}
-	mi := &file_github_com_PeterStoica_chatwire_wire_proto_msgTypes[44]
+	mi := &file_github_com_PeterStoica_chatwire_wire_proto_msgTypes[45]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -3983,7 +4118,7 @@ func (x *Message_AudioMessage) String() string {
 func (*Message_AudioMessage) ProtoMessage() {}
 
 func (x *Message_AudioMessage) ProtoReflect() protoreflect.Message {
-	mi := &file_github_com_PeterStoica_chatwire_wire_proto_msgTypes[44]
+	mi := &file_github_com_PeterStoica_chatwire_wire_proto_msgTypes[45]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -3995,7 +4130,7 @@ func (x *Message_AudioMessage) ProtoReflect() protoreflect.Message {
 }
 
 func (*Message_AudioMessage) Descriptor() ([]byte, []int) {
-	return file_github_com_PeterStoica_chatwire_wire_proto_rawDescGZIP(), []int{14, 5}
+	return file_github_com_PeterStoica_chatwire_wire_proto_rawDescGZIP(), []int{14, 6}
 }
 
 func (x *Message_AudioMessage) GetUrl() string {
@@ -4091,7 +4226,7 @@ type Message_ButtonsMessage struct {
 
 func (x *Message_ButtonsMessage) Reset() {
 	*x = Message_ButtonsMessage{}
-	mi := &file_github_com_PeterStoica_chatwire_wire_proto_msgTypes[45]
+	mi := &file_github_com_PeterStoica_chatwire_wire_proto_msgTypes[46]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -4103,7 +4238,7 @@ func (x *Message_ButtonsMessage) String() string {
 func (*Message_ButtonsMessage) ProtoMessage() {}
 
 func (x *Message_ButtonsMessage) ProtoReflect() protoreflect.Message {
-	mi := &file_github_com_PeterStoica_chatwire_wire_proto_msgTypes[45]
+	mi := &file_github_com_PeterStoica_chatwire_wire_proto_msgTypes[46]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -4115,7 +4250,7 @@ func (x *Message_ButtonsMessage) ProtoReflect() protoreflect.Message {
 }
 
 func (*Message_ButtonsMessage) Descriptor() ([]byte, []int) {
-	return file_github_com_PeterStoica_chatwire_wire_proto_rawDescGZIP(), []int{14, 6}
+	return file_github_com_PeterStoica_chatwire_wire_proto_rawDescGZIP(), []int{14, 7}
 }
 
 func (x *Message_ButtonsMessage) GetContextInfo() *ContextInfo {
@@ -4134,7 +4269,7 @@ type Message_ButtonsResponseMessage struct {
 
 func (x *Message_ButtonsResponseMessage) Reset() {
 	*x = Message_ButtonsResponseMessage{}
-	mi := &file_github_com_PeterStoica_chatwire_wire_proto_msgTypes[46]
+	mi := &file_github_com_PeterStoica_chatwire_wire_proto_msgTypes[47]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -4146,7 +4281,7 @@ func (x *Message_ButtonsResponseMessage) String() string {
 func (*Message_ButtonsResponseMessage) ProtoMessage() {}
 
 func (x *Message_ButtonsResponseMessage) ProtoReflect() protoreflect.Message {
-	mi := &file_github_com_PeterStoica_chatwire_wire_proto_msgTypes[46]
+	mi := &file_github_com_PeterStoica_chatwire_wire_proto_msgTypes[47]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -4158,7 +4293,7 @@ func (x *Message_ButtonsResponseMessage) ProtoReflect() protoreflect.Message {
 }
 
 func (*Message_ButtonsResponseMessage) Descriptor() ([]byte, []int) {
-	return file_github_com_PeterStoica_chatwire_wire_proto_rawDescGZIP(), []int{14, 7}
+	return file_github_com_PeterStoica_chatwire_wire_proto_rawDescGZIP(), []int{14, 8}
 }
 
 func (x *Message_ButtonsResponseMessage) GetContextInfo() *ContextInfo {
@@ -4177,7 +4312,7 @@ type Message_Call struct {
 
 func (x *Message_Call) Reset() {
 	*x = Message_Call{}
-	mi := &file_github_com_PeterStoica_chatwire_wire_proto_msgTypes[47]
+	mi := &file_github_com_PeterStoica_chatwire_wire_proto_msgTypes[48]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -4189,7 +4324,7 @@ func (x *Message_Call) String() string {
 func (*Message_Call) ProtoMessage() {}
 
 func (x *Message_Call) ProtoReflect() protoreflect.Message {
-	mi := &file_github_com_PeterStoica_chatwire_wire_proto_msgTypes[47]
+	mi := &file_github_com_PeterStoica_chatwire_wire_proto_msgTypes[48]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -4201,7 +4336,7 @@ func (x *Message_Call) ProtoReflect() protoreflect.Message {
 }
 
 func (*Message_Call) Descriptor() ([]byte, []int) {
-	return file_github_com_PeterStoica_chatwire_wire_proto_rawDescGZIP(), []int{14, 8}
+	return file_github_com_PeterStoica_chatwire_wire_proto_rawDescGZIP(), []int{14, 9}
 }
 
 func (x *Message_Call) GetContextInfo() *ContextInfo {
@@ -4222,7 +4357,7 @@ type Message_ContactMessage struct {
 
 func (x *Message_ContactMessage) Reset() {
 	*x = Message_ContactMessage{}
-	mi := &file_github_com_PeterStoica_chatwire_wire_proto_msgTypes[48]
+	mi := &file_github_com_PeterStoica_chatwire_wire_proto_msgTypes[49]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -4234,7 +4369,7 @@ func (x *Message_ContactMessage) String() string {
 func (*Message_ContactMessage) ProtoMessage() {}
 
 func (x *Message_ContactMessage) ProtoReflect() protoreflect.Message {
-	mi := &file_github_com_PeterStoica_chatwire_wire_proto_msgTypes[48]
+	mi := &file_github_com_PeterStoica_chatwire_wire_proto_msgTypes[49]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -4246,7 +4381,7 @@ func (x *Message_ContactMessage) ProtoReflect() protoreflect.Message {
 }
 
 func (*Message_ContactMessage) Descriptor() ([]byte, []int) {
-	return file_github_com_PeterStoica_chatwire_wire_proto_rawDescGZIP(), []int{14, 9}
+	return file_github_com_PeterStoica_chatwire_wire_proto_rawDescGZIP(), []int{14, 10}
 }
 
 func (x *Message_ContactMessage) GetDisplayName() string {
@@ -4281,7 +4416,7 @@ type Message_ContactsArrayMessage struct {
 
 func (x *Message_ContactsArrayMessage) Reset() {
 	*x = Message_ContactsArrayMessage{}
-	mi := &file_github_com_PeterStoica_chatwire_wire_proto_msgTypes[49]
+	mi := &file_github_com_PeterStoica_chatwire_wire_proto_msgTypes[50]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -4293,7 +4428,7 @@ func (x *Message_ContactsArrayMessage) String() string {
 func (*Message_ContactsArrayMessage) ProtoMessage() {}
 
 func (x *Message_ContactsArrayMessage) ProtoReflect() protoreflect.Message {
-	mi := &file_github_com_PeterStoica_chatwire_wire_proto_msgTypes[49]
+	mi := &file_github_com_PeterStoica_chatwire_wire_proto_msgTypes[50]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -4305,7 +4440,7 @@ func (x *Message_ContactsArrayMessage) ProtoReflect() protoreflect.Message {
 }
 
 func (*Message_ContactsArrayMessage) Descriptor() ([]byte, []int) {
-	return file_github_com_PeterStoica_chatwire_wire_proto_rawDescGZIP(), []int{14, 10}
+	return file_github_com_PeterStoica_chatwire_wire_proto_rawDescGZIP(), []int{14, 11}
 }
 
 func (x *Message_ContactsArrayMessage) GetDisplayName() string {
@@ -4339,7 +4474,7 @@ type Message_DeviceSentMessage struct {
 
 func (x *Message_DeviceSentMessage) Reset() {
 	*x = Message_DeviceSentMessage{}
-	mi := &file_github_com_PeterStoica_chatwire_wire_proto_msgTypes[50]
+	mi := &file_github_com_PeterStoica_chatwire_wire_proto_msgTypes[51]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -4351,7 +4486,7 @@ func (x *Message_DeviceSentMessage) String() string {
 func (*Message_DeviceSentMessage) ProtoMessage() {}
 
 func (x *Message_DeviceSentMessage) ProtoReflect() protoreflect.Message {
-	mi := &file_github_com_PeterStoica_chatwire_wire_proto_msgTypes[50]
+	mi := &file_github_com_PeterStoica_chatwire_wire_proto_msgTypes[51]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -4363,7 +4498,7 @@ func (x *Message_DeviceSentMessage) ProtoReflect() protoreflect.Message {
 }
 
 func (*Message_DeviceSentMessage) Descriptor() ([]byte, []int) {
-	return file_github_com_PeterStoica_chatwire_wire_proto_rawDescGZIP(), []int{14, 11}
+	return file_github_com_PeterStoica_chatwire_wire_proto_rawDescGZIP(), []int{14, 12}
 }
 
 func (x *Message_DeviceSentMessage) GetDestinationJid() string {
@@ -4400,7 +4535,7 @@ type Message_DocumentMessage struct {
 
 func (x *Message_DocumentMessage) Reset() {
 	*x = Message_DocumentMessage{}
-	mi := &file_github_com_PeterStoica_chatwire_wire_proto_msgTypes[51]
+	mi := &file_github_com_PeterStoica_chatwire_wire_proto_msgTypes[52]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -4412,7 +4547,7 @@ func (x *Message_DocumentMessage) String() string {
 func (*Message_DocumentMessage) ProtoMessage() {}
 
 func (x *Message_DocumentMessage) ProtoReflect() protoreflect.Message {
-	mi := &file_github_com_PeterStoica_chatwire_wire_proto_msgTypes[51]
+	mi := &file_github_com_PeterStoica_chatwire_wire_proto_msgTypes[52]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -4424,7 +4559,7 @@ func (x *Message_DocumentMessage) ProtoReflect() protoreflect.Message {
 }
 
 func (*Message_DocumentMessage) Descriptor() ([]byte, []int) {
-	return file_github_com_PeterStoica_chatwire_wire_proto_rawDescGZIP(), []int{14, 12}
+	return file_github_com_PeterStoica_chatwire_wire_proto_rawDescGZIP(), []int{14, 13}
 }
 
 func (x *Message_DocumentMessage) GetUrl() string {
@@ -4519,7 +4654,7 @@ type Message_EncCommentMessage struct {
 
 func (x *Message_EncCommentMessage) Reset() {
 	*x = Message_EncCommentMessage{}
-	mi := &file_github_com_PeterStoica_chatwire_wire_proto_msgTypes[52]
+	mi := &file_github_com_PeterStoica_chatwire_wire_proto_msgTypes[53]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -4531,7 +4666,7 @@ func (x *Message_EncCommentMessage) String() string {
 func (*Message_EncCommentMessage) ProtoMessage() {}
 
 func (x *Message_EncCommentMessage) ProtoReflect() protoreflect.Message {
-	mi := &file_github_com_PeterStoica_chatwire_wire_proto_msgTypes[52]
+	mi := &file_github_com_PeterStoica_chatwire_wire_proto_msgTypes[53]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -4543,7 +4678,7 @@ func (x *Message_EncCommentMessage) ProtoReflect() protoreflect.Message {
 }
 
 func (*Message_EncCommentMessage) Descriptor() ([]byte, []int) {
-	return file_github_com_PeterStoica_chatwire_wire_proto_rawDescGZIP(), []int{14, 13}
+	return file_github_com_PeterStoica_chatwire_wire_proto_rawDescGZIP(), []int{14, 14}
 }
 
 type Message_EncEventResponseMessage struct {
@@ -4554,7 +4689,7 @@ type Message_EncEventResponseMessage struct {
 
 func (x *Message_EncEventResponseMessage) Reset() {
 	*x = Message_EncEventResponseMessage{}
-	mi := &file_github_com_PeterStoica_chatwire_wire_proto_msgTypes[53]
+	mi := &file_github_com_PeterStoica_chatwire_wire_proto_msgTypes[54]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -4566,7 +4701,7 @@ func (x *Message_EncEventResponseMessage) String() string {
 func (*Message_EncEventResponseMessage) ProtoMessage() {}
 
 func (x *Message_EncEventResponseMessage) ProtoReflect() protoreflect.Message {
-	mi := &file_github_com_PeterStoica_chatwire_wire_proto_msgTypes[53]
+	mi := &file_github_com_PeterStoica_chatwire_wire_proto_msgTypes[54]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -4578,7 +4713,7 @@ func (x *Message_EncEventResponseMessage) ProtoReflect() protoreflect.Message {
 }
 
 func (*Message_EncEventResponseMessage) Descriptor() ([]byte, []int) {
-	return file_github_com_PeterStoica_chatwire_wire_proto_rawDescGZIP(), []int{14, 14}
+	return file_github_com_PeterStoica_chatwire_wire_proto_rawDescGZIP(), []int{14, 15}
 }
 
 type Message_EncReactionMessage struct {
@@ -4589,7 +4724,7 @@ type Message_EncReactionMessage struct {
 
 func (x *Message_EncReactionMessage) Reset() {
 	*x = Message_EncReactionMessage{}
-	mi := &file_github_com_PeterStoica_chatwire_wire_proto_msgTypes[54]
+	mi := &file_github_com_PeterStoica_chatwire_wire_proto_msgTypes[55]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -4601,7 +4736,7 @@ func (x *Message_EncReactionMessage) String() string {
 func (*Message_EncReactionMessage) ProtoMessage() {}
 
 func (x *Message_EncReactionMessage) ProtoReflect() protoreflect.Message {
-	mi := &file_github_com_PeterStoica_chatwire_wire_proto_msgTypes[54]
+	mi := &file_github_com_PeterStoica_chatwire_wire_proto_msgTypes[55]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -4613,7 +4748,7 @@ func (x *Message_EncReactionMessage) ProtoReflect() protoreflect.Message {
 }
 
 func (*Message_EncReactionMessage) Descriptor() ([]byte, []int) {
-	return file_github_com_PeterStoica_chatwire_wire_proto_rawDescGZIP(), []int{14, 15}
+	return file_github_com_PeterStoica_chatwire_wire_proto_rawDescGZIP(), []int{14, 16}
 }
 
 type Message_EventInviteMessage struct {
@@ -4625,7 +4760,7 @@ type Message_EventInviteMessage struct {
 
 func (x *Message_EventInviteMessage) Reset() {
 	*x = Message_EventInviteMessage{}
-	mi := &file_github_com_PeterStoica_chatwire_wire_proto_msgTypes[55]
+	mi := &file_github_com_PeterStoica_chatwire_wire_proto_msgTypes[56]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -4637,7 +4772,7 @@ func (x *Message_EventInviteMessage) String() string {
 func (*Message_EventInviteMessage) ProtoMessage() {}
 
 func (x *Message_EventInviteMessage) ProtoReflect() protoreflect.Message {
-	mi := &file_github_com_PeterStoica_chatwire_wire_proto_msgTypes[55]
+	mi := &file_github_com_PeterStoica_chatwire_wire_proto_msgTypes[56]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -4649,7 +4784,7 @@ func (x *Message_EventInviteMessage) ProtoReflect() protoreflect.Message {
 }
 
 func (*Message_EventInviteMessage) Descriptor() ([]byte, []int) {
-	return file_github_com_PeterStoica_chatwire_wire_proto_rawDescGZIP(), []int{14, 16}
+	return file_github_com_PeterStoica_chatwire_wire_proto_rawDescGZIP(), []int{14, 17}
 }
 
 func (x *Message_EventInviteMessage) GetContextInfo() *ContextInfo {
@@ -4668,7 +4803,7 @@ type Message_EventMessage struct {
 
 func (x *Message_EventMessage) Reset() {
 	*x = Message_EventMessage{}
-	mi := &file_github_com_PeterStoica_chatwire_wire_proto_msgTypes[56]
+	mi := &file_github_com_PeterStoica_chatwire_wire_proto_msgTypes[57]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -4680,7 +4815,7 @@ func (x *Message_EventMessage) String() string {
 func (*Message_EventMessage) ProtoMessage() {}
 
 func (x *Message_EventMessage) ProtoReflect() protoreflect.Message {
-	mi := &file_github_com_PeterStoica_chatwire_wire_proto_msgTypes[56]
+	mi := &file_github_com_PeterStoica_chatwire_wire_proto_msgTypes[57]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -4692,7 +4827,7 @@ func (x *Message_EventMessage) ProtoReflect() protoreflect.Message {
 }
 
 func (*Message_EventMessage) Descriptor() ([]byte, []int) {
-	return file_github_com_PeterStoica_chatwire_wire_proto_rawDescGZIP(), []int{14, 17}
+	return file_github_com_PeterStoica_chatwire_wire_proto_rawDescGZIP(), []int{14, 18}
 }
 
 func (x *Message_EventMessage) GetContextInfo() *ContextInfo {
@@ -4713,7 +4848,7 @@ type Message_ExtendedTextMessage struct {
 
 func (x *Message_ExtendedTextMessage) Reset() {
 	*x = Message_ExtendedTextMessage{}
-	mi := &file_github_com_PeterStoica_chatwire_wire_proto_msgTypes[57]
+	mi := &file_github_com_PeterStoica_chatwire_wire_proto_msgTypes[58]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -4725,7 +4860,7 @@ func (x *Message_ExtendedTextMessage) String() string {
 func (*Message_ExtendedTextMessage) ProtoMessage() {}
 
 func (x *Message_ExtendedTextMessage) ProtoReflect() protoreflect.Message {
-	mi := &file_github_com_PeterStoica_chatwire_wire_proto_msgTypes[57]
+	mi := &file_github_com_PeterStoica_chatwire_wire_proto_msgTypes[58]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -4737,7 +4872,7 @@ func (x *Message_ExtendedTextMessage) ProtoReflect() protoreflect.Message {
 }
 
 func (*Message_ExtendedTextMessage) Descriptor() ([]byte, []int) {
-	return file_github_com_PeterStoica_chatwire_wire_proto_rawDescGZIP(), []int{14, 18}
+	return file_github_com_PeterStoica_chatwire_wire_proto_rawDescGZIP(), []int{14, 19}
 }
 
 func (x *Message_ExtendedTextMessage) GetText() string {
@@ -4770,7 +4905,7 @@ type Message_FutureProofMessage struct {
 
 func (x *Message_FutureProofMessage) Reset() {
 	*x = Message_FutureProofMessage{}
-	mi := &file_github_com_PeterStoica_chatwire_wire_proto_msgTypes[58]
+	mi := &file_github_com_PeterStoica_chatwire_wire_proto_msgTypes[59]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -4782,7 +4917,7 @@ func (x *Message_FutureProofMessage) String() string {
 func (*Message_FutureProofMessage) ProtoMessage() {}
 
 func (x *Message_FutureProofMessage) ProtoReflect() protoreflect.Message {
-	mi := &file_github_com_PeterStoica_chatwire_wire_proto_msgTypes[58]
+	mi := &file_github_com_PeterStoica_chatwire_wire_proto_msgTypes[59]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -4794,7 +4929,7 @@ func (x *Message_FutureProofMessage) ProtoReflect() protoreflect.Message {
 }
 
 func (*Message_FutureProofMessage) Descriptor() ([]byte, []int) {
-	return file_github_com_PeterStoica_chatwire_wire_proto_rawDescGZIP(), []int{14, 19}
+	return file_github_com_PeterStoica_chatwire_wire_proto_rawDescGZIP(), []int{14, 20}
 }
 
 func (x *Message_FutureProofMessage) GetMessage() *Message {
@@ -4813,7 +4948,7 @@ type Message_GroupInviteMessage struct {
 
 func (x *Message_GroupInviteMessage) Reset() {
 	*x = Message_GroupInviteMessage{}
-	mi := &file_github_com_PeterStoica_chatwire_wire_proto_msgTypes[59]
+	mi := &file_github_com_PeterStoica_chatwire_wire_proto_msgTypes[60]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -4825,7 +4960,7 @@ func (x *Message_GroupInviteMessage) String() string {
 func (*Message_GroupInviteMessage) ProtoMessage() {}
 
 func (x *Message_GroupInviteMessage) ProtoReflect() protoreflect.Message {
-	mi := &file_github_com_PeterStoica_chatwire_wire_proto_msgTypes[59]
+	mi := &file_github_com_PeterStoica_chatwire_wire_proto_msgTypes[60]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -4837,7 +4972,7 @@ func (x *Message_GroupInviteMessage) ProtoReflect() protoreflect.Message {
 }
 
 func (*Message_GroupInviteMessage) Descriptor() ([]byte, []int) {
-	return file_github_com_PeterStoica_chatwire_wire_proto_rawDescGZIP(), []int{14, 20}
+	return file_github_com_PeterStoica_chatwire_wire_proto_rawDescGZIP(), []int{14, 21}
 }
 
 func (x *Message_GroupInviteMessage) GetContextInfo() *ContextInfo {
@@ -4862,7 +4997,7 @@ type Message_HistorySyncNotification struct {
 
 func (x *Message_HistorySyncNotification) Reset() {
 	*x = Message_HistorySyncNotification{}
-	mi := &file_github_com_PeterStoica_chatwire_wire_proto_msgTypes[60]
+	mi := &file_github_com_PeterStoica_chatwire_wire_proto_msgTypes[61]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -4874,7 +5009,7 @@ func (x *Message_HistorySyncNotification) String() string {
 func (*Message_HistorySyncNotification) ProtoMessage() {}
 
 func (x *Message_HistorySyncNotification) ProtoReflect() protoreflect.Message {
-	mi := &file_github_com_PeterStoica_chatwire_wire_proto_msgTypes[60]
+	mi := &file_github_com_PeterStoica_chatwire_wire_proto_msgTypes[61]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -4886,7 +5021,7 @@ func (x *Message_HistorySyncNotification) ProtoReflect() protoreflect.Message {
 }
 
 func (*Message_HistorySyncNotification) Descriptor() ([]byte, []int) {
-	return file_github_com_PeterStoica_chatwire_wire_proto_rawDescGZIP(), []int{14, 21}
+	return file_github_com_PeterStoica_chatwire_wire_proto_rawDescGZIP(), []int{14, 22}
 }
 
 func (x *Message_HistorySyncNotification) GetFileSha256() []byte {
@@ -4960,7 +5095,7 @@ type Message_ImageMessage struct {
 
 func (x *Message_ImageMessage) Reset() {
 	*x = Message_ImageMessage{}
-	mi := &file_github_com_PeterStoica_chatwire_wire_proto_msgTypes[61]
+	mi := &file_github_com_PeterStoica_chatwire_wire_proto_msgTypes[62]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -4972,7 +5107,7 @@ func (x *Message_ImageMessage) String() string {
 func (*Message_ImageMessage) ProtoMessage() {}
 
 func (x *Message_ImageMessage) ProtoReflect() protoreflect.Message {
-	mi := &file_github_com_PeterStoica_chatwire_wire_proto_msgTypes[61]
+	mi := &file_github_com_PeterStoica_chatwire_wire_proto_msgTypes[62]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -4984,7 +5119,7 @@ func (x *Message_ImageMessage) ProtoReflect() protoreflect.Message {
 }
 
 func (*Message_ImageMessage) Descriptor() ([]byte, []int) {
-	return file_github_com_PeterStoica_chatwire_wire_proto_rawDescGZIP(), []int{14, 22}
+	return file_github_com_PeterStoica_chatwire_wire_proto_rawDescGZIP(), []int{14, 23}
 }
 
 func (x *Message_ImageMessage) GetUrl() string {
@@ -5094,7 +5229,7 @@ type Message_InteractiveMessage struct {
 
 func (x *Message_InteractiveMessage) Reset() {
 	*x = Message_InteractiveMessage{}
-	mi := &file_github_com_PeterStoica_chatwire_wire_proto_msgTypes[62]
+	mi := &file_github_com_PeterStoica_chatwire_wire_proto_msgTypes[63]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -5106,7 +5241,7 @@ func (x *Message_InteractiveMessage) String() string {
 func (*Message_InteractiveMessage) ProtoMessage() {}
 
 func (x *Message_InteractiveMessage) ProtoReflect() protoreflect.Message {
-	mi := &file_github_com_PeterStoica_chatwire_wire_proto_msgTypes[62]
+	mi := &file_github_com_PeterStoica_chatwire_wire_proto_msgTypes[63]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -5118,7 +5253,7 @@ func (x *Message_InteractiveMessage) ProtoReflect() protoreflect.Message {
 }
 
 func (*Message_InteractiveMessage) Descriptor() ([]byte, []int) {
-	return file_github_com_PeterStoica_chatwire_wire_proto_rawDescGZIP(), []int{14, 23}
+	return file_github_com_PeterStoica_chatwire_wire_proto_rawDescGZIP(), []int{14, 24}
 }
 
 func (x *Message_InteractiveMessage) GetContextInfo() *ContextInfo {
@@ -5137,7 +5272,7 @@ type Message_InteractiveResponseMessage struct {
 
 func (x *Message_InteractiveResponseMessage) Reset() {
 	*x = Message_InteractiveResponseMessage{}
-	mi := &file_github_com_PeterStoica_chatwire_wire_proto_msgTypes[63]
+	mi := &file_github_com_PeterStoica_chatwire_wire_proto_msgTypes[64]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -5149,7 +5284,7 @@ func (x *Message_InteractiveResponseMessage) String() string {
 func (*Message_InteractiveResponseMessage) ProtoMessage() {}
 
 func (x *Message_InteractiveResponseMessage) ProtoReflect() protoreflect.Message {
-	mi := &file_github_com_PeterStoica_chatwire_wire_proto_msgTypes[63]
+	mi := &file_github_com_PeterStoica_chatwire_wire_proto_msgTypes[64]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -5161,7 +5296,7 @@ func (x *Message_InteractiveResponseMessage) ProtoReflect() protoreflect.Message
 }
 
 func (*Message_InteractiveResponseMessage) Descriptor() ([]byte, []int) {
-	return file_github_com_PeterStoica_chatwire_wire_proto_rawDescGZIP(), []int{14, 24}
+	return file_github_com_PeterStoica_chatwire_wire_proto_rawDescGZIP(), []int{14, 25}
 }
 
 func (x *Message_InteractiveResponseMessage) GetContextInfo() *ContextInfo {
@@ -5179,7 +5314,7 @@ type Message_KeepInChatMessage struct {
 
 func (x *Message_KeepInChatMessage) Reset() {
 	*x = Message_KeepInChatMessage{}
-	mi := &file_github_com_PeterStoica_chatwire_wire_proto_msgTypes[64]
+	mi := &file_github_com_PeterStoica_chatwire_wire_proto_msgTypes[65]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -5191,7 +5326,7 @@ func (x *Message_KeepInChatMessage) String() string {
 func (*Message_KeepInChatMessage) ProtoMessage() {}
 
 func (x *Message_KeepInChatMessage) ProtoReflect() protoreflect.Message {
-	mi := &file_github_com_PeterStoica_chatwire_wire_proto_msgTypes[64]
+	mi := &file_github_com_PeterStoica_chatwire_wire_proto_msgTypes[65]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -5203,7 +5338,7 @@ func (x *Message_KeepInChatMessage) ProtoReflect() protoreflect.Message {
 }
 
 func (*Message_KeepInChatMessage) Descriptor() ([]byte, []int) {
-	return file_github_com_PeterStoica_chatwire_wire_proto_rawDescGZIP(), []int{14, 25}
+	return file_github_com_PeterStoica_chatwire_wire_proto_rawDescGZIP(), []int{14, 26}
 }
 
 type Message_ListMessage struct {
@@ -5215,7 +5350,7 @@ type Message_ListMessage struct {
 
 func (x *Message_ListMessage) Reset() {
 	*x = Message_ListMessage{}
-	mi := &file_github_com_PeterStoica_chatwire_wire_proto_msgTypes[65]
+	mi := &file_github_com_PeterStoica_chatwire_wire_proto_msgTypes[66]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -5227,7 +5362,7 @@ func (x *Message_ListMessage) String() string {
 func (*Message_ListMessage) ProtoMessage() {}
 
 func (x *Message_ListMessage) ProtoReflect() protoreflect.Message {
-	mi := &file_github_com_PeterStoica_chatwire_wire_proto_msgTypes[65]
+	mi := &file_github_com_PeterStoica_chatwire_wire_proto_msgTypes[66]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -5239,7 +5374,7 @@ func (x *Message_ListMessage) ProtoReflect() protoreflect.Message {
 }
 
 func (*Message_ListMessage) Descriptor() ([]byte, []int) {
-	return file_github_com_PeterStoica_chatwire_wire_proto_rawDescGZIP(), []int{14, 26}
+	return file_github_com_PeterStoica_chatwire_wire_proto_rawDescGZIP(), []int{14, 27}
 }
 
 func (x *Message_ListMessage) GetContextInfo() *ContextInfo {
@@ -5258,7 +5393,7 @@ type Message_ListResponseMessage struct {
 
 func (x *Message_ListResponseMessage) Reset() {
 	*x = Message_ListResponseMessage{}
-	mi := &file_github_com_PeterStoica_chatwire_wire_proto_msgTypes[66]
+	mi := &file_github_com_PeterStoica_chatwire_wire_proto_msgTypes[67]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -5270,7 +5405,7 @@ func (x *Message_ListResponseMessage) String() string {
 func (*Message_ListResponseMessage) ProtoMessage() {}
 
 func (x *Message_ListResponseMessage) ProtoReflect() protoreflect.Message {
-	mi := &file_github_com_PeterStoica_chatwire_wire_proto_msgTypes[66]
+	mi := &file_github_com_PeterStoica_chatwire_wire_proto_msgTypes[67]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -5282,7 +5417,7 @@ func (x *Message_ListResponseMessage) ProtoReflect() protoreflect.Message {
 }
 
 func (*Message_ListResponseMessage) Descriptor() ([]byte, []int) {
-	return file_github_com_PeterStoica_chatwire_wire_proto_rawDescGZIP(), []int{14, 27}
+	return file_github_com_PeterStoica_chatwire_wire_proto_rawDescGZIP(), []int{14, 28}
 }
 
 func (x *Message_ListResponseMessage) GetContextInfo() *ContextInfo {
@@ -5304,7 +5439,7 @@ type Message_LiveLocationMessage struct {
 
 func (x *Message_LiveLocationMessage) Reset() {
 	*x = Message_LiveLocationMessage{}
-	mi := &file_github_com_PeterStoica_chatwire_wire_proto_msgTypes[67]
+	mi := &file_github_com_PeterStoica_chatwire_wire_proto_msgTypes[68]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -5316,7 +5451,7 @@ func (x *Message_LiveLocationMessage) String() string {
 func (*Message_LiveLocationMessage) ProtoMessage() {}
 
 func (x *Message_LiveLocationMessage) ProtoReflect() protoreflect.Message {
-	mi := &file_github_com_PeterStoica_chatwire_wire_proto_msgTypes[67]
+	mi := &file_github_com_PeterStoica_chatwire_wire_proto_msgTypes[68]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -5328,7 +5463,7 @@ func (x *Message_LiveLocationMessage) ProtoReflect() protoreflect.Message {
 }
 
 func (*Message_LiveLocationMessage) Descriptor() ([]byte, []int) {
-	return file_github_com_PeterStoica_chatwire_wire_proto_rawDescGZIP(), []int{14, 28}
+	return file_github_com_PeterStoica_chatwire_wire_proto_rawDescGZIP(), []int{14, 29}
 }
 
 func (x *Message_LiveLocationMessage) GetDegreesLatitude() float64 {
@@ -5375,7 +5510,7 @@ type Message_LocationMessage struct {
 
 func (x *Message_LocationMessage) Reset() {
 	*x = Message_LocationMessage{}
-	mi := &file_github_com_PeterStoica_chatwire_wire_proto_msgTypes[68]
+	mi := &file_github_com_PeterStoica_chatwire_wire_proto_msgTypes[69]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -5387,7 +5522,7 @@ func (x *Message_LocationMessage) String() string {
 func (*Message_LocationMessage) ProtoMessage() {}
 
 func (x *Message_LocationMessage) ProtoReflect() protoreflect.Message {
-	mi := &file_github_com_PeterStoica_chatwire_wire_proto_msgTypes[68]
+	mi := &file_github_com_PeterStoica_chatwire_wire_proto_msgTypes[69]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -5399,7 +5534,7 @@ func (x *Message_LocationMessage) ProtoReflect() protoreflect.Message {
 }
 
 func (*Message_LocationMessage) Descriptor() ([]byte, []int) {
-	return file_github_com_PeterStoica_chatwire_wire_proto_rawDescGZIP(), []int{14, 29}
+	return file_github_com_PeterStoica_chatwire_wire_proto_rawDescGZIP(), []int{14, 30}
 }
 
 func (x *Message_LocationMessage) GetDegreesLatitude() float64 {
@@ -5472,7 +5607,7 @@ type Message_MessageHistoryBundle struct {
 
 func (x *Message_MessageHistoryBundle) Reset() {
 	*x = Message_MessageHistoryBundle{}
-	mi := &file_github_com_PeterStoica_chatwire_wire_proto_msgTypes[69]
+	mi := &file_github_com_PeterStoica_chatwire_wire_proto_msgTypes[70]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -5484,7 +5619,7 @@ func (x *Message_MessageHistoryBundle) String() string {
 func (*Message_MessageHistoryBundle) ProtoMessage() {}
 
 func (x *Message_MessageHistoryBundle) ProtoReflect() protoreflect.Message {
-	mi := &file_github_com_PeterStoica_chatwire_wire_proto_msgTypes[69]
+	mi := &file_github_com_PeterStoica_chatwire_wire_proto_msgTypes[70]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -5496,7 +5631,7 @@ func (x *Message_MessageHistoryBundle) ProtoReflect() protoreflect.Message {
 }
 
 func (*Message_MessageHistoryBundle) Descriptor() ([]byte, []int) {
-	return file_github_com_PeterStoica_chatwire_wire_proto_rawDescGZIP(), []int{14, 30}
+	return file_github_com_PeterStoica_chatwire_wire_proto_rawDescGZIP(), []int{14, 31}
 }
 
 func (x *Message_MessageHistoryBundle) GetFileSha256() []byte {
@@ -5550,7 +5685,7 @@ type Message_MessageHistoryNotice struct {
 
 func (x *Message_MessageHistoryNotice) Reset() {
 	*x = Message_MessageHistoryNotice{}
-	mi := &file_github_com_PeterStoica_chatwire_wire_proto_msgTypes[70]
+	mi := &file_github_com_PeterStoica_chatwire_wire_proto_msgTypes[71]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -5562,7 +5697,7 @@ func (x *Message_MessageHistoryNotice) String() string {
 func (*Message_MessageHistoryNotice) ProtoMessage() {}
 
 func (x *Message_MessageHistoryNotice) ProtoReflect() protoreflect.Message {
-	mi := &file_github_com_PeterStoica_chatwire_wire_proto_msgTypes[70]
+	mi := &file_github_com_PeterStoica_chatwire_wire_proto_msgTypes[71]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -5574,7 +5709,7 @@ func (x *Message_MessageHistoryNotice) ProtoReflect() protoreflect.Message {
 }
 
 func (*Message_MessageHistoryNotice) Descriptor() ([]byte, []int) {
-	return file_github_com_PeterStoica_chatwire_wire_proto_rawDescGZIP(), []int{14, 31}
+	return file_github_com_PeterStoica_chatwire_wire_proto_rawDescGZIP(), []int{14, 32}
 }
 
 func (x *Message_MessageHistoryNotice) GetContextInfo() *ContextInfo {
@@ -5593,7 +5728,7 @@ type Message_MusicMessage struct {
 
 func (x *Message_MusicMessage) Reset() {
 	*x = Message_MusicMessage{}
-	mi := &file_github_com_PeterStoica_chatwire_wire_proto_msgTypes[71]
+	mi := &file_github_com_PeterStoica_chatwire_wire_proto_msgTypes[72]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -5605,7 +5740,7 @@ func (x *Message_MusicMessage) String() string {
 func (*Message_MusicMessage) ProtoMessage() {}
 
 func (x *Message_MusicMessage) ProtoReflect() protoreflect.Message {
-	mi := &file_github_com_PeterStoica_chatwire_wire_proto_msgTypes[71]
+	mi := &file_github_com_PeterStoica_chatwire_wire_proto_msgTypes[72]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -5617,7 +5752,7 @@ func (x *Message_MusicMessage) ProtoReflect() protoreflect.Message {
 }
 
 func (*Message_MusicMessage) Descriptor() ([]byte, []int) {
-	return file_github_com_PeterStoica_chatwire_wire_proto_rawDescGZIP(), []int{14, 32}
+	return file_github_com_PeterStoica_chatwire_wire_proto_rawDescGZIP(), []int{14, 33}
 }
 
 func (x *Message_MusicMessage) GetContextInfo() *ContextInfo {
@@ -5636,7 +5771,7 @@ type Message_NewsletterAdminInviteMessage struct {
 
 func (x *Message_NewsletterAdminInviteMessage) Reset() {
 	*x = Message_NewsletterAdminInviteMessage{}
-	mi := &file_github_com_PeterStoica_chatwire_wire_proto_msgTypes[72]
+	mi := &file_github_com_PeterStoica_chatwire_wire_proto_msgTypes[73]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -5648,7 +5783,7 @@ func (x *Message_NewsletterAdminInviteMessage) String() string {
 func (*Message_NewsletterAdminInviteMessage) ProtoMessage() {}
 
 func (x *Message_NewsletterAdminInviteMessage) ProtoReflect() protoreflect.Message {
-	mi := &file_github_com_PeterStoica_chatwire_wire_proto_msgTypes[72]
+	mi := &file_github_com_PeterStoica_chatwire_wire_proto_msgTypes[73]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -5660,7 +5795,7 @@ func (x *Message_NewsletterAdminInviteMessage) ProtoReflect() protoreflect.Messa
 }
 
 func (*Message_NewsletterAdminInviteMessage) Descriptor() ([]byte, []int) {
-	return file_github_com_PeterStoica_chatwire_wire_proto_rawDescGZIP(), []int{14, 33}
+	return file_github_com_PeterStoica_chatwire_wire_proto_rawDescGZIP(), []int{14, 34}
 }
 
 func (x *Message_NewsletterAdminInviteMessage) GetContextInfo() *ContextInfo {
@@ -5679,7 +5814,7 @@ type Message_NewsletterFollowerInviteMessage struct {
 
 func (x *Message_NewsletterFollowerInviteMessage) Reset() {
 	*x = Message_NewsletterFollowerInviteMessage{}
-	mi := &file_github_com_PeterStoica_chatwire_wire_proto_msgTypes[73]
+	mi := &file_github_com_PeterStoica_chatwire_wire_proto_msgTypes[74]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -5691,7 +5826,7 @@ func (x *Message_NewsletterFollowerInviteMessage) String() string {
 func (*Message_NewsletterFollowerInviteMessage) ProtoMessage() {}
 
 func (x *Message_NewsletterFollowerInviteMessage) ProtoReflect() protoreflect.Message {
-	mi := &file_github_com_PeterStoica_chatwire_wire_proto_msgTypes[73]
+	mi := &file_github_com_PeterStoica_chatwire_wire_proto_msgTypes[74]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -5703,7 +5838,7 @@ func (x *Message_NewsletterFollowerInviteMessage) ProtoReflect() protoreflect.Me
 }
 
 func (*Message_NewsletterFollowerInviteMessage) Descriptor() ([]byte, []int) {
-	return file_github_com_PeterStoica_chatwire_wire_proto_rawDescGZIP(), []int{14, 34}
+	return file_github_com_PeterStoica_chatwire_wire_proto_rawDescGZIP(), []int{14, 35}
 }
 
 func (x *Message_NewsletterFollowerInviteMessage) GetContextInfo() *ContextInfo {
@@ -5722,7 +5857,7 @@ type Message_OrderMessage struct {
 
 func (x *Message_OrderMessage) Reset() {
 	*x = Message_OrderMessage{}
-	mi := &file_github_com_PeterStoica_chatwire_wire_proto_msgTypes[74]
+	mi := &file_github_com_PeterStoica_chatwire_wire_proto_msgTypes[75]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -5734,7 +5869,7 @@ func (x *Message_OrderMessage) String() string {
 func (*Message_OrderMessage) ProtoMessage() {}
 
 func (x *Message_OrderMessage) ProtoReflect() protoreflect.Message {
-	mi := &file_github_com_PeterStoica_chatwire_wire_proto_msgTypes[74]
+	mi := &file_github_com_PeterStoica_chatwire_wire_proto_msgTypes[75]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -5746,12 +5881,130 @@ func (x *Message_OrderMessage) ProtoReflect() protoreflect.Message {
 }
 
 func (*Message_OrderMessage) Descriptor() ([]byte, []int) {
-	return file_github_com_PeterStoica_chatwire_wire_proto_rawDescGZIP(), []int{14, 35}
+	return file_github_com_PeterStoica_chatwire_wire_proto_rawDescGZIP(), []int{14, 36}
 }
 
 func (x *Message_OrderMessage) GetContextInfo() *ContextInfo {
 	if x != nil {
 		return x.ContextInfo
+	}
+	return nil
+}
+
+type Message_PeerDataOperationRequestMessage struct {
+	state                           protoimpl.MessageState                                                     `protogen:"open.v1"`
+	PeerDataOperationRequestType    *Message_PeerDataOperationRequestType                                      `protobuf:"varint,1,opt,name=peerDataOperationRequestType,enum=chatwire.wire.Message_PeerDataOperationRequestType" json:"peerDataOperationRequestType,omitempty"`
+	HistorySyncOnDemandRequest      *Message_PeerDataOperationRequestMessage_HistorySyncOnDemandRequest        `protobuf:"bytes,4,opt,name=historySyncOnDemandRequest" json:"historySyncOnDemandRequest,omitempty"`
+	PlaceholderMessageResendRequest []*Message_PeerDataOperationRequestMessage_PlaceholderMessageResendRequest `protobuf:"bytes,5,rep,name=placeholderMessageResendRequest" json:"placeholderMessageResendRequest,omitempty"`
+	unknownFields                   protoimpl.UnknownFields
+	sizeCache                       protoimpl.SizeCache
+}
+
+func (x *Message_PeerDataOperationRequestMessage) Reset() {
+	*x = Message_PeerDataOperationRequestMessage{}
+	mi := &file_github_com_PeterStoica_chatwire_wire_proto_msgTypes[76]
+	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+	ms.StoreMessageInfo(mi)
+}
+
+func (x *Message_PeerDataOperationRequestMessage) String() string {
+	return protoimpl.X.MessageStringOf(x)
+}
+
+func (*Message_PeerDataOperationRequestMessage) ProtoMessage() {}
+
+func (x *Message_PeerDataOperationRequestMessage) ProtoReflect() protoreflect.Message {
+	mi := &file_github_com_PeterStoica_chatwire_wire_proto_msgTypes[76]
+	if x != nil {
+		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+		if ms.LoadMessageInfo() == nil {
+			ms.StoreMessageInfo(mi)
+		}
+		return ms
+	}
+	return mi.MessageOf(x)
+}
+
+func (*Message_PeerDataOperationRequestMessage) Descriptor() ([]byte, []int) {
+	return file_github_com_PeterStoica_chatwire_wire_proto_rawDescGZIP(), []int{14, 37}
+}
+
+func (x *Message_PeerDataOperationRequestMessage) GetPeerDataOperationRequestType() Message_PeerDataOperationRequestType {
+	if x != nil && x.PeerDataOperationRequestType != nil {
+		return *x.PeerDataOperationRequestType
+	}
+	return Message_UPLOAD_STICKER
+}
+
+func (x *Message_PeerDataOperationRequestMessage) GetHistorySyncOnDemandRequest() *Message_PeerDataOperationRequestMessage_HistorySyncOnDemandRequest {
+	if x != nil {
+		return x.HistorySyncOnDemandRequest
+	}
+	return nil
+}
+
+func (x *Message_PeerDataOperationRequestMessage) GetPlaceholderMessageResendRequest() []*Message_PeerDataOperationRequestMessage_PlaceholderMessageResendRequest {
+	if x != nil {
+		return x.PlaceholderMessageResendRequest
+	}
+	return nil
+}
+
+type Message_PeerDataOperationRequestResponseMessage struct {
+	state                        protoimpl.MessageState                                                     `protogen:"open.v1"`
+	PeerDataOperationRequestType *Message_PeerDataOperationRequestType                                      `protobuf:"varint,1,opt,name=peerDataOperationRequestType,enum=chatwire.wire.Message_PeerDataOperationRequestType" json:"peerDataOperationRequestType,omitempty"`
+	StanzaId                     *string                                                                    `protobuf:"bytes,2,opt,name=stanzaId" json:"stanzaId,omitempty"`
+	PeerDataOperationResult      []*Message_PeerDataOperationRequestResponseMessage_PeerDataOperationResult `protobuf:"bytes,3,rep,name=peerDataOperationResult" json:"peerDataOperationResult,omitempty"`
+	unknownFields                protoimpl.UnknownFields
+	sizeCache                    protoimpl.SizeCache
+}
+
+func (x *Message_PeerDataOperationRequestResponseMessage) Reset() {
+	*x = Message_PeerDataOperationRequestResponseMessage{}
+	mi := &file_github_com_PeterStoica_chatwire_wire_proto_msgTypes[77]
+	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+	ms.StoreMessageInfo(mi)
+}
+
+func (x *Message_PeerDataOperationRequestResponseMessage) String() string {
+	return protoimpl.X.MessageStringOf(x)
+}
+
+func (*Message_PeerDataOperationRequestResponseMessage) ProtoMessage() {}
+
+func (x *Message_PeerDataOperationRequestResponseMessage) ProtoReflect() protoreflect.Message {
+	mi := &file_github_com_PeterStoica_chatwire_wire_proto_msgTypes[77]
+	if x != nil {
+		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+		if ms.LoadMessageInfo() == nil {
+			ms.StoreMessageInfo(mi)
+		}
+		return ms
+	}
+	return mi.MessageOf(x)
+}
+
+func (*Message_PeerDataOperationRequestResponseMessage) Descriptor() ([]byte, []int) {
+	return file_github_com_PeterStoica_chatwire_wire_proto_rawDescGZIP(), []int{14, 38}
+}
+
+func (x *Message_PeerDataOperationRequestResponseMessage) GetPeerDataOperationRequestType() Message_PeerDataOperationRequestType {
+	if x != nil && x.PeerDataOperationRequestType != nil {
+		return *x.PeerDataOperationRequestType
+	}
+	return Message_UPLOAD_STICKER
+}
+
+func (x *Message_PeerDataOperationRequestResponseMessage) GetStanzaId() string {
+	if x != nil && x.StanzaId != nil {
+		return *x.StanzaId
+	}
+	return ""
+}
+
+func (x *Message_PeerDataOperationRequestResponseMessage) GetPeerDataOperationResult() []*Message_PeerDataOperationRequestResponseMessage_PeerDataOperationResult {
+	if x != nil {
+		return x.PeerDataOperationResult
 	}
 	return nil
 }
@@ -5764,7 +6017,7 @@ type Message_PinInChatMessage struct {
 
 func (x *Message_PinInChatMessage) Reset() {
 	*x = Message_PinInChatMessage{}
-	mi := &file_github_com_PeterStoica_chatwire_wire_proto_msgTypes[75]
+	mi := &file_github_com_PeterStoica_chatwire_wire_proto_msgTypes[78]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -5776,7 +6029,7 @@ func (x *Message_PinInChatMessage) String() string {
 func (*Message_PinInChatMessage) ProtoMessage() {}
 
 func (x *Message_PinInChatMessage) ProtoReflect() protoreflect.Message {
-	mi := &file_github_com_PeterStoica_chatwire_wire_proto_msgTypes[75]
+	mi := &file_github_com_PeterStoica_chatwire_wire_proto_msgTypes[78]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -5788,7 +6041,7 @@ func (x *Message_PinInChatMessage) ProtoReflect() protoreflect.Message {
 }
 
 func (*Message_PinInChatMessage) Descriptor() ([]byte, []int) {
-	return file_github_com_PeterStoica_chatwire_wire_proto_rawDescGZIP(), []int{14, 36}
+	return file_github_com_PeterStoica_chatwire_wire_proto_rawDescGZIP(), []int{14, 39}
 }
 
 type Message_PollCreationMessage struct {
@@ -5805,7 +6058,7 @@ type Message_PollCreationMessage struct {
 
 func (x *Message_PollCreationMessage) Reset() {
 	*x = Message_PollCreationMessage{}
-	mi := &file_github_com_PeterStoica_chatwire_wire_proto_msgTypes[76]
+	mi := &file_github_com_PeterStoica_chatwire_wire_proto_msgTypes[79]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -5817,7 +6070,7 @@ func (x *Message_PollCreationMessage) String() string {
 func (*Message_PollCreationMessage) ProtoMessage() {}
 
 func (x *Message_PollCreationMessage) ProtoReflect() protoreflect.Message {
-	mi := &file_github_com_PeterStoica_chatwire_wire_proto_msgTypes[76]
+	mi := &file_github_com_PeterStoica_chatwire_wire_proto_msgTypes[79]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -5829,7 +6082,7 @@ func (x *Message_PollCreationMessage) ProtoReflect() protoreflect.Message {
 }
 
 func (*Message_PollCreationMessage) Descriptor() ([]byte, []int) {
-	return file_github_com_PeterStoica_chatwire_wire_proto_rawDescGZIP(), []int{14, 37}
+	return file_github_com_PeterStoica_chatwire_wire_proto_rawDescGZIP(), []int{14, 40}
 }
 
 func (x *Message_PollCreationMessage) GetName() string {
@@ -5884,7 +6137,7 @@ type Message_PollEncValue struct {
 
 func (x *Message_PollEncValue) Reset() {
 	*x = Message_PollEncValue{}
-	mi := &file_github_com_PeterStoica_chatwire_wire_proto_msgTypes[77]
+	mi := &file_github_com_PeterStoica_chatwire_wire_proto_msgTypes[80]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -5896,7 +6149,7 @@ func (x *Message_PollEncValue) String() string {
 func (*Message_PollEncValue) ProtoMessage() {}
 
 func (x *Message_PollEncValue) ProtoReflect() protoreflect.Message {
-	mi := &file_github_com_PeterStoica_chatwire_wire_proto_msgTypes[77]
+	mi := &file_github_com_PeterStoica_chatwire_wire_proto_msgTypes[80]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -5908,7 +6161,7 @@ func (x *Message_PollEncValue) ProtoReflect() protoreflect.Message {
 }
 
 func (*Message_PollEncValue) Descriptor() ([]byte, []int) {
-	return file_github_com_PeterStoica_chatwire_wire_proto_rawDescGZIP(), []int{14, 38}
+	return file_github_com_PeterStoica_chatwire_wire_proto_rawDescGZIP(), []int{14, 41}
 }
 
 func (x *Message_PollEncValue) GetEncPayload() []byte {
@@ -5934,7 +6187,7 @@ type Message_PollResultSnapshotMessage struct {
 
 func (x *Message_PollResultSnapshotMessage) Reset() {
 	*x = Message_PollResultSnapshotMessage{}
-	mi := &file_github_com_PeterStoica_chatwire_wire_proto_msgTypes[78]
+	mi := &file_github_com_PeterStoica_chatwire_wire_proto_msgTypes[81]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -5946,7 +6199,7 @@ func (x *Message_PollResultSnapshotMessage) String() string {
 func (*Message_PollResultSnapshotMessage) ProtoMessage() {}
 
 func (x *Message_PollResultSnapshotMessage) ProtoReflect() protoreflect.Message {
-	mi := &file_github_com_PeterStoica_chatwire_wire_proto_msgTypes[78]
+	mi := &file_github_com_PeterStoica_chatwire_wire_proto_msgTypes[81]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -5958,7 +6211,7 @@ func (x *Message_PollResultSnapshotMessage) ProtoReflect() protoreflect.Message 
 }
 
 func (*Message_PollResultSnapshotMessage) Descriptor() ([]byte, []int) {
-	return file_github_com_PeterStoica_chatwire_wire_proto_rawDescGZIP(), []int{14, 39}
+	return file_github_com_PeterStoica_chatwire_wire_proto_rawDescGZIP(), []int{14, 42}
 }
 
 func (x *Message_PollResultSnapshotMessage) GetContextInfo() *ContextInfo {
@@ -5979,7 +6232,7 @@ type Message_PollUpdateMessage struct {
 
 func (x *Message_PollUpdateMessage) Reset() {
 	*x = Message_PollUpdateMessage{}
-	mi := &file_github_com_PeterStoica_chatwire_wire_proto_msgTypes[79]
+	mi := &file_github_com_PeterStoica_chatwire_wire_proto_msgTypes[82]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -5991,7 +6244,7 @@ func (x *Message_PollUpdateMessage) String() string {
 func (*Message_PollUpdateMessage) ProtoMessage() {}
 
 func (x *Message_PollUpdateMessage) ProtoReflect() protoreflect.Message {
-	mi := &file_github_com_PeterStoica_chatwire_wire_proto_msgTypes[79]
+	mi := &file_github_com_PeterStoica_chatwire_wire_proto_msgTypes[82]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -6003,7 +6256,7 @@ func (x *Message_PollUpdateMessage) ProtoReflect() protoreflect.Message {
 }
 
 func (*Message_PollUpdateMessage) Descriptor() ([]byte, []int) {
-	return file_github_com_PeterStoica_chatwire_wire_proto_rawDescGZIP(), []int{14, 40}
+	return file_github_com_PeterStoica_chatwire_wire_proto_rawDescGZIP(), []int{14, 43}
 }
 
 func (x *Message_PollUpdateMessage) GetPollCreationMessageKey() *MessageKey {
@@ -6036,7 +6289,7 @@ type Message_PollVoteMessage struct {
 
 func (x *Message_PollVoteMessage) Reset() {
 	*x = Message_PollVoteMessage{}
-	mi := &file_github_com_PeterStoica_chatwire_wire_proto_msgTypes[80]
+	mi := &file_github_com_PeterStoica_chatwire_wire_proto_msgTypes[83]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -6048,7 +6301,7 @@ func (x *Message_PollVoteMessage) String() string {
 func (*Message_PollVoteMessage) ProtoMessage() {}
 
 func (x *Message_PollVoteMessage) ProtoReflect() protoreflect.Message {
-	mi := &file_github_com_PeterStoica_chatwire_wire_proto_msgTypes[80]
+	mi := &file_github_com_PeterStoica_chatwire_wire_proto_msgTypes[83]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -6060,7 +6313,7 @@ func (x *Message_PollVoteMessage) ProtoReflect() protoreflect.Message {
 }
 
 func (*Message_PollVoteMessage) Descriptor() ([]byte, []int) {
-	return file_github_com_PeterStoica_chatwire_wire_proto_rawDescGZIP(), []int{14, 41}
+	return file_github_com_PeterStoica_chatwire_wire_proto_rawDescGZIP(), []int{14, 44}
 }
 
 func (x *Message_PollVoteMessage) GetSelectedOptions() [][]byte {
@@ -6079,7 +6332,7 @@ type Message_ProductMessage struct {
 
 func (x *Message_ProductMessage) Reset() {
 	*x = Message_ProductMessage{}
-	mi := &file_github_com_PeterStoica_chatwire_wire_proto_msgTypes[81]
+	mi := &file_github_com_PeterStoica_chatwire_wire_proto_msgTypes[84]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -6091,7 +6344,7 @@ func (x *Message_ProductMessage) String() string {
 func (*Message_ProductMessage) ProtoMessage() {}
 
 func (x *Message_ProductMessage) ProtoReflect() protoreflect.Message {
-	mi := &file_github_com_PeterStoica_chatwire_wire_proto_msgTypes[81]
+	mi := &file_github_com_PeterStoica_chatwire_wire_proto_msgTypes[84]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -6103,7 +6356,7 @@ func (x *Message_ProductMessage) ProtoReflect() protoreflect.Message {
 }
 
 func (*Message_ProductMessage) Descriptor() ([]byte, []int) {
-	return file_github_com_PeterStoica_chatwire_wire_proto_rawDescGZIP(), []int{14, 42}
+	return file_github_com_PeterStoica_chatwire_wire_proto_rawDescGZIP(), []int{14, 45}
 }
 
 func (x *Message_ProductMessage) GetContextInfo() *ContextInfo {
@@ -6114,20 +6367,23 @@ func (x *Message_ProductMessage) GetContextInfo() *ContextInfo {
 }
 
 type Message_ProtocolMessage struct {
-	state                   protoimpl.MessageState           `protogen:"open.v1"`
-	Key                     *MessageKey                      `protobuf:"bytes,1,opt,name=key" json:"key,omitempty"`
-	Type                    *Message_ProtocolMessage_Type    `protobuf:"varint,2,opt,name=type,enum=chatwire.wire.Message_ProtocolMessage_Type" json:"type,omitempty"`
-	HistorySyncNotification *Message_HistorySyncNotification `protobuf:"bytes,6,opt,name=historySyncNotification" json:"historySyncNotification,omitempty"`
-	AppStateSyncKeyShare    *Message_AppStateSyncKeyShare    `protobuf:"bytes,7,opt,name=appStateSyncKeyShare" json:"appStateSyncKeyShare,omitempty"`
-	EditedMessage           *Message                         `protobuf:"bytes,14,opt,name=editedMessage" json:"editedMessage,omitempty"`
-	TimestampMs             *int64                           `protobuf:"varint,15,opt,name=timestampMs" json:"timestampMs,omitempty"`
-	unknownFields           protoimpl.UnknownFields
-	sizeCache               protoimpl.SizeCache
+	state                                   protoimpl.MessageState                           `protogen:"open.v1"`
+	Key                                     *MessageKey                                      `protobuf:"bytes,1,opt,name=key" json:"key,omitempty"`
+	Type                                    *Message_ProtocolMessage_Type                    `protobuf:"varint,2,opt,name=type,enum=chatwire.wire.Message_ProtocolMessage_Type" json:"type,omitempty"`
+	HistorySyncNotification                 *Message_HistorySyncNotification                 `protobuf:"bytes,6,opt,name=historySyncNotification" json:"historySyncNotification,omitempty"`
+	AppStateSyncKeyShare                    *Message_AppStateSyncKeyShare                    `protobuf:"bytes,7,opt,name=appStateSyncKeyShare" json:"appStateSyncKeyShare,omitempty"`
+	AppStateSyncKeyRequest                  *Message_AppStateSyncKeyRequest                  `protobuf:"bytes,8,opt,name=appStateSyncKeyRequest" json:"appStateSyncKeyRequest,omitempty"`
+	EditedMessage                           *Message                                         `protobuf:"bytes,14,opt,name=editedMessage" json:"editedMessage,omitempty"`
+	TimestampMs                             *int64                                           `protobuf:"varint,15,opt,name=timestampMs" json:"timestampMs,omitempty"`
+	PeerDataOperationRequestMessage         *Message_PeerDataOperationRequestMessage         `protobuf:"bytes,16,opt,name=peerDataOperationRequestMessage" json:"peerDataOperationRequestMessage,omitempty"`
+	PeerDataOperationRequestResponseMessage *Message_PeerDataOperationRequestResponseMessage `protobuf:"bytes,17,opt,name=peerDataOperationRequestResponseMessage" json:"peerDataOperationRequestResponseMessage,omitempty"`
+	unknownFields                           protoimpl.UnknownFields
+	sizeCache                               protoimpl.SizeCache
 }
 
 func (x *Message_ProtocolMessage) Reset() {
 	*x = Message_ProtocolMessage{}
-	mi := &file_github_com_PeterStoica_chatwire_wire_proto_msgTypes[82]
+	mi := &file_github_com_PeterStoica_chatwire_wire_proto_msgTypes[85]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -6139,7 +6395,7 @@ func (x *Message_ProtocolMessage) String() string {
 func (*Message_ProtocolMessage) ProtoMessage() {}
 
 func (x *Message_ProtocolMessage) ProtoReflect() protoreflect.Message {
-	mi := &file_github_com_PeterStoica_chatwire_wire_proto_msgTypes[82]
+	mi := &file_github_com_PeterStoica_chatwire_wire_proto_msgTypes[85]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -6151,7 +6407,7 @@ func (x *Message_ProtocolMessage) ProtoReflect() protoreflect.Message {
 }
 
 func (*Message_ProtocolMessage) Descriptor() ([]byte, []int) {
-	return file_github_com_PeterStoica_chatwire_wire_proto_rawDescGZIP(), []int{14, 43}
+	return file_github_com_PeterStoica_chatwire_wire_proto_rawDescGZIP(), []int{14, 46}
 }
 
 func (x *Message_ProtocolMessage) GetKey() *MessageKey {
@@ -6182,6 +6438,13 @@ func (x *Message_ProtocolMessage) GetAppStateSyncKeyShare() *Message_AppStateSyn
 	return nil
 }
 
+func (x *Message_ProtocolMessage) GetAppStateSyncKeyRequest() *Message_AppStateSyncKeyRequest {
+	if x != nil {
+		return x.AppStateSyncKeyRequest
+	}
+	return nil
+}
+
 func (x *Message_ProtocolMessage) GetEditedMessage() *Message {
 	if x != nil {
 		return x.EditedMessage
@@ -6196,6 +6459,20 @@ func (x *Message_ProtocolMessage) GetTimestampMs() int64 {
 	return 0
 }
 
+func (x *Message_ProtocolMessage) GetPeerDataOperationRequestMessage() *Message_PeerDataOperationRequestMessage {
+	if x != nil {
+		return x.PeerDataOperationRequestMessage
+	}
+	return nil
+}
+
+func (x *Message_ProtocolMessage) GetPeerDataOperationRequestResponseMessage() *Message_PeerDataOperationRequestResponseMessage {
+	if x != nil {
+		return x.PeerDataOperationRequestResponseMessage
+	}
+	return nil
+}
+
 type Message_ReactionMessage struct {
 	state             protoimpl.MessageState `protogen:"open.v1"`
 	Key               *MessageKey            `protobuf:"bytes,1,opt,name=key" json:"key,omitempty"`
@@ -6207,7 +6484,7 @@ type Message_ReactionMessage struct {
 
 func (x *Message_ReactionMessage) Reset() {
 	*x = Message_ReactionMessage{}
-	mi := &file_github_com_PeterStoica_chatwire_wire_proto_msgTypes[83]
+	mi := &file_github_com_PeterStoica_chatwire_wire_proto_msgTypes[86]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -6219,7 +6496,7 @@ func (x *Message_ReactionMessage) String() string {
 func (*Message_ReactionMessage) ProtoMessage() {}
 
 func (x *Message_ReactionMessage) ProtoReflect() protoreflect.Message {
-	mi := &file_github_com_PeterStoica_chatwire_wire_proto_msgTypes[83]
+	mi := &file_github_com_PeterStoica_chatwire_wire_proto_msgTypes[86]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -6231,7 +6508,7 @@ func (x *Message_ReactionMessage) ProtoReflect() protoreflect.Message {
 }
 
 func (*Message_ReactionMessage) Descriptor() ([]byte, []int) {
-	return file_github_com_PeterStoica_chatwire_wire_proto_rawDescGZIP(), []int{14, 44}
+	return file_github_com_PeterStoica_chatwire_wire_proto_rawDescGZIP(), []int{14, 47}
 }
 
 func (x *Message_ReactionMessage) GetKey() *MessageKey {
@@ -6264,7 +6541,7 @@ type Message_RequestPhoneNumberMessage struct {
 
 func (x *Message_RequestPhoneNumberMessage) Reset() {
 	*x = Message_RequestPhoneNumberMessage{}
-	mi := &file_github_com_PeterStoica_chatwire_wire_proto_msgTypes[84]
+	mi := &file_github_com_PeterStoica_chatwire_wire_proto_msgTypes[87]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -6276,7 +6553,7 @@ func (x *Message_RequestPhoneNumberMessage) String() string {
 func (*Message_RequestPhoneNumberMessage) ProtoMessage() {}
 
 func (x *Message_RequestPhoneNumberMessage) ProtoReflect() protoreflect.Message {
-	mi := &file_github_com_PeterStoica_chatwire_wire_proto_msgTypes[84]
+	mi := &file_github_com_PeterStoica_chatwire_wire_proto_msgTypes[87]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -6288,7 +6565,7 @@ func (x *Message_RequestPhoneNumberMessage) ProtoReflect() protoreflect.Message 
 }
 
 func (*Message_RequestPhoneNumberMessage) Descriptor() ([]byte, []int) {
-	return file_github_com_PeterStoica_chatwire_wire_proto_rawDescGZIP(), []int{14, 45}
+	return file_github_com_PeterStoica_chatwire_wire_proto_rawDescGZIP(), []int{14, 48}
 }
 
 func (x *Message_RequestPhoneNumberMessage) GetContextInfo() *ContextInfo {
@@ -6310,7 +6587,7 @@ type Message_SecretEncryptedMessage struct {
 
 func (x *Message_SecretEncryptedMessage) Reset() {
 	*x = Message_SecretEncryptedMessage{}
-	mi := &file_github_com_PeterStoica_chatwire_wire_proto_msgTypes[85]
+	mi := &file_github_com_PeterStoica_chatwire_wire_proto_msgTypes[88]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -6322,7 +6599,7 @@ func (x *Message_SecretEncryptedMessage) String() string {
 func (*Message_SecretEncryptedMessage) ProtoMessage() {}
 
 func (x *Message_SecretEncryptedMessage) ProtoReflect() protoreflect.Message {
-	mi := &file_github_com_PeterStoica_chatwire_wire_proto_msgTypes[85]
+	mi := &file_github_com_PeterStoica_chatwire_wire_proto_msgTypes[88]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -6334,7 +6611,7 @@ func (x *Message_SecretEncryptedMessage) ProtoReflect() protoreflect.Message {
 }
 
 func (*Message_SecretEncryptedMessage) Descriptor() ([]byte, []int) {
-	return file_github_com_PeterStoica_chatwire_wire_proto_rawDescGZIP(), []int{14, 46}
+	return file_github_com_PeterStoica_chatwire_wire_proto_rawDescGZIP(), []int{14, 49}
 }
 
 func (x *Message_SecretEncryptedMessage) GetTargetMessageKey() *MessageKey {
@@ -6375,7 +6652,7 @@ type Message_SenderKeyDistributionMessage struct {
 
 func (x *Message_SenderKeyDistributionMessage) Reset() {
 	*x = Message_SenderKeyDistributionMessage{}
-	mi := &file_github_com_PeterStoica_chatwire_wire_proto_msgTypes[86]
+	mi := &file_github_com_PeterStoica_chatwire_wire_proto_msgTypes[89]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -6387,7 +6664,7 @@ func (x *Message_SenderKeyDistributionMessage) String() string {
 func (*Message_SenderKeyDistributionMessage) ProtoMessage() {}
 
 func (x *Message_SenderKeyDistributionMessage) ProtoReflect() protoreflect.Message {
-	mi := &file_github_com_PeterStoica_chatwire_wire_proto_msgTypes[86]
+	mi := &file_github_com_PeterStoica_chatwire_wire_proto_msgTypes[89]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -6399,7 +6676,7 @@ func (x *Message_SenderKeyDistributionMessage) ProtoReflect() protoreflect.Messa
 }
 
 func (*Message_SenderKeyDistributionMessage) Descriptor() ([]byte, []int) {
-	return file_github_com_PeterStoica_chatwire_wire_proto_rawDescGZIP(), []int{14, 47}
+	return file_github_com_PeterStoica_chatwire_wire_proto_rawDescGZIP(), []int{14, 50}
 }
 
 func (x *Message_SenderKeyDistributionMessage) GetGroupId() string {
@@ -6425,7 +6702,7 @@ type Message_SplitPaymentMessage struct {
 
 func (x *Message_SplitPaymentMessage) Reset() {
 	*x = Message_SplitPaymentMessage{}
-	mi := &file_github_com_PeterStoica_chatwire_wire_proto_msgTypes[87]
+	mi := &file_github_com_PeterStoica_chatwire_wire_proto_msgTypes[90]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -6437,7 +6714,7 @@ func (x *Message_SplitPaymentMessage) String() string {
 func (*Message_SplitPaymentMessage) ProtoMessage() {}
 
 func (x *Message_SplitPaymentMessage) ProtoReflect() protoreflect.Message {
-	mi := &file_github_com_PeterStoica_chatwire_wire_proto_msgTypes[87]
+	mi := &file_github_com_PeterStoica_chatwire_wire_proto_msgTypes[90]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -6449,7 +6726,7 @@ func (x *Message_SplitPaymentMessage) ProtoReflect() protoreflect.Message {
 }
 
 func (*Message_SplitPaymentMessage) Descriptor() ([]byte, []int) {
-	return file_github_com_PeterStoica_chatwire_wire_proto_rawDescGZIP(), []int{14, 48}
+	return file_github_com_PeterStoica_chatwire_wire_proto_rawDescGZIP(), []int{14, 51}
 }
 
 func (x *Message_SplitPaymentMessage) GetContextInfo() *ContextInfo {
@@ -6476,7 +6753,7 @@ type Message_StickerMessage struct {
 
 func (x *Message_StickerMessage) Reset() {
 	*x = Message_StickerMessage{}
-	mi := &file_github_com_PeterStoica_chatwire_wire_proto_msgTypes[88]
+	mi := &file_github_com_PeterStoica_chatwire_wire_proto_msgTypes[91]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -6488,7 +6765,7 @@ func (x *Message_StickerMessage) String() string {
 func (*Message_StickerMessage) ProtoMessage() {}
 
 func (x *Message_StickerMessage) ProtoReflect() protoreflect.Message {
-	mi := &file_github_com_PeterStoica_chatwire_wire_proto_msgTypes[88]
+	mi := &file_github_com_PeterStoica_chatwire_wire_proto_msgTypes[91]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -6500,7 +6777,7 @@ func (x *Message_StickerMessage) ProtoReflect() protoreflect.Message {
 }
 
 func (*Message_StickerMessage) Descriptor() ([]byte, []int) {
-	return file_github_com_PeterStoica_chatwire_wire_proto_rawDescGZIP(), []int{14, 49}
+	return file_github_com_PeterStoica_chatwire_wire_proto_rawDescGZIP(), []int{14, 52}
 }
 
 func (x *Message_StickerMessage) GetUrl() string {
@@ -6581,7 +6858,7 @@ type Message_StickerPackMessage struct {
 
 func (x *Message_StickerPackMessage) Reset() {
 	*x = Message_StickerPackMessage{}
-	mi := &file_github_com_PeterStoica_chatwire_wire_proto_msgTypes[89]
+	mi := &file_github_com_PeterStoica_chatwire_wire_proto_msgTypes[92]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -6593,7 +6870,7 @@ func (x *Message_StickerPackMessage) String() string {
 func (*Message_StickerPackMessage) ProtoMessage() {}
 
 func (x *Message_StickerPackMessage) ProtoReflect() protoreflect.Message {
-	mi := &file_github_com_PeterStoica_chatwire_wire_proto_msgTypes[89]
+	mi := &file_github_com_PeterStoica_chatwire_wire_proto_msgTypes[92]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -6605,7 +6882,7 @@ func (x *Message_StickerPackMessage) ProtoReflect() protoreflect.Message {
 }
 
 func (*Message_StickerPackMessage) Descriptor() ([]byte, []int) {
-	return file_github_com_PeterStoica_chatwire_wire_proto_rawDescGZIP(), []int{14, 50}
+	return file_github_com_PeterStoica_chatwire_wire_proto_rawDescGZIP(), []int{14, 53}
 }
 
 func (x *Message_StickerPackMessage) GetFileLength() uint64 {
@@ -6666,7 +6943,7 @@ type Message_TemplateButtonReplyMessage struct {
 
 func (x *Message_TemplateButtonReplyMessage) Reset() {
 	*x = Message_TemplateButtonReplyMessage{}
-	mi := &file_github_com_PeterStoica_chatwire_wire_proto_msgTypes[90]
+	mi := &file_github_com_PeterStoica_chatwire_wire_proto_msgTypes[93]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -6678,7 +6955,7 @@ func (x *Message_TemplateButtonReplyMessage) String() string {
 func (*Message_TemplateButtonReplyMessage) ProtoMessage() {}
 
 func (x *Message_TemplateButtonReplyMessage) ProtoReflect() protoreflect.Message {
-	mi := &file_github_com_PeterStoica_chatwire_wire_proto_msgTypes[90]
+	mi := &file_github_com_PeterStoica_chatwire_wire_proto_msgTypes[93]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -6690,7 +6967,7 @@ func (x *Message_TemplateButtonReplyMessage) ProtoReflect() protoreflect.Message
 }
 
 func (*Message_TemplateButtonReplyMessage) Descriptor() ([]byte, []int) {
-	return file_github_com_PeterStoica_chatwire_wire_proto_rawDescGZIP(), []int{14, 51}
+	return file_github_com_PeterStoica_chatwire_wire_proto_rawDescGZIP(), []int{14, 54}
 }
 
 func (x *Message_TemplateButtonReplyMessage) GetContextInfo() *ContextInfo {
@@ -6709,7 +6986,7 @@ type Message_TemplateMessage struct {
 
 func (x *Message_TemplateMessage) Reset() {
 	*x = Message_TemplateMessage{}
-	mi := &file_github_com_PeterStoica_chatwire_wire_proto_msgTypes[91]
+	mi := &file_github_com_PeterStoica_chatwire_wire_proto_msgTypes[94]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -6721,7 +6998,7 @@ func (x *Message_TemplateMessage) String() string {
 func (*Message_TemplateMessage) ProtoMessage() {}
 
 func (x *Message_TemplateMessage) ProtoReflect() protoreflect.Message {
-	mi := &file_github_com_PeterStoica_chatwire_wire_proto_msgTypes[91]
+	mi := &file_github_com_PeterStoica_chatwire_wire_proto_msgTypes[94]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -6733,7 +7010,7 @@ func (x *Message_TemplateMessage) ProtoReflect() protoreflect.Message {
 }
 
 func (*Message_TemplateMessage) Descriptor() ([]byte, []int) {
-	return file_github_com_PeterStoica_chatwire_wire_proto_rawDescGZIP(), []int{14, 52}
+	return file_github_com_PeterStoica_chatwire_wire_proto_rawDescGZIP(), []int{14, 55}
 }
 
 func (x *Message_TemplateMessage) GetContextInfo() *ContextInfo {
@@ -6763,7 +7040,7 @@ type Message_VideoMessage struct {
 
 func (x *Message_VideoMessage) Reset() {
 	*x = Message_VideoMessage{}
-	mi := &file_github_com_PeterStoica_chatwire_wire_proto_msgTypes[92]
+	mi := &file_github_com_PeterStoica_chatwire_wire_proto_msgTypes[95]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -6775,7 +7052,7 @@ func (x *Message_VideoMessage) String() string {
 func (*Message_VideoMessage) ProtoMessage() {}
 
 func (x *Message_VideoMessage) ProtoReflect() protoreflect.Message {
-	mi := &file_github_com_PeterStoica_chatwire_wire_proto_msgTypes[92]
+	mi := &file_github_com_PeterStoica_chatwire_wire_proto_msgTypes[95]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -6787,7 +7064,7 @@ func (x *Message_VideoMessage) ProtoReflect() protoreflect.Message {
 }
 
 func (*Message_VideoMessage) Descriptor() ([]byte, []int) {
-	return file_github_com_PeterStoica_chatwire_wire_proto_rawDescGZIP(), []int{14, 53}
+	return file_github_com_PeterStoica_chatwire_wire_proto_rawDescGZIP(), []int{14, 56}
 }
 
 func (x *Message_VideoMessage) GetUrl() string {
@@ -6874,6 +7151,219 @@ func (x *Message_VideoMessage) GetViewOnce() bool {
 	return false
 }
 
+type Message_PeerDataOperationRequestMessage_HistorySyncOnDemandRequest struct {
+	state                protoimpl.MessageState `protogen:"open.v1"`
+	ChatJid              *string                `protobuf:"bytes,1,opt,name=chatJid" json:"chatJid,omitempty"`
+	OldestMsgId          *string                `protobuf:"bytes,2,opt,name=oldestMsgId" json:"oldestMsgId,omitempty"`
+	OldestMsgFromMe      *bool                  `protobuf:"varint,3,opt,name=oldestMsgFromMe" json:"oldestMsgFromMe,omitempty"`
+	OnDemandMsgCount     *int32                 `protobuf:"varint,4,opt,name=onDemandMsgCount" json:"onDemandMsgCount,omitempty"`
+	OldestMsgTimestampMs *int64                 `protobuf:"varint,5,opt,name=oldestMsgTimestampMs" json:"oldestMsgTimestampMs,omitempty"`
+	AccountLid           *string                `protobuf:"bytes,6,opt,name=accountLid" json:"accountLid,omitempty"`
+	unknownFields        protoimpl.UnknownFields
+	sizeCache            protoimpl.SizeCache
+}
+
+func (x *Message_PeerDataOperationRequestMessage_HistorySyncOnDemandRequest) Reset() {
+	*x = Message_PeerDataOperationRequestMessage_HistorySyncOnDemandRequest{}
+	mi := &file_github_com_PeterStoica_chatwire_wire_proto_msgTypes[96]
+	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+	ms.StoreMessageInfo(mi)
+}
+
+func (x *Message_PeerDataOperationRequestMessage_HistorySyncOnDemandRequest) String() string {
+	return protoimpl.X.MessageStringOf(x)
+}
+
+func (*Message_PeerDataOperationRequestMessage_HistorySyncOnDemandRequest) ProtoMessage() {}
+
+func (x *Message_PeerDataOperationRequestMessage_HistorySyncOnDemandRequest) ProtoReflect() protoreflect.Message {
+	mi := &file_github_com_PeterStoica_chatwire_wire_proto_msgTypes[96]
+	if x != nil {
+		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+		if ms.LoadMessageInfo() == nil {
+			ms.StoreMessageInfo(mi)
+		}
+		return ms
+	}
+	return mi.MessageOf(x)
+}
+
+func (*Message_PeerDataOperationRequestMessage_HistorySyncOnDemandRequest) Descriptor() ([]byte, []int) {
+	return file_github_com_PeterStoica_chatwire_wire_proto_rawDescGZIP(), []int{14, 37, 0}
+}
+
+func (x *Message_PeerDataOperationRequestMessage_HistorySyncOnDemandRequest) GetChatJid() string {
+	if x != nil && x.ChatJid != nil {
+		return *x.ChatJid
+	}
+	return ""
+}
+
+func (x *Message_PeerDataOperationRequestMessage_HistorySyncOnDemandRequest) GetOldestMsgId() string {
+	if x != nil && x.OldestMsgId != nil {
+		return *x.OldestMsgId
+	}
+	return ""
+}
+
+func (x *Message_PeerDataOperationRequestMessage_HistorySyncOnDemandRequest) GetOldestMsgFromMe() bool {
+	if x != nil && x.OldestMsgFromMe != nil {
+		return *x.OldestMsgFromMe
+	}
+	return false
+}
+
+func (x *Message_PeerDataOperationRequestMessage_HistorySyncOnDemandRequest) GetOnDemandMsgCount() int32 {
+	if x != nil && x.OnDemandMsgCount != nil {
+		return *x.OnDemandMsgCount
+	}
+	return 0
+}
+
+func (x *Message_PeerDataOperationRequestMessage_HistorySyncOnDemandRequest) GetOldestMsgTimestampMs() int64 {
+	if x != nil && x.OldestMsgTimestampMs != nil {
+		return *x.OldestMsgTimestampMs
+	}
+	return 0
+}
+
+func (x *Message_PeerDataOperationRequestMessage_HistorySyncOnDemandRequest) GetAccountLid() string {
+	if x != nil && x.AccountLid != nil {
+		return *x.AccountLid
+	}
+	return ""
+}
+
+type Message_PeerDataOperationRequestMessage_PlaceholderMessageResendRequest struct {
+	state         protoimpl.MessageState `protogen:"open.v1"`
+	MessageKey    *MessageKey            `protobuf:"bytes,1,opt,name=messageKey" json:"messageKey,omitempty"`
+	unknownFields protoimpl.UnknownFields
+	sizeCache     protoimpl.SizeCache
+}
+
+func (x *Message_PeerDataOperationRequestMessage_PlaceholderMessageResendRequest) Reset() {
+	*x = Message_PeerDataOperationRequestMessage_PlaceholderMessageResendRequest{}
+	mi := &file_github_com_PeterStoica_chatwire_wire_proto_msgTypes[97]
+	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+	ms.StoreMessageInfo(mi)
+}
+
+func (x *Message_PeerDataOperationRequestMessage_PlaceholderMessageResendRequest) String() string {
+	return protoimpl.X.MessageStringOf(x)
+}
+
+func (*Message_PeerDataOperationRequestMessage_PlaceholderMessageResendRequest) ProtoMessage() {}
+
+func (x *Message_PeerDataOperationRequestMessage_PlaceholderMessageResendRequest) ProtoReflect() protoreflect.Message {
+	mi := &file_github_com_PeterStoica_chatwire_wire_proto_msgTypes[97]
+	if x != nil {
+		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+		if ms.LoadMessageInfo() == nil {
+			ms.StoreMessageInfo(mi)
+		}
+		return ms
+	}
+	return mi.MessageOf(x)
+}
+
+func (*Message_PeerDataOperationRequestMessage_PlaceholderMessageResendRequest) Descriptor() ([]byte, []int) {
+	return file_github_com_PeterStoica_chatwire_wire_proto_rawDescGZIP(), []int{14, 37, 1}
+}
+
+func (x *Message_PeerDataOperationRequestMessage_PlaceholderMessageResendRequest) GetMessageKey() *MessageKey {
+	if x != nil {
+		return x.MessageKey
+	}
+	return nil
+}
+
+type Message_PeerDataOperationRequestResponseMessage_PeerDataOperationResult struct {
+	state                            protoimpl.MessageState                                                                                    `protogen:"open.v1"`
+	PlaceholderMessageResendResponse *Message_PeerDataOperationRequestResponseMessage_PeerDataOperationResult_PlaceholderMessageResendResponse `protobuf:"bytes,4,opt,name=placeholderMessageResendResponse" json:"placeholderMessageResendResponse,omitempty"`
+	unknownFields                    protoimpl.UnknownFields
+	sizeCache                        protoimpl.SizeCache
+}
+
+func (x *Message_PeerDataOperationRequestResponseMessage_PeerDataOperationResult) Reset() {
+	*x = Message_PeerDataOperationRequestResponseMessage_PeerDataOperationResult{}
+	mi := &file_github_com_PeterStoica_chatwire_wire_proto_msgTypes[98]
+	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+	ms.StoreMessageInfo(mi)
+}
+
+func (x *Message_PeerDataOperationRequestResponseMessage_PeerDataOperationResult) String() string {
+	return protoimpl.X.MessageStringOf(x)
+}
+
+func (*Message_PeerDataOperationRequestResponseMessage_PeerDataOperationResult) ProtoMessage() {}
+
+func (x *Message_PeerDataOperationRequestResponseMessage_PeerDataOperationResult) ProtoReflect() protoreflect.Message {
+	mi := &file_github_com_PeterStoica_chatwire_wire_proto_msgTypes[98]
+	if x != nil {
+		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+		if ms.LoadMessageInfo() == nil {
+			ms.StoreMessageInfo(mi)
+		}
+		return ms
+	}
+	return mi.MessageOf(x)
+}
+
+func (*Message_PeerDataOperationRequestResponseMessage_PeerDataOperationResult) Descriptor() ([]byte, []int) {
+	return file_github_com_PeterStoica_chatwire_wire_proto_rawDescGZIP(), []int{14, 38, 0}
+}
+
+func (x *Message_PeerDataOperationRequestResponseMessage_PeerDataOperationResult) GetPlaceholderMessageResendResponse() *Message_PeerDataOperationRequestResponseMessage_PeerDataOperationResult_PlaceholderMessageResendResponse {
+	if x != nil {
+		return x.PlaceholderMessageResendResponse
+	}
+	return nil
+}
+
+type Message_PeerDataOperationRequestResponseMessage_PeerDataOperationResult_PlaceholderMessageResendResponse struct {
+	state               protoimpl.MessageState `protogen:"open.v1"`
+	WebMessageInfoBytes []byte                 `protobuf:"bytes,1,opt,name=webMessageInfoBytes" json:"webMessageInfoBytes,omitempty"`
+	unknownFields       protoimpl.UnknownFields
+	sizeCache           protoimpl.SizeCache
+}
+
+func (x *Message_PeerDataOperationRequestResponseMessage_PeerDataOperationResult_PlaceholderMessageResendResponse) Reset() {
+	*x = Message_PeerDataOperationRequestResponseMessage_PeerDataOperationResult_PlaceholderMessageResendResponse{}
+	mi := &file_github_com_PeterStoica_chatwire_wire_proto_msgTypes[99]
+	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+	ms.StoreMessageInfo(mi)
+}
+
+func (x *Message_PeerDataOperationRequestResponseMessage_PeerDataOperationResult_PlaceholderMessageResendResponse) String() string {
+	return protoimpl.X.MessageStringOf(x)
+}
+
+func (*Message_PeerDataOperationRequestResponseMessage_PeerDataOperationResult_PlaceholderMessageResendResponse) ProtoMessage() {
+}
+
+func (x *Message_PeerDataOperationRequestResponseMessage_PeerDataOperationResult_PlaceholderMessageResendResponse) ProtoReflect() protoreflect.Message {
+	mi := &file_github_com_PeterStoica_chatwire_wire_proto_msgTypes[99]
+	if x != nil {
+		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+		if ms.LoadMessageInfo() == nil {
+			ms.StoreMessageInfo(mi)
+		}
+		return ms
+	}
+	return mi.MessageOf(x)
+}
+
+func (*Message_PeerDataOperationRequestResponseMessage_PeerDataOperationResult_PlaceholderMessageResendResponse) Descriptor() ([]byte, []int) {
+	return file_github_com_PeterStoica_chatwire_wire_proto_rawDescGZIP(), []int{14, 38, 0, 0}
+}
+
+func (x *Message_PeerDataOperationRequestResponseMessage_PeerDataOperationResult_PlaceholderMessageResendResponse) GetWebMessageInfoBytes() []byte {
+	if x != nil {
+		return x.WebMessageInfoBytes
+	}
+	return nil
+}
+
 type Message_PollCreationMessage_Option struct {
 	state         protoimpl.MessageState `protogen:"open.v1"`
 	OptionName    *string                `protobuf:"bytes,1,opt,name=optionName" json:"optionName,omitempty"`
@@ -6883,7 +7373,7 @@ type Message_PollCreationMessage_Option struct {
 
 func (x *Message_PollCreationMessage_Option) Reset() {
 	*x = Message_PollCreationMessage_Option{}
-	mi := &file_github_com_PeterStoica_chatwire_wire_proto_msgTypes[93]
+	mi := &file_github_com_PeterStoica_chatwire_wire_proto_msgTypes[100]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -6895,7 +7385,7 @@ func (x *Message_PollCreationMessage_Option) String() string {
 func (*Message_PollCreationMessage_Option) ProtoMessage() {}
 
 func (x *Message_PollCreationMessage_Option) ProtoReflect() protoreflect.Message {
-	mi := &file_github_com_PeterStoica_chatwire_wire_proto_msgTypes[93]
+	mi := &file_github_com_PeterStoica_chatwire_wire_proto_msgTypes[100]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -6907,7 +7397,7 @@ func (x *Message_PollCreationMessage_Option) ProtoReflect() protoreflect.Message
 }
 
 func (*Message_PollCreationMessage_Option) Descriptor() ([]byte, []int) {
-	return file_github_com_PeterStoica_chatwire_wire_proto_rawDescGZIP(), []int{14, 37, 0}
+	return file_github_com_PeterStoica_chatwire_wire_proto_rawDescGZIP(), []int{14, 40, 0}
 }
 
 func (x *Message_PollCreationMessage_Option) GetOptionName() string {
@@ -6926,7 +7416,7 @@ type SyncActionValue_ArchiveChatAction struct {
 
 func (x *SyncActionValue_ArchiveChatAction) Reset() {
 	*x = SyncActionValue_ArchiveChatAction{}
-	mi := &file_github_com_PeterStoica_chatwire_wire_proto_msgTypes[94]
+	mi := &file_github_com_PeterStoica_chatwire_wire_proto_msgTypes[101]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -6938,7 +7428,7 @@ func (x *SyncActionValue_ArchiveChatAction) String() string {
 func (*SyncActionValue_ArchiveChatAction) ProtoMessage() {}
 
 func (x *SyncActionValue_ArchiveChatAction) ProtoReflect() protoreflect.Message {
-	mi := &file_github_com_PeterStoica_chatwire_wire_proto_msgTypes[94]
+	mi := &file_github_com_PeterStoica_chatwire_wire_proto_msgTypes[101]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -6970,7 +7460,7 @@ type SyncActionValue_ContactAction struct {
 
 func (x *SyncActionValue_ContactAction) Reset() {
 	*x = SyncActionValue_ContactAction{}
-	mi := &file_github_com_PeterStoica_chatwire_wire_proto_msgTypes[95]
+	mi := &file_github_com_PeterStoica_chatwire_wire_proto_msgTypes[102]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -6982,7 +7472,7 @@ func (x *SyncActionValue_ContactAction) String() string {
 func (*SyncActionValue_ContactAction) ProtoMessage() {}
 
 func (x *SyncActionValue_ContactAction) ProtoReflect() protoreflect.Message {
-	mi := &file_github_com_PeterStoica_chatwire_wire_proto_msgTypes[95]
+	mi := &file_github_com_PeterStoica_chatwire_wire_proto_msgTypes[102]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -7021,7 +7511,7 @@ type SyncActionValue_MuteAction struct {
 
 func (x *SyncActionValue_MuteAction) Reset() {
 	*x = SyncActionValue_MuteAction{}
-	mi := &file_github_com_PeterStoica_chatwire_wire_proto_msgTypes[96]
+	mi := &file_github_com_PeterStoica_chatwire_wire_proto_msgTypes[103]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -7033,7 +7523,7 @@ func (x *SyncActionValue_MuteAction) String() string {
 func (*SyncActionValue_MuteAction) ProtoMessage() {}
 
 func (x *SyncActionValue_MuteAction) ProtoReflect() protoreflect.Message {
-	mi := &file_github_com_PeterStoica_chatwire_wire_proto_msgTypes[96]
+	mi := &file_github_com_PeterStoica_chatwire_wire_proto_msgTypes[103]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -7071,7 +7561,7 @@ type SyncActionValue_PinAction struct {
 
 func (x *SyncActionValue_PinAction) Reset() {
 	*x = SyncActionValue_PinAction{}
-	mi := &file_github_com_PeterStoica_chatwire_wire_proto_msgTypes[97]
+	mi := &file_github_com_PeterStoica_chatwire_wire_proto_msgTypes[104]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -7083,7 +7573,7 @@ func (x *SyncActionValue_PinAction) String() string {
 func (*SyncActionValue_PinAction) ProtoMessage() {}
 
 func (x *SyncActionValue_PinAction) ProtoReflect() protoreflect.Message {
-	mi := &file_github_com_PeterStoica_chatwire_wire_proto_msgTypes[97]
+	mi := &file_github_com_PeterStoica_chatwire_wire_proto_msgTypes[104]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -7206,7 +7696,7 @@ const file_github_com_PeterStoica_chatwire_wire_proto_rawDesc = "" +
 	"\rGENERAL_ERROR\x10\x00\x12\v\n" +
 	"\aSUCCESS\x10\x01\x12\r\n" +
 	"\tNOT_FOUND\x10\x02\x12\x14\n" +
-	"\x10DECRYPTION_ERROR\x10\x03\"\xaeb\n" +
+	"\x10DECRYPTION_ERROR\x10\x03\"\xbar\n" +
 	"\aMessage\x12\x14\n" +
 	"\fconversation\x18\x01 \x01(\t\x12Y\n" +
 	"\x1csenderKeyDistributionMessage\x18\x02 \x01(\v23.chatwire.wire.Message.SenderKeyDistributionMessage\x129\n" +
@@ -7290,7 +7780,9 @@ const file_github_com_PeterStoica_chatwire_wire_proto_rawDesc = "" +
 	"\akeyData\x18\x01 \x01(\f\x12\x11\n" +
 	"\ttimestamp\x18\x03 \x01(\x03\x1a\"\n" +
 	"\x11AppStateSyncKeyId\x12\r\n" +
-	"\x05keyId\x18\x01 \x01(\f\x1aL\n" +
+	"\x05keyId\x18\x01 \x01(\f\x1aR\n" +
+	"\x16AppStateSyncKeyRequest\x128\n" +
+	"\x06keyIds\x18\x01 \x03(\v2(.chatwire.wire.Message.AppStateSyncKeyId\x1aL\n" +
 	"\x14AppStateSyncKeyShare\x124\n" +
 	"\x04keys\x18\x01 \x03(\v2&.chatwire.wire.Message.AppStateSyncKey\x1a\x8e\x02\n" +
 	"\fAudioMessage\x12\v\n" +
@@ -7429,7 +7921,30 @@ const file_github_com_PeterStoica_chatwire_wire_proto_rawDesc = "" +
 	"\x1fNewsletterFollowerInviteMessage\x12/\n" +
 	"\vcontextInfo\x18\x05 \x01(\v2\x1a.chatwire.wire.ContextInfo\x1a?\n" +
 	"\fOrderMessage\x12/\n" +
-	"\vcontextInfo\x18\x11 \x01(\v2\x1a.chatwire.wire.ContextInfo\x1a\x12\n" +
+	"\vcontextInfo\x18\x11 \x01(\v2\x1a.chatwire.wire.ContextInfo\x1a\xf0\x04\n" +
+	"\x1fPeerDataOperationRequestMessage\x12Y\n" +
+	"\x1cpeerDataOperationRequestType\x18\x01 \x01(\x0e23.chatwire.wire.Message.PeerDataOperationRequestType\x12u\n" +
+	"\x1ahistorySyncOnDemandRequest\x18\x04 \x01(\v2Q.chatwire.wire.Message.PeerDataOperationRequestMessage.HistorySyncOnDemandRequest\x12\x7f\n" +
+	"\x1fplaceholderMessageResendRequest\x18\x05 \x03(\v2V.chatwire.wire.Message.PeerDataOperationRequestMessage.PlaceholderMessageResendRequest\x1a\xa7\x01\n" +
+	"\x1aHistorySyncOnDemandRequest\x12\x0f\n" +
+	"\achatJid\x18\x01 \x01(\t\x12\x13\n" +
+	"\voldestMsgId\x18\x02 \x01(\t\x12\x17\n" +
+	"\x0foldestMsgFromMe\x18\x03 \x01(\b\x12\x18\n" +
+	"\x10onDemandMsgCount\x18\x04 \x01(\x05\x12\x1c\n" +
+	"\x14oldestMsgTimestampMs\x18\x05 \x01(\x03\x12\x12\n" +
+	"\n" +
+	"accountLid\x18\x06 \x01(\t\x1aP\n" +
+	"\x1fPlaceholderMessageResendRequest\x12-\n" +
+	"\n" +
+	"messageKey\x18\x01 \x01(\v2\x19.chatwire.wire.MessageKey\x1a\x90\x04\n" +
+	"'PeerDataOperationRequestResponseMessage\x12Y\n" +
+	"\x1cpeerDataOperationRequestType\x18\x01 \x01(\x0e23.chatwire.wire.Message.PeerDataOperationRequestType\x12\x10\n" +
+	"\bstanzaId\x18\x02 \x01(\t\x12w\n" +
+	"\x17peerDataOperationResult\x18\x03 \x03(\v2V.chatwire.wire.Message.PeerDataOperationRequestResponseMessage.PeerDataOperationResult\x1a\xfe\x01\n" +
+	"\x17PeerDataOperationResult\x12\xa1\x01\n" +
+	" placeholderMessageResendResponse\x18\x04 \x01(\v2w.chatwire.wire.Message.PeerDataOperationRequestResponseMessage.PeerDataOperationResult.PlaceholderMessageResendResponse\x1a?\n" +
+	" PlaceholderMessageResendResponse\x12\x1b\n" +
+	"\x13webMessageInfoBytes\x18\x01 \x01(\f\x1a\x12\n" +
 	"\x10PinInChatMessage\x1a\xca\x02\n" +
 	"\x13PollCreationMessage\x12\f\n" +
 	"\x04name\x18\x02 \x01(\t\x12B\n" +
@@ -7454,15 +7969,17 @@ const file_github_com_PeterStoica_chatwire_wire_proto_rawDesc = "" +
 	"\x0fPollVoteMessage\x12\x17\n" +
 	"\x0fselectedOptions\x18\x01 \x03(\f\x1aA\n" +
 	"\x0eProductMessage\x12/\n" +
-	"\vcontextInfo\x18\x11 \x01(\v2\x1a.chatwire.wire.ContextInfo\x1a\xea\n" +
-	"\n" +
+	"\vcontextInfo\x18\x11 \x01(\v2\x1a.chatwire.wire.ContextInfo\x1a\x8b\r\n" +
 	"\x0fProtocolMessage\x12&\n" +
 	"\x03key\x18\x01 \x01(\v2\x19.chatwire.wire.MessageKey\x129\n" +
 	"\x04type\x18\x02 \x01(\x0e2+.chatwire.wire.Message.ProtocolMessage.Type\x12O\n" +
 	"\x17historySyncNotification\x18\x06 \x01(\v2..chatwire.wire.Message.HistorySyncNotification\x12I\n" +
-	"\x14appStateSyncKeyShare\x18\a \x01(\v2+.chatwire.wire.Message.AppStateSyncKeyShare\x12-\n" +
+	"\x14appStateSyncKeyShare\x18\a \x01(\v2+.chatwire.wire.Message.AppStateSyncKeyShare\x12M\n" +
+	"\x16appStateSyncKeyRequest\x18\b \x01(\v2-.chatwire.wire.Message.AppStateSyncKeyRequest\x12-\n" +
 	"\reditedMessage\x18\x0e \x01(\v2\x16.chatwire.wire.Message\x12\x13\n" +
-	"\vtimestampMs\x18\x0f \x01(\x03\"\x93\b\n" +
+	"\vtimestampMs\x18\x0f \x01(\x03\x12_\n" +
+	"\x1fpeerDataOperationRequestMessage\x18\x10 \x01(\v26.chatwire.wire.Message.PeerDataOperationRequestMessage\x12o\n" +
+	"'peerDataOperationRequestResponseMessage\x18\x11 \x01(\v2>.chatwire.wire.Message.PeerDataOperationRequestResponseMessage\"\x93\b\n" +
 	"\x04Type\x12\n" +
 	"\n" +
 	"\x06REVOKE\x10\x00\x12\x15\n" +
@@ -7582,7 +8099,24 @@ const file_github_com_PeterStoica_chatwire_wire_proto_rawDesc = "" +
 	"\tON_DEMAND\x10\x06\x12\x0e\n" +
 	"\n" +
 	"NO_HISTORY\x10\a\x12\x19\n" +
-	"\x15MESSAGE_ACCESS_STATUS\x10\b\"3\n" +
+	"\x15MESSAGE_ACCESS_STATUS\x10\b\"\x8e\x04\n" +
+	"\x1cPeerDataOperationRequestType\x12\x12\n" +
+	"\x0eUPLOAD_STICKER\x10\x00\x12!\n" +
+	"\x1dSEND_RECENT_STICKER_BOOTSTRAP\x10\x01\x12\x19\n" +
+	"\x15GENERATE_LINK_PREVIEW\x10\x02\x12\x1a\n" +
+	"\x16HISTORY_SYNC_ON_DEMAND\x10\x03\x12\x1e\n" +
+	"\x1aPLACEHOLDER_MESSAGE_RESEND\x10\x04\x12\x1e\n" +
+	"\x1aWAFFLE_LINKING_NONCE_FETCH\x10\x05\x12\x1f\n" +
+	"\x1bFULL_HISTORY_SYNC_ON_DEMAND\x10\x06\x12\x1e\n" +
+	"\x1aCOMPANION_META_NONCE_FETCH\x10\a\x12+\n" +
+	"'COMPANION_SYNCD_SNAPSHOT_FATAL_RECOVERY\x10\b\x12(\n" +
+	"$COMPANION_CANONICAL_USER_NONCE_FETCH\x10\t\x12\x1c\n" +
+	"\x18HISTORY_SYNC_CHUNK_RETRY\x10\n" +
+	"\x12\x16\n" +
+	"\x12GALAXY_FLOW_ACTION\x10\v\x12,\n" +
+	"(BUSINESS_BROADCAST_INSIGHTS_DELIVERED_TO\x10\f\x12'\n" +
+	"#BUSINESS_BROADCAST_INSIGHTS_REFRESH\x10\r\x12\x1b\n" +
+	"\x17CONTACT_REFRESH_REQUEST\x10\x0e\"3\n" +
 	"\x0fPollContentType\x12\v\n" +
 	"\aUNKNOWN\x10\x00\x12\b\n" +
 	"\x04TEXT\x10\x01\x12\t\n" +
@@ -7740,13 +8274,14 @@ func file_github_com_PeterStoica_chatwire_wire_proto_rawDescGZIP() []byte {
 	return file_github_com_PeterStoica_chatwire_wire_proto_rawDescData
 }
 
-var file_github_com_PeterStoica_chatwire_wire_proto_enumTypes = make([]protoimpl.EnumInfo, 10)
-var file_github_com_PeterStoica_chatwire_wire_proto_msgTypes = make([]protoimpl.MessageInfo, 98)
+var file_github_com_PeterStoica_chatwire_wire_proto_enumTypes = make([]protoimpl.EnumInfo, 11)
+var file_github_com_PeterStoica_chatwire_wire_proto_msgTypes = make([]protoimpl.MessageInfo, 105)
 var file_github_com_PeterStoica_chatwire_wire_proto_goTypes = []any{
 	(ADVEncryptionType)(0),
 	(HistorySync_HistorySyncType)(0),
 	(MediaRetryNotification_ResultType)(0),
 	(Message_HistorySyncType)(0),
+	(Message_PeerDataOperationRequestType)(0),
 	(Message_PollContentType)(0),
 	(Message_PollType)(0),
 	(Message_ProtocolMessage_Type)(0),
@@ -7796,6 +8331,7 @@ var file_github_com_PeterStoica_chatwire_wire_proto_goTypes = []any{
 	(*Message_AppStateSyncKey)(nil),
 	(*Message_AppStateSyncKeyData)(nil),
 	(*Message_AppStateSyncKeyId)(nil),
+	(*Message_AppStateSyncKeyRequest)(nil),
 	(*Message_AppStateSyncKeyShare)(nil),
 	(*Message_AudioMessage)(nil),
 	(*Message_ButtonsMessage)(nil),
@@ -7828,6 +8364,8 @@ var file_github_com_PeterStoica_chatwire_wire_proto_goTypes = []any{
 	(*Message_NewsletterAdminInviteMessage)(nil),
 	(*Message_NewsletterFollowerInviteMessage)(nil),
 	(*Message_OrderMessage)(nil),
+	(*Message_PeerDataOperationRequestMessage)(nil),
+	(*Message_PeerDataOperationRequestResponseMessage)(nil),
 	(*Message_PinInChatMessage)(nil),
 	(*Message_PollCreationMessage)(nil),
 	(*Message_PollEncValue)(nil),
@@ -7846,6 +8384,10 @@ var file_github_com_PeterStoica_chatwire_wire_proto_goTypes = []any{
 	(*Message_TemplateButtonReplyMessage)(nil),
 	(*Message_TemplateMessage)(nil),
 	(*Message_VideoMessage)(nil),
+	(*Message_PeerDataOperationRequestMessage_HistorySyncOnDemandRequest)(nil),
+	(*Message_PeerDataOperationRequestMessage_PlaceholderMessageResendRequest)(nil),
+	(*Message_PeerDataOperationRequestResponseMessage_PeerDataOperationResult)(nil),
+	(*Message_PeerDataOperationRequestResponseMessage_PeerDataOperationResult_PlaceholderMessageResendResponse)(nil),
 	(*Message_PollCreationMessage_Option)(nil),
 	(*SyncActionValue_ArchiveChatAction)(nil),
 	(*SyncActionValue_ContactAction)(nil),
@@ -7856,176 +8398,187 @@ var file_github_com_PeterStoica_chatwire_wire_proto_depIdxs = []int32{
 	0,
 	0,
 	0,
-	15,
-	48,
-	24,
-	19,
-	1,
 	16,
-	32,
-	29,
-	20,
-	27,
-	90,
-	2,
-	96,
-	71,
-	58,
-	78,
-	67,
-	61,
-	54,
-	102,
-	57,
-	92,
-	59,
-	77,
-	101,
-	98,
-	69,
-	100,
-	91,
-	60,
-	26,
-	75,
-	68,
-	84,
-	76,
-	68,
-	55,
-	56,
-	72,
-	93,
-	73,
-	86,
-	89,
-	74,
-	68,
-	94,
-	68,
-	64,
-	68,
-	68,
-	86,
-	68,
-	85,
-	86,
-	102,
-	68,
-	79,
-	62,
-	68,
-	66,
-	63,
-	82,
-	95,
 	49,
-	99,
-	88,
-	68,
-	68,
-	68,
-	13,
-	68,
-	80,
-	68,
-	68,
-	86,
-	83,
-	88,
-	68,
-	86,
-	65,
-	97,
-	81,
-	8,
-	28,
-	22,
-	28,
-	24,
+	25,
+	20,
+	1,
+	17,
 	33,
 	30,
-	25,
+	21,
 	28,
-	90,
-	28,
-	39,
-	105,
+	94,
+	2,
+	100,
+	73,
+	60,
+	80,
+	69,
+	63,
+	56,
 	106,
-	107,
+	59,
+	96,
+	61,
+	79,
+	105,
+	102,
+	71,
 	104,
-	9,
-	44,
-	41,
-	47,
-	41,
-	17,
-	21,
-	40,
-	46,
-	21,
-	47,
-	44,
-	21,
-	15,
-	52,
-	51,
-	50,
-	15,
-	15,
-	15,
-	15,
-	15,
-	58,
-	15,
-	24,
-	15,
-	15,
-	15,
-	15,
-	24,
-	15,
-	3,
-	15,
-	15,
-	15,
-	15,
-	15,
-	15,
-	15,
-	15,
-	15,
-	15,
-	15,
-	15,
-	15,
-	103,
-	15,
-	4,
-	5,
-	15,
-	28,
-	87,
-	15,
-	28,
-	6,
+	95,
+	62,
+	27,
+	77,
 	70,
+	86,
+	78,
+	70,
+	57,
+	58,
+	74,
+	97,
+	75,
+	90,
+	93,
+	76,
+	70,
+	98,
+	70,
+	66,
+	70,
+	70,
+	90,
+	70,
+	89,
+	90,
+	106,
+	70,
+	81,
+	64,
+	70,
+	68,
+	65,
+	84,
+	99,
+	50,
+	103,
+	92,
+	70,
+	70,
+	70,
+	14,
+	70,
+	82,
+	70,
+	70,
+	90,
+	85,
+	92,
+	70,
+	90,
+	67,
+	101,
+	83,
+	9,
+	29,
+	23,
+	29,
+	25,
+	34,
+	31,
+	26,
+	29,
+	94,
+	29,
+	40,
+	113,
+	114,
+	115,
+	112,
+	10,
+	45,
+	42,
+	48,
+	42,
+	18,
+	22,
+	41,
+	47,
+	22,
+	48,
+	45,
+	22,
+	16,
 	53,
-	24,
-	28,
-	15,
-	28,
+	52,
+	53,
+	51,
+	16,
+	16,
+	16,
+	16,
+	16,
+	60,
+	16,
+	25,
+	16,
+	16,
+	16,
+	16,
+	25,
+	16,
+	3,
+	16,
+	16,
+	16,
+	16,
+	16,
+	16,
+	16,
+	16,
+	16,
+	16,
+	16,
+	16,
+	16,
+	4,
+	107,
+	108,
+	4,
+	109,
+	111,
+	16,
+	5,
+	6,
+	16,
+	29,
+	91,
+	16,
+	29,
 	7,
-	15,
-	15,
-	15,
-	15,
-	15,
-	15,
-	169,
-	169,
-	169,
-	169,
+	72,
+	55,
+	54,
+	25,
+	87,
+	88,
+	29,
+	16,
+	29,
+	8,
+	16,
+	16,
+	16,
+	16,
+	16,
+	16,
+	29,
+	110,
+	180,
+	180,
+	180,
+	180,
 	0,
 }
 
@@ -8039,8 +8592,8 @@ func file_github_com_PeterStoica_chatwire_wire_proto_init() {
 		File: protoimpl.DescBuilder{
 			GoPackagePath: reflect.TypeOf(x{}).PkgPath(),
 			RawDescriptor: unsafe.Slice(unsafe.StringData(file_github_com_PeterStoica_chatwire_wire_proto_rawDesc), len(file_github_com_PeterStoica_chatwire_wire_proto_rawDesc)),
-			NumEnums:      10,
-			NumMessages:   98,
+			NumEnums:      11,
+			NumMessages:   105,
 			NumExtensions: 0,
 			NumServices:   0,
 		},

@@ -49,12 +49,24 @@ func (s State) clone() State {
 	return out
 }
 
+type MissingKey struct {
+	ID []byte
+}
+
+func (k MissingKey) Error() string {
+	return fmt.Sprintf("%v: %x", ErrMissingKey, k.ID)
+}
+
+func (k MissingKey) Is(target error) bool {
+	return target == ErrMissingKey
+}
+
 type KeyFor func(id []byte) (Keys, bool)
 
 func (s State) ApplySnapshot(name string, snapshot *wire.SyncdSnapshot, keyFor KeyFor) (State, []Mutation, int, error) {
 	keys, ok := keyFor(snapshot.GetKeyId().GetId())
 	if !ok {
-		return s, nil, 0, ErrMissingKey
+		return s, nil, 0, MissingKey{ID: snapshot.GetKeyId().GetId()}
 	}
 	next := State{Version: snapshot.GetVersion().GetVersion(), MACs: map[string][]byte{}}
 	mutations := make([]Mutation, 0, len(snapshot.GetRecords()))
@@ -82,7 +94,7 @@ func (s State) ApplySnapshot(name string, snapshot *wire.SyncdSnapshot, keyFor K
 func (s State) ApplyPatch(name string, patch *wire.SyncdPatch, keyFor KeyFor) (State, []Mutation, int, error) {
 	keys, ok := keyFor(patch.GetKeyId().GetId())
 	if !ok {
-		return s, nil, 0, ErrMissingKey
+		return s, nil, 0, MissingKey{ID: patch.GetKeyId().GetId()}
 	}
 	next := s.clone()
 	next.Version = patch.GetVersion().GetVersion()
