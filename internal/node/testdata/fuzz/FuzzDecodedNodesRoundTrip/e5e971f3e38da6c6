@@ -1,0 +1,2 @@
+go test fuzz v1
+[]byte("0\xf8\x020\xff\x020\xff")

@@ -1,0 +1,51 @@
+# Chatwire
+
+Chatwire lets AI apps read, search and send your WhatsApp messages. It is an MCP server, so it works with Claude,
+Codex, Gemini, Cursor, VS Code and other apps that support MCP.
+
+Unofficial. Not affiliated with, endorsed or sponsored by WhatsApp or Meta. WhatsApp is a trademark of WhatsApp LLC.
+
+## Install
+
+The easy way: ask your AI app.
+
+> Install Chatwire from github.com/PeterStoica/chatwire and link my WhatsApp.
+
+It follows [AGENTS.md](AGENTS.md). You scan a QR code or type a code on your phone, restart the app, and you are done.
+
+By hand, with Go 1.27 or newer:
+
+```sh
+go install github.com/PeterStoica/chatwire/cmd/chatwire@latest
+chatwire setup
+```
+
+`chatwire setup` finds the AI apps on your computer, adds Chatwire to them, and walks you through linking WhatsApp.
+`chatwire setup --remove` takes it out again.
+
+## What your AI can do with it
+
+- Tell you what you missed, with unread messages from every chat
+- Read and search any chat, including history synced from your phone
+- Send messages, replies, files, polls and forwards
+- React, edit, delete and vote in polls
+- List your chats and groups, with members
+- Open photos, voice notes and documents
+
+## How it works
+
+Chatwire links to your WhatsApp as a companion device, the same way WhatsApp Web does. Your phone stays logged in.
+It is one program with nothing else to install. Your messages are stored on your computer only, in a file only your
+user can read. Chatwire talks to WhatsApp directly and to no one else.
+
+## Be aware
+
+WhatsApp's Terms of Service do not allow unofficial clients. Using Chatwire could get your WhatsApp account
+restricted or banned. Chatwire paces its sends to behave like a person, but the risk is yours.
+
+## Build from source
+
+```sh
+go build ./cmd/chatwire
+go test ./...
+```

@@ -1,0 +1,103 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Link WhatsApp</title>
+<style>
+:root { --bg: #f6f7f9; --card: #fff; --text: #16181d; --muted: #5d6370; --line: #e3e6eb; --ok: #146c3a; --warn: #8f4207; --accent: #2b5fd9; }
+@media (prefers-color-scheme: dark) {
+  :root { --bg: #111317; --card: #1a1d23; --text: #eceef2; --muted: #a1a7b3; --line: #2c313a; --ok: #4cc27f; --warn: #f0a35e; --accent: #7aa2ff; }
+}
+* { box-sizing: border-box; }
+body { margin: 0; min-height: 100vh; display: grid; place-items: center; background: var(--bg); color: var(--text);
+  font: 16px/1.5 system-ui, -apple-system, "Segoe UI", Roboto, sans-serif; padding: 16px; }
+main { width: min(100%, 440px); background: var(--card); border: 1px solid var(--line); border-radius: 16px; padding: 28px 24px; text-align: center; }
+h1 { font-size: 1.35rem; margin: 0 0 4px; }
+.lead { color: var(--muted); margin: 0 0 20px; }
+.qr { width: 100%; max-width: 300px; aspect-ratio: 1; margin: 0 auto 20px; background: #fff; border-radius: 12px; padding: 12px; display: grid; place-items: center; }
+.qr img { width: 100%; height: 100%; image-rendering: pixelated; }
+.code { font: 600 2.4rem/1.2 ui-monospace, SFMono-Regular, Menlo, monospace; letter-spacing: .12em; margin: 8px 0 20px; }
+ol { text-align: left; margin: 0 0 20px; padding-left: 1.3em; }
+li { margin: 6px 0; }
+.path { font-weight: 600; }
+.status { margin: 0; font-weight: 600; }
+.status.ok { color: var(--ok); }
+.status.warn { color: var(--warn); }
+.note { color: var(--muted); font-size: .85rem; margin: 20px 0 0; }
+[hidden] { display: none !important; }
+</style>
+</head>
+<body>
+<main>
+  <h1>Link your WhatsApp</h1>
+  <p class="lead" id="lead">Scan this code from your phone to link this computer.</p>
+  <div class="qr" id="qr" hidden></div>
+  <p class="code" id="code" hidden></p>
+  <ol id="steps">
+    <li>Open WhatsApp on your phone.</li>
+    <li>Go to Linked devices:<br>
+      <span class="path">iPhone:</span> Settings &gt; Linked Devices &gt; Link a Device<br>
+      <span class="path">Android:</span> the three-dot menu &gt; Linked devices &gt; Link a device</li>
+    <li id="last">Point the phone at this code.</li>
+  </ol>
+  <p class="status" id="status" role="status" aria-live="polite">Waiting for WhatsApp...</p>
+  <p class="note">This page only shows the code for your phone. It runs on this computer and closes nothing by itself.</p>
+</main>
+<script>
+const $ = (id) => document.getElementById(id);
+let shown = "";
+let lost = 0;
+let tries = 0;
+let asked = 0;
+const pause = [0, 2000, 5000, 10000, 30000];
+function renew(s) {
+  const wait = s.phase === "failed" ? pause[Math.min(tries, pause.length - 1)] : 0;
+  if (Date.now() - asked < Math.max(wait, 1500)) return;
+  asked = Date.now();
+  if (s.phase === "failed") tries++;
+  fetch("again", { method: "POST" }).catch(() => {});
+}
+function show(s) {
+  const qr = s.phase === "qr", code = s.phase === "code", done = s.phase === "linked";
+  $("qr").hidden = !qr;
+  $("code").hidden = !code;
+  $("steps").hidden = done;
+  const stopped = s.phase === "expired" || s.phase === "failed" || s.phase === "logged_out" || s.phase === "idle";
+  if (stopped) renew(s);
+  if (qr || code) tries = 0;
+  if (qr && s.qr !== shown) {
+    shown = s.qr;
+    const img = new Image();
+    img.alt = "QR code to scan in WhatsApp's Linked devices screen";
+    img.src = "qr.png?v=" + s.qr;
+    $("qr").replaceChildren(img);
+  }
+  if (code) { $("code").textContent = s.code; $("last").textContent = 'Tap "Link with phone number instead" and type this code.'; }
+  else { $("last").textContent = "Point the phone at this code."; }
+  const status = $("status");
+  status.className = "status" + (done ? " ok" : s.phase === "failed" ? " warn" : "");
+  switch (s.phase) {
+    case "qr": status.textContent = "Waiting for your phone. The code changes every 20 seconds; this page keeps up."; $("lead").textContent = "Scan this code from your phone to link this computer."; break;
+    case "code": status.textContent = "Waiting for you to type the code on your phone."; $("lead").textContent = "Type this code on your phone to link this computer."; break;
+    case "starting": status.textContent = "Contacting WhatsApp..."; break;
+    case "linked": status.textContent = "Linked to " + s.account + ". You can close this page and go back to your assistant."; $("lead").textContent = "All set."; break;
+    case "failed": status.textContent = "Linking failed" + (s.problem ? ": " + s.problem : "") + ". Trying again..."; break;
+    default: status.textContent = "Getting a new code...";
+  }
+}
+async function poll() {
+  try {
+    const r = await fetch("state", { cache: "no-store" });
+    if (!r.ok) throw new Error(r.status);
+    lost = 0;
+    show(await r.json());
+  } catch (e) {
+    if (++lost > 3) { $("status").className = "status warn"; $("status").textContent = "Lost contact with the WhatsApp tool. Ask your assistant to link WhatsApp again."; }
+  }
+}
+poll();
+setInterval(poll, 1000);
+</script>
+</body>
+</html>
