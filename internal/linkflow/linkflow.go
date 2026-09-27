@@ -6,6 +6,7 @@ import (
 	"fmt"
 	"io"
 	"strconv"
+	"strings"
 	"time"
 
 	"github.com/PeterStoica/chatwire/internal/curve"
@@ -30,7 +31,23 @@ var (
 	ErrLoggedOut     = errors.New("linkflow: WhatsApp logged this device out")
 	ErrReplaced      = errors.New("linkflow: another connection took over this linked device")
 	ErrEnded         = errors.New("linkflow: connection ended before pairing finished")
+	ErrBanned        = errors.New("linkflow: WhatsApp temporarily banned this account")
+	ErrOutdated      = errors.New("linkflow: WhatsApp says this client version is outdated")
+	ErrClient        = errors.New("linkflow: WhatsApp refused this client")
 )
+
+type Ban struct {
+	Code int
+	For  time.Duration
+}
+
+func (b Ban) Error() string {
+	return fmt.Sprintf("%v (reason %d, for %s)", ErrBanned, b.Code, b.For)
+}
+
+func (b Ban) Is(target error) bool {
+	return target == ErrBanned
+}
 
 type Config struct {
 	Dial       func(ctx context.Context) (frame.MessageConn, error)
@@ -300,13 +317,36 @@ func Classify(n node.Node, otherwise error) error {
 	reason, _ := n.Attr("reason").Text()
 	conflict, _ := n.Child("conflict")
 	kind, _ := conflict.Attr("type").Text()
+	failure := n.Tag == "failure"
 	switch {
-	case n.Tag == tagStreamError && code == "401", n.Tag == "failure" && (reason == "401" || reason == "403" || reason == "406"):
-		return ErrLoggedOut
+	case failure && reason == "402":
+		ban := Ban{}
+		ban.Code, _ = strconv.Atoi(code)
+		if raw, ok := n.Attr("expire").Text(); ok {
+			seconds, _ := strconv.Atoi(raw)
+			ban.For = time.Duration(max(seconds, 0)) * time.Second
+		}
+		return ban
+	case failure && reason == "405":
+		return ErrOutdated
+	case failure && reason == "409":
+		return ErrClient
+	case failure && (reason == "401" || reason == "403" || reason == "406" || reason == "411"),
+		n.Tag == tagStreamError && (code == "401" || kind == "device_removed"):
+		return loggedOut(n)
 	case n.Tag == tagStreamError && kind == "replaced":
 		return ErrReplaced
 	}
 	return otherwise
+}
+
+func loggedOut(n node.Node) error {
+	header, _ := n.Attr("logout_message_header").Text()
+	subtext, _ := n.Attr("logout_message_subtext").Text()
+	if message := strings.TrimSpace(header + " " + subtext); message != "" {
+		return fmt.Errorf("%w: %s", ErrLoggedOut, message)
+	}
+	return ErrLoggedOut
 }
 
 func hasChild(n node.Node, tag string) bool {

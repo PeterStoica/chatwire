@@ -10,6 +10,7 @@ import (
 	"rsc.io/qr"
 
 	"github.com/PeterStoica/chatwire/internal/linker"
+	"github.com/PeterStoica/chatwire/internal/linkflow"
 	"github.com/PeterStoica/chatwire/internal/messenger"
 	"github.com/PeterStoica/chatwire/internal/pairing"
 )
@@ -80,15 +81,30 @@ func connection(c messenger.Connection, detail string) (string, string) {
 	if h := c.History; h.Started && h.Percent < 100 {
 		detail += fmt.Sprintf(" History from the phone: %d%% received so far; older messages appear as it arrives.", h.Percent)
 	}
+	var ban linkflow.Ban
+	next := ""
+	if !c.Retry.IsZero() {
+		next = " Next try: " + c.Retry.Format("15:04 on Jan 2") + "."
+	}
 	switch {
 	case c.Connected:
 		return "connected", detail + " Connected and ready to send and receive."
+	case errors.As(c.Err, &ban):
+		return "banned", fmt.Sprintf("%s WhatsApp has temporarily banned this account (reason %d), usually for messaging too many people or sending the same message many times. Nothing can be sent until the ban ends; Chatwire reconnects by itself then.%s", detail, ban.Code, next)
+	case errors.Is(c.Err, linkflow.ErrReplaced):
+		return "replaced", detail + " Another program is using this same WhatsApp link, so WhatsApp dropped this one. To avoid a tug of war that WhatsApp punishes, Chatwire only retries now and then; close the other program." + next
+	case errors.Is(c.Err, linkflow.ErrOutdated), errors.Is(c.Err, linkflow.ErrClient):
+		return "refused", fmt.Sprintf("%s WhatsApp refused this client (%v). Chatwire retries hourly; updating Chatwire usually fixes this.%s", detail, c.Err, next)
+	case c.Err != nil && c.Failures >= manyFailures:
+		return "offline", fmt.Sprintf("%s Still not connected after %d tries (%v). Check that this computer is online; Chatwire keeps retrying.%s", detail, c.Failures, c.Err, next)
 	case c.Err != nil:
-		return "reconnecting", fmt.Sprintf("%s Not connected right now (%v); it keeps retrying.", detail, c.Err)
+		return "reconnecting", fmt.Sprintf("%s Not connected right now (%v); it keeps retrying.%s", detail, c.Err, next)
 	default:
 		return "connecting", detail + " Connecting to WhatsApp."
 	}
 }
+
+const manyFailures = 10
 
 func describe(st linker.Status) Report {
 	switch st.Phase {

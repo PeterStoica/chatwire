@@ -35,7 +35,6 @@ import (
 	"github.com/PeterStoica/chatwire/internal/pairing"
 	"github.com/PeterStoica/chatwire/internal/qrpage"
 	"github.com/PeterStoica/chatwire/internal/shim"
-	"github.com/PeterStoica/chatwire/internal/signon"
 	"github.com/PeterStoica/chatwire/internal/store"
 )
 
@@ -250,13 +249,8 @@ func (a *app) linkPage(ctx context.Context) (string, bool, error) {
 
 func open(ctx context.Context, path string) (*app, error) {
 	browser := dial.Client(http.DefaultTransport)
-	version := sync.OnceValue(func() signon.Version {
-		versionCtx, cancel := context.WithTimeout(context.WithoutCancel(ctx), versionTimeout)
-		defer cancel()
-		latest, _ := dial.LatestVersion(versionCtx, browser, dial.Page)
-		return latest
-	})
-	go version()
+	versions := dial.NewVersions(browser, dial.Page, versionTimeout)
+	go versions.Current()
 	dictionary, err := node.LoadDictionary()
 	if err != nil {
 		return nil, err
@@ -269,7 +263,7 @@ func open(ctx context.Context, path string) (*app, error) {
 		Dial:       dial.Dialer(browser),
 		Dictionary: dictionary,
 		Root:       cert.WhatsAppRoot(),
-		Version:    version,
+		Version:    versions.Current,
 		Random:     rand.Reader,
 		Now:        time.Now,
 		Save:       func(linked linkflow.Linked) error { return save(path, client.State{Linked: linked}) },
@@ -282,6 +276,7 @@ func open(ctx context.Context, path string) (*app, error) {
 		return nil, err
 	}
 	m := messenger.New(cfg, browser, func(s client.State) error { return save(path, s) }, messages)
+	m.WhenOutdated(versions.Refresh)
 	var existing *pairing.Account
 	if linked {
 		existing = &state.Linked.Account

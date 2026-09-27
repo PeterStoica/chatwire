@@ -218,8 +218,11 @@ func TestClassifyingHowWhatsAppEndsASession(t *testing.T) {
 		{name: "logged out at login", n: node.Node{Tag: "failure", Attrs: attr("reason", "401")}, want: linkflow.ErrLoggedOut},
 		{name: "main device gone", n: node.Node{Tag: "failure", Attrs: attr("reason", "403")}, want: linkflow.ErrLoggedOut},
 		{name: "unknown logout", n: node.Node{Tag: "failure", Attrs: attr("reason", "406")}, want: linkflow.ErrLoggedOut},
-		{name: "temporarily banned", n: node.Node{Tag: "failure", Attrs: attr("reason", "402")}, want: other},
-		{name: "outdated client", n: node.Node{Tag: "failure", Attrs: attr("reason", "405")}, want: other},
+		{name: "temporarily banned", n: node.Node{Tag: "failure", Attrs: attr("reason", "402")}, want: linkflow.ErrBanned},
+		{name: "outdated client", n: node.Node{Tag: "failure", Attrs: attr("reason", "405")}, want: linkflow.ErrOutdated},
+		{name: "refused client", n: node.Node{Tag: "failure", Attrs: attr("reason", "409")}, want: linkflow.ErrClient},
+		{name: "device state mismatch", n: node.Node{Tag: "failure", Attrs: attr("reason", "411")}, want: linkflow.ErrLoggedOut},
+		{name: "device removed without a code", n: node.Node{Tag: "stream:error", Children: conflict("device_removed")}, want: linkflow.ErrLoggedOut},
 		{name: "a failure with a code attribute", n: node.Node{Tag: "failure", Attrs: attr("code", "401")}, want: other},
 		{name: "a stream error with a reason attribute", n: node.Node{Tag: "stream:error", Attrs: attr("reason", "401")}, want: other},
 		{name: "a failure with a conflict", n: node.Node{Tag: "failure", Children: conflict("replaced")}, want: other},
@@ -227,5 +230,14 @@ func TestClassifyingHowWhatsAppEndsASession(t *testing.T) {
 		if got := linkflow.Classify(tt.n, other); !errors.Is(got, tt.want) {
 			t.Errorf("%s: Classify() = %v, want %v", tt.name, got, tt.want)
 		}
+	}
+	var ban linkflow.Ban
+	banned := node.Node{Tag: "failure", Attrs: []node.Attr{{Key: "reason", Value: node.Text("402")}, {Key: "code", Value: node.Text("101")}, {Key: "expire", Value: node.Text("3600")}}}
+	if err := linkflow.Classify(banned, other); !errors.As(err, &ban) || ban.Code != 101 || ban.For != time.Hour {
+		t.Fatalf("a ban = %v", err)
+	}
+	told := node.Node{Tag: "failure", Attrs: []node.Attr{{Key: "reason", Value: node.Text("403")}, {Key: "logout_message_header", Value: node.Text("Account logged out")}, {Key: "logout_message_subtext", Value: node.Text("Link it again.")}}}
+	if err := linkflow.Classify(told, other); !errors.Is(err, linkflow.ErrLoggedOut) || !strings.Contains(err.Error(), "Account logged out Link it again.") {
+		t.Fatalf("a logout with a message = %v", err)
 	}
 }

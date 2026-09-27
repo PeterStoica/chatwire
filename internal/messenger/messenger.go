@@ -71,6 +71,9 @@ type Messenger struct {
 	listed   []groups.Group
 	listedAt time.Time
 	known    map[node.JID]cachedGroup
+	failures int
+	retryAt  time.Time
+	outdated func()
 }
 
 type HistorySync struct {
@@ -96,52 +99,72 @@ func (m *Messenger) Start(parent context.Context, state client.State) {
 }
 
 func (m *Messenger) keepConnected(ctx context.Context) {
-	wait := firstRetry
+	r := newRetries()
 	for ctx.Err() == nil {
 		m.mu.Lock()
 		state := *m.state
 		m.mu.Unlock()
 		lids, _ := m.store.LIDs(ctx)
+		start := m.link.Now()
 		c, err := client.Connect(ctx, client.Config{LIDs: lids, Link: m.link, HTTP: m.http, Persist: m.save, Receive: m.received, History: m.history, Receipt: m.receipt, Sent: m.sentMessage, Seen: m.seen, TokenOf: m.tokenOf, Tokens: m.tokens, Changed: m.groupChanged, Problem: problem, AppState: m}, state)
-		if errors.Is(err, linkflow.ErrLoggedOut) {
-			m.loggedOut(err)
-			return
-		}
-		if err != nil {
+		if err == nil {
+			err = m.online(ctx, c)
+		} else {
 			m.mu.Lock()
 			m.lastErr = err
 			close(m.failed)
 			m.failed = make(chan struct{})
 			m.mu.Unlock()
-			select {
-			case <-ctx.Done():
-				return
-			case <-time.After(wait):
-			}
-			wait = min(2*wait, maxRetry)
-			continue
 		}
-		wait = firstRetry
-		m.mu.Lock()
-		m.client, m.lastErr = c, nil
-		m.listed, m.known = nil, map[node.JID]cachedGroup{}
-		close(m.ready)
-		m.mu.Unlock()
-		_, _ = m.Groups(ctx)
-		select {
-		case <-ctx.Done():
-			_ = c.Close()
-		case <-c.Done():
-			m.setErr(c.Err())
+		if ctx.Err() != nil {
+			return
 		}
-		m.mu.Lock()
-		m.client, m.ready = nil, make(chan struct{})
-		m.mu.Unlock()
-		if err := c.Err(); errors.Is(err, linkflow.ErrLoggedOut) {
+		if errors.Is(err, linkflow.ErrLoggedOut) {
 			m.loggedOut(err)
 			return
 		}
+		delay, refresh := r.next(err, m.link.Now().Sub(start))
+		m.mu.Lock()
+		m.failures, m.retryAt = r.failures, m.link.Now().Add(delay)
+		outdated := m.outdated
+		m.mu.Unlock()
+		if refresh && outdated != nil {
+			outdated()
+		}
+		if delay == 0 {
+			continue
+		}
+		select {
+		case <-ctx.Done():
+			return
+		case <-time.After(delay):
+		}
 	}
+}
+
+func (m *Messenger) online(ctx context.Context, c *client.Client) error {
+	m.mu.Lock()
+	m.client, m.lastErr, m.failures, m.retryAt = c, nil, 0, time.Time{}
+	m.listed, m.known = nil, map[node.JID]cachedGroup{}
+	close(m.ready)
+	m.mu.Unlock()
+	_, _ = m.Groups(ctx)
+	select {
+	case <-ctx.Done():
+		_ = c.Close()
+	case <-c.Done():
+		m.setErr(c.Err())
+	}
+	m.mu.Lock()
+	m.client, m.ready = nil, make(chan struct{})
+	m.mu.Unlock()
+	return c.Err()
+}
+
+func (m *Messenger) WhenOutdated(refresh func()) {
+	m.mu.Lock()
+	defer m.mu.Unlock()
+	m.outdated = refresh
 }
 
 func (m *Messenger) WhenLoggedOut(fn func(error)) {
@@ -239,12 +262,14 @@ type Connection struct {
 	Err       error
 	StoreErr  error
 	History   HistorySync
+	Failures  int
+	Retry     time.Time
 }
 
 func (m *Messenger) Connection() Connection {
 	m.mu.Lock()
 	defer m.mu.Unlock()
-	return Connection{Linked: m.state != nil, Connected: m.client != nil, Err: m.lastErr, StoreErr: m.storeErr, History: m.synced}
+	return Connection{Linked: m.state != nil, Connected: m.client != nil, Err: m.lastErr, StoreErr: m.storeErr, History: m.synced, Failures: m.failures, Retry: m.retryAt}
 }
 
 func (m *Messenger) Groups(ctx context.Context) ([]groups.Group, error) {

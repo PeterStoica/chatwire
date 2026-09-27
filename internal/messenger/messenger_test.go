@@ -182,15 +182,15 @@ func TestRetriesBackOffUpToAMinute(t *testing.T) {
 		}
 		r.world.Script(append(scripts, r.world.Serve(r.server))...)
 		r.m.Start(t.Context(), r.state)
-		synctest.Sleep(3 * time.Minute)
+		synctest.Sleep(4 * time.Minute)
 		r.send(t, "finally")
 		want := []time.Duration{time.Second, 2 * time.Second, 4 * time.Second, 8 * time.Second, 16 * time.Second, 32 * time.Second, time.Minute}
 		if len(attempts) != len(want)+1 {
 			t.Fatalf("%d refused attempts", len(attempts))
 		}
 		for i, gap := range want {
-			if got := attempts[i+1].Sub(attempts[i]); got != gap {
-				t.Fatalf("retry %d after %s, want %s", i+1, got, gap)
+			if got := attempts[i+1].Sub(attempts[i]); got < gap*8/10 || got > gap*12/10 {
+				t.Fatalf("retry %d after %s, want %s give or take a fifth", i+1, got, gap)
 			}
 		}
 	})

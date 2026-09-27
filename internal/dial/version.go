@@ -7,6 +7,8 @@ import (
 	"net/http"
 	"regexp"
 	"strconv"
+	"sync"
+	"time"
 
 	"github.com/PeterStoica/chatwire/internal/signon"
 )
@@ -52,4 +54,39 @@ func fetchRevision(ctx context.Context, client *http.Client, page string) (uint3
 		return 0, err
 	}
 	return uint32(revision), nil
+}
+
+type Versions struct {
+	client  *http.Client
+	page    string
+	timeout time.Duration
+	mu      sync.Mutex
+	current signon.Version
+	fetched bool
+}
+
+func NewVersions(client *http.Client, page string, timeout time.Duration) *Versions {
+	return &Versions{client: client, page: page, timeout: timeout}
+}
+
+func (v *Versions) Current() signon.Version {
+	v.mu.Lock()
+	defer v.mu.Unlock()
+	if !v.fetched {
+		v.fetchLocked()
+	}
+	return v.current
+}
+
+func (v *Versions) Refresh() {
+	v.mu.Lock()
+	defer v.mu.Unlock()
+	v.fetchLocked()
+}
+
+func (v *Versions) fetchLocked() {
+	ctx, cancel := context.WithTimeout(context.Background(), v.timeout)
+	defer cancel()
+	v.current, _ = LatestVersion(ctx, v.client, v.page)
+	v.fetched = true
 }
