@@ -5,6 +5,7 @@ import (
 	"fmt"
 	"strings"
 	"testing"
+	"time"
 
 	"github.com/PeterStoica/chatwire/internal/client"
 	"github.com/PeterStoica/chatwire/internal/messenger"
@@ -26,6 +27,8 @@ func TestWhatsAppRefusalsBecomeNextSteps(t *testing.T) {
 		{err: client.Rejection{Code: 599}, wantState: "rejected", wantText: "error 599"},
 		{err: fmt.Errorf("%w until tomorrow", messenger.ErrRestricted), wantState: "restricted", wantText: "held for 24 hours"},
 		{err: messenger.ErrTooFast, wantState: "slow_down", wantText: "a minute"},
+		{err: fmt.Errorf("send: %w", messenger.Timelocked{Until: time.Date(2026, 9, 27, 20, 0, 0, 0, time.Local), Kind: "DEFAULT"}), wantState: "restricted", wantText: "until 20:00 on Sep 27 (DEFAULT)"},
+		{err: messenger.CapReached{Used: 50, Total: 50, Until: time.Date(2026, 10, 1, 0, 0, 0, 0, time.Local)}, wantState: "new_chat_limit", wantText: "allowance of 50 messages"},
 		{err: fmt.Errorf("%w; sending it again after reconnecting: %w", client.ErrUnconfirmed, client.Rejection{Code: 463}), wantState: "unconfirmed", wantText: "check on the phone"},
 	} {
 		state, detail, ok := stopped(tt.err)

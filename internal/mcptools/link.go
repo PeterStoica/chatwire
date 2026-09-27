@@ -88,10 +88,11 @@ func connection(c messenger.Connection, detail string) (string, string) {
 	if h := c.History; h.Started && h.Percent < 100 {
 		detail += fmt.Sprintf(" History from the phone: %d%% received so far; older messages appear as it arrives.", h.Percent)
 	}
+	detail += limitsText(c, time.Now())
 	var ban linkflow.Ban
 	next := ""
 	if !c.Retry.IsZero() {
-		next = " Next try: " + c.Retry.Format("15:04 on Jan 2") + "."
+		next = " Next try: " + c.Retry.Format(whenFormat) + "."
 	}
 	switch {
 	case c.Connected:
@@ -111,7 +112,24 @@ func connection(c messenger.Connection, detail string) (string, string) {
 	}
 }
 
-const manyFailures = 10
+const (
+	manyFailures = 10
+	whenFormat   = "15:04 on Jan 2"
+)
+
+func limitsText(c messenger.Connection, now time.Time) string {
+	var text string
+	if c.Timelock.On(now) {
+		text += fmt.Sprintf(" WhatsApp restricts this account from messaging people who have not messaged it until %s (%s); existing conversations still work.", c.Timelock.Ends.Format(whenFormat), c.Timelock.Kind)
+	}
+	switch a := c.Allowance; {
+	case a.Reached(now):
+		text += fmt.Sprintf(" WhatsApp's allowance of %d messages to people who have not replied is used up until %s.", a.Total, a.Ends.Format(whenFormat))
+	case a.Warned(now):
+		text += fmt.Sprintf(" WhatsApp warns that %d of this account's %d messages to people who have not replied are used (resets %s); message fewer new people.", a.Used, a.Total, a.Ends.Format(whenFormat))
+	}
+	return text
+}
 
 func describe(st linker.Status) Report {
 	switch st.Phase {

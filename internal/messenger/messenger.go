@@ -12,6 +12,7 @@ import (
 
 	"github.com/PeterStoica/chatwire/internal/client"
 	"github.com/PeterStoica/chatwire/internal/groups"
+	"github.com/PeterStoica/chatwire/internal/limits"
 	"github.com/PeterStoica/chatwire/internal/linkflow"
 	"github.com/PeterStoica/chatwire/internal/media"
 	"github.com/PeterStoica/chatwire/internal/mediaretry"
@@ -59,27 +60,29 @@ type Messenger struct {
 	persist func(client.State) error
 	store   *store.Store
 
-	mu       sync.Mutex
-	state    *client.State
-	client   *client.Client
-	ready    chan struct{}
-	failed   chan struct{}
-	lastErr  error
-	storeErr error
-	cancel   context.CancelFunc
-	running  chan struct{}
-	gone     func(error)
-	synced   HistorySync
-	limited  time.Time
-	listed   []groups.Group
-	listedAt time.Time
-	known    map[node.JID]cachedGroup
-	failures int
-	retryAt  time.Time
-	outdated func()
-	saving   sync.Mutex
-	current  int
-	onDemand chan struct{}
+	mu        sync.Mutex
+	state     *client.State
+	client    *client.Client
+	ready     chan struct{}
+	failed    chan struct{}
+	lastErr   error
+	storeErr  error
+	cancel    context.CancelFunc
+	running   chan struct{}
+	gone      func(error)
+	synced    HistorySync
+	limited   time.Time
+	timelock  limits.Timelock
+	allowance limits.Cap
+	listed    []groups.Group
+	listedAt  time.Time
+	known     map[node.JID]cachedGroup
+	failures  int
+	retryAt   time.Time
+	outdated  func()
+	saving    sync.Mutex
+	current   int
+	onDemand  chan struct{}
 }
 
 type HistorySync struct {
@@ -112,7 +115,7 @@ func (m *Messenger) keepConnected(ctx context.Context) {
 		m.mu.Unlock()
 		lids, _ := m.store.LIDs(ctx)
 		start := m.link.Now()
-		c, err := client.Connect(ctx, client.Config{LIDs: lids, Link: m.link, HTTP: m.http, Persist: m.saver(), Receive: m.received, History: m.history, Receipt: m.receipt, Sent: m.sentMessage, Seen: m.seen, TokenOf: m.tokenOf, Tokens: m.tokens, Changed: m.groupChanged, Problem: problem, AppState: m}, state)
+		c, err := client.Connect(ctx, client.Config{LIDs: lids, Link: m.link, HTTP: m.http, Persist: m.saver(), Receive: m.received, History: m.history, Receipt: m.receipt, Sent: m.sentMessage, Seen: m.seen, TokenOf: m.tokenOf, Tokens: m.tokens, Changed: m.groupChanged, Limits: m.limitsChanged, Problem: problem, AppState: m}, state)
 		if err == nil {
 			err = m.online(ctx, c)
 		} else {
@@ -285,12 +288,17 @@ type Connection struct {
 	History   HistorySync
 	Failures  int
 	Retry     time.Time
+	Timelock  limits.Timelock
+	Allowance limits.Cap
 }
 
 func (m *Messenger) Connection() Connection {
 	m.mu.Lock()
 	defer m.mu.Unlock()
-	return Connection{Linked: m.state != nil, Connected: m.client != nil, Err: m.lastErr, StoreErr: m.storeErr, History: m.synced, Failures: m.failures, Retry: m.retryAt}
+	return Connection{
+		Linked: m.state != nil, Connected: m.client != nil, Err: m.lastErr, StoreErr: m.storeErr, History: m.synced,
+		Failures: m.failures, Retry: m.retryAt, Timelock: m.timelock, Allowance: m.allowance,
+	}
 }
 
 func (m *Messenger) Groups(ctx context.Context) ([]groups.Group, error) {

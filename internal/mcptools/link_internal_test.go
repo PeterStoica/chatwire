@@ -6,6 +6,7 @@ import (
 	"testing"
 	"time"
 
+	"github.com/PeterStoica/chatwire/internal/limits"
 	"github.com/PeterStoica/chatwire/internal/linkflow"
 	"github.com/PeterStoica/chatwire/internal/messenger"
 )
@@ -29,6 +30,26 @@ func TestStatusSaysWhyItIsNotConnected(t *testing.T) {
 		state, detail := connection(tt.c, "Linked.")
 		if state != tt.wantState || !strings.Contains(detail, tt.wantText) {
 			t.Errorf("%s: %q, %q; want %q containing %q", tt.name, state, detail, tt.wantState, tt.wantText)
+		}
+	}
+}
+
+func TestStatusNamesWhatsAppsLimits(t *testing.T) {
+	now := time.Date(2026, 9, 27, 18, 0, 0, 0, time.Local)
+	ends := now.Add(2 * time.Hour)
+	for _, tt := range []struct {
+		name string
+		c    messenger.Connection
+		want string
+	}{
+		{name: "timelock", c: messenger.Connection{Timelock: limits.Timelock{Active: true, Ends: ends, Kind: "BULK_MESSAGING"}}, want: "until 20:00 on Sep 27 (BULK_MESSAGING)"},
+		{name: "allowance used up", c: messenger.Connection{Allowance: limits.Cap{Status: limits.Capped, Used: 50, Total: 50, Ends: ends}}, want: "allowance of 50 messages"},
+		{name: "warning", c: messenger.Connection{Allowance: limits.Cap{Status: limits.FirstWarning, Used: 40, Total: 50, Ends: ends}}, want: "40 of this account's 50"},
+		{name: "over", c: messenger.Connection{Timelock: limits.Timelock{Active: true, Ends: now}, Allowance: limits.Cap{Status: limits.Capped, Ends: now.Add(-time.Second)}}},
+	} {
+		got := limitsText(tt.c, now)
+		if tt.want == "" && got != "" || !strings.Contains(got, tt.want) {
+			t.Errorf("%s: %q, want %q", tt.name, got, tt.want)
 		}
 	}
 }

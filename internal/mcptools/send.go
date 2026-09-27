@@ -158,8 +158,16 @@ func deliver(ctx context.Context, s Sender, to string, timeout time.Duration, no
 }
 
 func stopped(err error) (state, detail string, ok bool) {
-	var rejected client.Rejection
+	var (
+		rejected client.Rejection
+		locked   messenger.Timelocked
+		capped   messenger.CapReached
+	)
 	switch {
+	case errors.As(err, &locked):
+		return stateRestricted, fmt.Sprintf("Nothing was sent: WhatsApp restricts this account from messaging people who have not messaged it until %s (%s). Existing conversations still work; ask the user to send this one from the phone after that.", locked.Until.Format(whenFormat), locked.Kind), true
+	case errors.As(err, &capped):
+		return "new_chat_limit", fmt.Sprintf("Nothing was sent: this account used WhatsApp's allowance of %d messages to people who have not replied; it resets %s. Existing conversations still work.", capped.Total, capped.Until.Format(whenFormat)), true
 	case errors.Is(err, client.ErrUnconfirmed):
 		return "unconfirmed", "WhatsApp did not confirm this message before the connection dropped, and sending it again after reconnecting did not work. It may still have arrived: ask the user to check on the phone before sending it again.", true
 	case errors.Is(err, messenger.ErrTooFast):

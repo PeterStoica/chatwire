@@ -25,6 +25,7 @@ import (
 	"github.com/PeterStoica/chatwire/internal/dial"
 	"github.com/PeterStoica/chatwire/internal/groups"
 	"github.com/PeterStoica/chatwire/internal/history"
+	"github.com/PeterStoica/chatwire/internal/limits"
 	"github.com/PeterStoica/chatwire/internal/linkflow"
 	"github.com/PeterStoica/chatwire/internal/live"
 	"github.com/PeterStoica/chatwire/internal/media"
@@ -142,6 +143,7 @@ type Config struct {
 	TokenOf  func(ctx context.Context, contact node.JID) privacy.Token
 	Tokens   func([]privacy.Token)
 	Changed  func(group node.JID)
+	Limits   func(limits.Notice)
 	Problem  func(error)
 	AppState AppStateStore
 	HTTP     *http.Client

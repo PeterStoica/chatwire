@@ -10,6 +10,7 @@ import (
 	"google.golang.org/protobuf/proto"
 
 	"github.com/PeterStoica/chatwire/internal/appstate"
+	"github.com/PeterStoica/chatwire/internal/limits"
 	"github.com/PeterStoica/chatwire/internal/media"
 	"github.com/PeterStoica/chatwire/internal/message"
 	"github.com/PeterStoica/chatwire/internal/node"
@@ -105,6 +106,11 @@ func (c *Client) notified(n node.Node) {
 	case "w:gp2":
 		if group, ok := n.Attr("from").JID(); ok && group.Server == node.ServerGroup && c.cfg.Changed != nil {
 			c.cfg.Changed(group)
+		}
+		return
+	case "mex":
+		if notice, err := limits.Parse(n, c.cfg.Link.Now()); err == nil && c.cfg.Limits != nil {
+			c.cfg.Limits(notice)
 		}
 		return
 	}

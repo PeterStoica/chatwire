@@ -29,6 +29,7 @@ import (
 	"github.com/PeterStoica/chatwire/internal/testkit/fakedevice"
 	"github.com/PeterStoica/chatwire/internal/testkit/fakegroups"
 	"github.com/PeterStoica/chatwire/internal/testkit/fakekeys"
+	"github.com/PeterStoica/chatwire/internal/testkit/fakephone"
 	"github.com/PeterStoica/chatwire/internal/testkit/fakerelay"
 	"github.com/PeterStoica/chatwire/internal/testkit/fakeusync"
 	"github.com/PeterStoica/chatwire/internal/testkit/fakeworld"
@@ -224,6 +225,53 @@ func TestASlowAckOnALiveConnectionIsNotSentAgain(t *testing.T) {
 		_, err := r.m.SendText(t.Context(), r.bob, "slow")
 		if ids := d.sent(); !errors.Is(err, client.ErrUnconfirmed) || errors.Is(err, client.ErrClosed) || len(ids) != 1 || r.world.Dials() != 1 {
 			t.Fatalf("SendText() = %v after sending ids %v on %d connections", err, ids, r.world.Dials())
+		}
+	})
+}
+
+func limitNotice(op, payload string) node.Node {
+	return fakephone.Notification("m1", "mex", node.Node{Tag: "update", Attrs: []node.Attr{{Key: "op_name", Value: node.Text(op)}}, Bytes: []byte(payload)})
+}
+
+func TestWhatsAppLimitsHoldMessagesToPeopleWhoNeverWrote(t *testing.T) {
+	synctest.Test(t, func(t *testing.T) {
+		r := newRig(t)
+		r.world.Script(r.world.Serve(r.server))
+		r.m.Start(t.Context(), r.state)
+		ends := time.Now().Add(time.Hour).Unix()
+		deliver := func(n node.Node) {
+			r.server.Inbox <- n
+			synctest.Wait()
+		}
+		deliver(limitNotice("NotificationUserReachoutTimelockUpdate", fmt.Sprintf(`{"data":{"xwa2_notify_account_reachout_timelock":{"is_active":true,"time_enforcement_ends":"%d","enforcement_type":"BULK_MESSAGING"}}}`, ends)))
+		var locked messenger.Timelocked
+		if _, err := r.m.SendText(t.Context(), r.bob, "hi"); !errors.As(err, &locked) || locked.Until.Unix() != ends || locked.Kind != "BULK_MESSAGING" {
+			t.Fatalf("SendText() while timelocked = %v", err)
+		}
+		if c := r.m.Connection(); !c.Timelock.On(time.Now()) {
+			t.Fatalf("status does not show the timelock: %+v", c.Timelock)
+		}
+		deliver(limitNotice("NotificationUserReachoutTimelockUpdate", `{"data":{"xwa2_notify_account_reachout_timelock":{"is_active":false}}}`))
+		r.send(t, "after the timelock")
+
+		capped := func(status string, sent int64) node.Node {
+			return limitNotice("MessageCappingInfoNotification", fmt.Sprintf(`{"data":{"xwa2_notify_new_chat_messages_capping_info_update":{"capping_status":%q,"used_quota":50,"total_quota":50,"cycle_end_timestamp":"%d","server_sent_timestamp":"%d"}}}`, status, ends, sent))
+		}
+		now := time.Now().Unix()
+		deliver(capped("CAPPED", now))
+		deliver(capped("NONE", now-60))
+		var full messenger.CapReached
+		if _, err := r.m.SendText(t.Context(), r.bob, "again"); !errors.As(err, &full) || full.Total != 50 {
+			t.Fatalf("SendText() with the allowance used up = %v", err)
+		}
+		deliver(node.Node{Tag: "notification", Attrs: []node.Attr{
+			{Key: "from", Value: node.Address(r.bob)}, {Key: "type", Value: node.Text("privacy_token")}, {Key: "id", Value: node.Text("PT1")},
+		}, Children: []node.Node{{Tag: "tokens", Children: []node.Node{{Tag: "token", Attrs: []node.Attr{
+			{Key: "jid", Value: node.Address(r.account)}, {Key: "t", Value: node.Text(fmt.Sprint(now))}, {Key: "type", Value: node.Text("trusted_contact")},
+		}, Bytes: []byte{7}}}}}})
+		r.send(t, "bob wrote to us, so this goes")
+		if delivered := r.delivers.Load(); delivered != 2 {
+			t.Fatalf("delivered %d messages, want the two allowed ones", delivered)
 		}
 	})
 }

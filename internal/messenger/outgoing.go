@@ -266,7 +266,14 @@ func (m *Messenger) pace(ctx context.Context, to node.JID) error {
 		return err
 	case p.LastMinute >= MaxPerMinute:
 		return fmt.Errorf("%w: %d messages in the last minute", ErrTooFast, p.LastMinute)
-	case p.Known || to.Server == node.ServerGroup || m.Mine(to):
+	case to.Server == node.ServerGroup || m.Mine(to):
+		return nil
+	}
+	if err := m.limitedFor(ctx, to); err != nil {
+		return err
+	}
+	switch {
+	case p.Known:
 		return nil
 	case p.NewChats >= MaxNewChats:
 		return fmt.Errorf("%w: %d new chats in the last 24 hours", ErrNewChats, p.NewChats)
