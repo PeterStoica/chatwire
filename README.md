@@ -38,7 +38,7 @@ chatwire setup
 - Tell you what you missed, with unread messages from every chat
 - Read and search any chat, including history synced from your phone
 - Send messages, replies, files, polls and forwards
-- React, edit, delete and vote in polls
+- React, edit, delete, vote in polls and mark chats as read
 - List your chats and groups, with members
 - Rename groups, set descriptions, add or remove people, change admins, or leave a group
 - Check whether numbers are on WhatsApp, with their about text
@@ -53,6 +53,8 @@ user can read. Chatwire talks to WhatsApp directly and to no one else.
 Your AI can send files only from Desktop, Documents, Downloads, Pictures, Movies, Videos, Music and the temporary
 folder, never hidden files, so a message crafted to trick it cannot send your keys or passwords. To allow more folders,
 set `CHATWIRE_FILES` to a list of full paths (separated by `:`, or `;` on Windows) in the app's MCP settings.
+To let an app only read, set `CHATWIRE_READ_ONLY=1` in its MCP settings: it then gets no tool that sends or changes
+anything. Both settings apply to the app that sets them, even when several apps share Chatwire.
 
 ## Be aware
 

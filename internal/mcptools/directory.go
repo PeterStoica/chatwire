@@ -201,11 +201,52 @@ func plain(folded string) string {
 
 func clean(s string) string {
 	return strings.TrimSpace(strings.Map(func(r rune) rune {
-		if r == 0x200E || r == 0x200F || r >= 0x202A && r <= 0x202E || r >= 0x2066 && r <= 0x2069 {
+		if r == 0x200E || r == 0x200F || r >= 0x202A && r <= 0x202E || r >= 0x2066 && r <= 0x2069 || isTag(r) {
 			return -1
 		}
 		return r
 	}, s))
+}
+
+const (
+	blackFlag   = 0x1F3F4
+	cancelTag   = 0xE007F
+	maxFlagTags = 7
+)
+
+func isTag(r rune) bool {
+	return r >= 0xE0000 && r <= cancelTag
+}
+
+func visible(s string) string {
+	if !strings.ContainsFunc(s, isTag) {
+		return s
+	}
+	var (
+		b         strings.Builder
+		run       []rune
+		afterFlag bool
+	)
+	flush := func() {
+		last := len(run) - 1
+		if afterFlag && last > 0 && last <= maxFlagTags && run[last] == cancelTag && !slices.Contains(run[:last], cancelTag) {
+			for _, r := range run {
+				b.WriteRune(r)
+			}
+		}
+		run = run[:0]
+	}
+	for _, r := range s {
+		if isTag(r) {
+			run = append(run, r)
+			continue
+		}
+		flush()
+		afterFlag = r == blackFlag
+		b.WriteRune(r)
+	}
+	flush()
+	return b.String()
 }
 
 type folder struct {

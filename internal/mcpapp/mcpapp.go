@@ -12,6 +12,7 @@ import (
 	"io"
 	"io/fs"
 	"net/http"
+	"net/url"
 	"os"
 	"os/signal"
 	"path/filepath"
@@ -146,7 +147,7 @@ func launcher(state string, linger time.Duration) (shim.Launcher, error) {
 	}
 	return shim.Launcher{
 		Socket: socket, Log: filepath.Join(filepath.Dir(state), "daemon.log"), Build: build, Executable: executable,
-		DaemonArgs: []string{"daemon", "-state", state, "-linger", linger.String()},
+		DaemonArgs: []string{"daemon", "-state", state, "-linger", linger.String()}, Settings: ownSettings(),
 	}, nil
 }
 
@@ -188,8 +189,8 @@ func serveDaemon(ctx context.Context, state string, linger time.Duration) error 
 		return err
 	}
 	defer a.close()
-	return daemon.New(listener, build, linger, func(ctx context.Context, conn io.ReadWriteCloser) {
-		_ = a.server().Run(ctx, &mcp.IOTransport{Reader: conn, Writer: conn})
+	return daemon.New(listener, build, linger, func(ctx context.Context, conn io.ReadWriteCloser, settings url.Values) {
+		_ = a.server(settings).Run(ctx, &mcp.IOTransport{Reader: conn, Writer: conn})
 	}).Serve(ctx)
 }
 
@@ -199,7 +200,7 @@ func serveAlone(ctx context.Context, state string, stdin io.Reader, stdout io.Wr
 		return err
 	}
 	defer a.close()
-	return a.server().Run(ctx, &mcp.IOTransport{Reader: io.NopCloser(stdin), Writer: nopWriteCloser{stdout}})
+	return a.server(ownSettings()).Run(ctx, &mcp.IOTransport{Reader: io.NopCloser(stdin), Writer: nopWriteCloser{stdout}})
 }
 
 type nopWriteCloser struct{ io.Writer }
@@ -334,8 +335,11 @@ func openLocked(ctx context.Context, path string) (*app, error) {
 	return &app{messages: messages, m: m, l: l, media: filepath.Join(filepath.Dir(path), "media"), repeats: mcptools.NewRepeats()}, nil
 }
 
-func (a *app) server() *mcp.Server {
-	return mcptools.NewServer(&mcp.Implementation{Name: "chatwire", Version: version()}, a.l, a.m, mcptools.Options{MediaDir: a.media, Folders: folders(), Private: []string{filepath.Dir(a.media)}, LinkPage: a.linkPage, Update: a.updates.available, Repeats: a.repeats})
+func (a *app) server(settings url.Values) *mcp.Server {
+	return mcptools.NewServer(&mcp.Implementation{Name: "chatwire", Version: version()}, a.l, a.m, mcptools.Options{
+		MediaDir: a.media, Folders: folders(settings.Get(settingFiles)), Private: []string{filepath.Dir(a.media)}, LinkPage: a.linkPage,
+		Update: a.updates.available, Repeats: a.repeats, ReadOnly: settings.Get(settingReadOnly) == "1",
+	})
 }
 
 func (a *app) close() {
@@ -390,9 +394,27 @@ func version() string {
 	return info.Main.Version
 }
 
-func folders() []string {
+const (
+	settingFiles     = "files"
+	settingReadOnly  = "read_only"
+	readOnlyVariable = "CHATWIRE_READ_ONLY"
+)
+
+func ownSettings() url.Values {
+	settings := url.Values{}
+	if files := os.Getenv(mcptools.FilesVariable); files != "" {
+		settings.Set(settingFiles, files)
+	}
+	switch strings.ToLower(strings.TrimSpace(os.Getenv(readOnlyVariable))) {
+	case "1", "true", "yes", "on":
+		settings.Set(settingReadOnly, "1")
+	}
+	return settings
+}
+
+func folders(allowed string) []string {
 	out := mcptools.DefaultFolders()
-	for _, extra := range filepath.SplitList(os.Getenv(mcptools.FilesVariable)) {
+	for _, extra := range filepath.SplitList(allowed) {
 		if extra = strings.TrimSpace(extra); filepath.IsAbs(extra) {
 			out = append(out, extra)
 		}

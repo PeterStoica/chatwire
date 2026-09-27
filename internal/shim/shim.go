@@ -6,6 +6,7 @@ import (
 	"fmt"
 	"io"
 	"net"
+	"net/url"
 	"os"
 	"path/filepath"
 	"time"
@@ -27,6 +28,7 @@ type Launcher struct {
 	Build      string
 	Executable string
 	DaemonArgs []string
+	Settings   url.Values
 }
 
 func (l Launcher) Connect(ctx context.Context) (net.Conn, error) {
@@ -70,7 +72,7 @@ func (l Launcher) greet(ctx context.Context, path string) (net.Conn, error) {
 	if err != nil {
 		return nil, fmt.Errorf("shim: dial: %w", err)
 	}
-	if err := daemon.Hello(conn, l.Build); err != nil {
+	if err := daemon.Hello(conn, l.Build, l.Settings); err != nil {
 		_ = conn.Close()
 		return nil, err
 	}

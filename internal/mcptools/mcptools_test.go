@@ -171,10 +171,14 @@ func TestLinkingByPhoneNumberFromClaudesSide(t *testing.T) {
 			t.Fatal(err)
 		}
 		named := map[string]bool{}
+		writes := map[string]bool{"send_whatsapp_message": true, "send_whatsapp_file": true, "change_whatsapp_message": true, "manage_whatsapp_group": true, "link_whatsapp": true}
 		for _, tool := range tools.Tools {
 			named[tool.Name] = true
 			if !portableName.MatchString(tool.Name) || len(tool.Description) > 1024 {
 				t.Fatalf("%s: a name or description other platforms refuse", tool.Name)
+			}
+			if a := tool.Annotations; a == nil || a.Title == "" || a.ReadOnlyHint == writes[tool.Name] {
+				t.Fatalf("%s: annotations %+v; only reads may say they change nothing", tool.Name, a)
 			}
 			raw, err := json.Marshal(tool.InputSchema)
 			if err != nil {
@@ -258,6 +262,33 @@ func TestLinkingByQRFromClaudesSide(t *testing.T) {
 		done, _ := c.call("whatsapp_status", map[string]any{"wait_seconds": 60})
 		if done.State != "linked" {
 			t.Fatalf("after scanning: %+v", done)
+		}
+	})
+}
+
+func TestReadOnlyLeavesOutEveryTool(t *testing.T) {
+	synctest.Test(t, func(t *testing.T) {
+		w, err := fakeworld.New(36)
+		if err != nil {
+			t.Fatal(err)
+		}
+		c, _ := connectWith(t, w, mcptools.Options{ReadOnly: true})
+		if !strings.HasSuffix(c.session.InitializeResult().Instructions, mcptools.ReadOnlyNote) {
+			t.Fatal("the instructions do not say it is read-only")
+		}
+		tools, err := c.session.ListTools(t.Context(), nil)
+		if err != nil {
+			t.Fatal(err)
+		}
+		var names []string
+		for _, tool := range tools.Tools {
+			if !tool.Annotations.ReadOnlyHint && tool.Name != "link_whatsapp" {
+				t.Fatalf("read-only mode offers %s", tool.Name)
+			}
+			names = append(names, tool.Name)
+		}
+		if !slices.Contains(names, "read_whatsapp_messages") || slices.Contains(names, "send_whatsapp_message") {
+			t.Fatalf("tools = %v", names)
 		}
 	})
 }
@@ -1271,13 +1302,16 @@ func TestMessageLifecycleFromClaude(t *testing.T) {
 			FileSha256: sealed.FileSHA256[:], FileEncSha256: sealed.FileEncSHA256[:], Mimetype: new("image/png")}})
 		synctest.Wait()
 
-		read, result := callAs[mcptools.ReadReport](c, "read_whatsapp_messages", map[string]any{"chat": "bob", "mark_read": true})
+		read, result := callAs[mcptools.ReadReport](c, "read_whatsapp_messages", map[string]any{"chat": "bob"})
 		if len(read.Messages) != 4 {
 			t.Fatalf("read = %+v", read.Messages)
 		}
+		if marked, _ := callAs[mcptools.ChangeReport](c, "change_whatsapp_message", map[string]any{"message_id": typo, "mark_read": true}); marked.State != "done" || !strings.Contains(marked.Detail, "as read") {
+			t.Fatalf("mark_read = %+v", marked)
+		}
 		mine, edited, deleted := read.Messages[0], read.Messages[1], read.Messages[2]
 		if mine.Text != "hi Bob" || !slices.Equal(mine.Reactions, []string{"👍 Bob"}) || edited.Text != "hello" || !edited.Edited || mine.Edited ||
-			deleted.Text != "" || deleted.Kind != "deleted" || !strings.Contains(read.Detail, "Marked as read.") || !fromText[mcptools.ReadReport](t, result).Messages[1].Edited ||
+			deleted.Text != "" || deleted.Kind != "deleted" || !fromText[mcptools.ReadReport](t, result).Messages[1].Edited ||
 			!slices.Equal(fromText[mcptools.ReadReport](t, result).Messages[0].Reactions, []string{"👍 Bob"}) {
 			t.Fatalf("read = %+v\n%s", read, textOf(result))
 		}
@@ -1368,8 +1402,8 @@ func TestRepliesFromClaude(t *testing.T) {
 		w.Type(linking.Code)
 		c.call("whatsapp_status", map[string]any{"wait_seconds": 60})
 		synctest.Wait()
-		if empty, _ := callAs[mcptools.ReadReport](c, "read_whatsapp_messages", map[string]any{"chat": "+40 722 222 222", "mark_read": true}); strings.Contains(empty.Detail, "Marked as read") {
-			t.Fatalf("nothing was marked read, yet: %+v", empty)
+		if unknown, _ := callAs[mcptools.ChangeReport](c, "change_whatsapp_message", map[string]any{"message_id": "3EB0NOPE", "mark_read": true}); unknown.State != "unknown_message" {
+			t.Fatalf("mark_read on an unknown message = %+v", unknown)
 		}
 		from := func(m *wire.Message) string {
 			t.Helper()
@@ -1511,9 +1545,12 @@ func TestUnreadAndTicksFromClaude(t *testing.T) {
 		if elsewhere, _ := callAs[mcptools.ReadReport](c, "read_whatsapp_messages", map[string]any{"unread": true, "chat": "me"}); len(elsewhere.Messages) != 0 || elsewhere.Detail != "No unread messages." {
 			t.Fatalf("unread in another chat = %+v", elsewhere)
 		}
-		read, _ := callAs[mcptools.ReadReport](c, "read_whatsapp_messages", map[string]any{"chat": "bob", "mark_read": true})
-		if len(read.Messages) != 3 || read.Messages[2].Status != "read" || read.Messages[2].Text != "yes!" || read.Messages[0].Status != "" || !strings.HasSuffix(read.Detail, "Marked as read.") {
+		read, _ := callAs[mcptools.ReadReport](c, "read_whatsapp_messages", map[string]any{"chat": "bob"})
+		if len(read.Messages) != 3 || read.Messages[2].Status != "read" || read.Messages[2].Text != "yes!" || read.Messages[0].Status != "" {
 			t.Fatalf("after the read receipt: %+v", read)
+		}
+		if marked, _ := callAs[mcptools.ChangeReport](c, "change_whatsapp_message", map[string]any{"message_id": read.Messages[0].ID, "mark_read": true}); marked.State != "done" || !strings.Contains(marked.Detail, "as read") {
+			t.Fatalf("mark_read = %+v", marked)
 		}
 		if count, _ := unread(); count != 0 {
 			t.Fatalf("unread after marking read = %d", count)
@@ -1523,8 +1560,15 @@ func TestUnreadAndTicksFromClaude(t *testing.T) {
 		if count, _ := unread(); count != 1 {
 			t.Fatalf("unread after a new message = %d", count)
 		}
-		if missed, _ := callAs[mcptools.ReadReport](c, "read_whatsapp_messages", map[string]any{"unread": true, "chat": "bob", "mark_read": true}); len(missed.Messages) != 1 || missed.Messages[0].Text != "one more" || !strings.HasSuffix(missed.Detail, "Marked as read.") {
+		missed, _ = callAs[mcptools.ReadReport](c, "read_whatsapp_messages", map[string]any{"unread": true, "chat": "bob"})
+		if len(missed.Messages) != 1 || missed.Messages[0].Text != "one more" {
 			t.Fatalf("the one new message = %+v", missed)
+		}
+		if marked, _ := callAs[mcptools.ChangeReport](c, "change_whatsapp_message", map[string]any{"message_id": missed.Messages[0].ID, "mark_read": true}); marked.Detail != "Marked 1 message(s) in Bob (+40722222222) as read; the senders see blue ticks." {
+			t.Fatalf("mark_read = %+v", marked)
+		}
+		if again, _ := callAs[mcptools.ChangeReport](c, "change_whatsapp_message", map[string]any{"message_id": missed.Messages[0].ID, "mark_read": true}); again.State != "done" || !strings.HasPrefix(again.Detail, "Nothing in ") {
+			t.Fatalf("mark_read with nothing unread = %+v", again)
 		}
 		if count, _ := unread(); count != 0 {
 			t.Fatalf("unread after reading the new message = %d", count)

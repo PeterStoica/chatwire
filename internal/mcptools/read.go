@@ -18,13 +18,12 @@ import (
 )
 
 type ReadInput struct {
-	Chat     string `json:"chat,omitempty" jsonschema:"only this chat: a contact or group name, a mobile number with country code, me, or status for contacts' status updates; leave empty for all chats"`
-	From     string `json:"from,omitempty" jsonschema:"only messages sent by this person: a contact name, a mobile number with country code, or me"`
-	Query    string `json:"query,omitempty" jsonschema:"only messages containing all these words; case and accents do not matter"`
-	Limit    int    `json:"limit,omitempty" jsonschema:"how many messages to return, newest last (default 20, at most 200)"`
-	Before   string `json:"before,omitempty" jsonschema:"to page back: the id of the oldest message already shown, as the earlier result suggests; a time (RFC 3339) also works. In one chat, when this computer has nothing older, the phone is asked for more (a few seconds)"`
-	Unread   bool   `json:"unread,omitempty" jsonschema:"only the unread messages, from every chat that has some (or only chat), in the order the phone lists the chats; answers what did I miss in one call"`
-	MarkRead bool   `json:"mark_read,omitempty" jsonschema:"also mark the returned messages as read on the user's phone, which shows the senders blue ticks; only when the user asks for it"`
+	Chat   string `json:"chat,omitempty" jsonschema:"only this chat: a contact or group name, a mobile number with country code, me, or status for contacts' status updates; leave empty for all chats"`
+	From   string `json:"from,omitempty" jsonschema:"only messages sent by this person: a contact name, a mobile number with country code, or me"`
+	Query  string `json:"query,omitempty" jsonschema:"only messages containing all these words; case and accents do not matter"`
+	Limit  int    `json:"limit,omitempty" jsonschema:"how many messages to return, newest last (default 20, at most 200)"`
+	Before string `json:"before,omitempty" jsonschema:"to page back: the id of the oldest message already shown, as the earlier result suggests; a time (RFC 3339) also works. In one chat, when this computer has nothing older, the phone is asked for more (a few seconds)"`
+	Unread bool   `json:"unread,omitempty" jsonschema:"only the unread messages, from every chat that has some (or only chat), in the order the phone lists the chats; answers what did I miss in one call"`
 }
 
 type ReceivedMessage struct {
@@ -131,7 +130,7 @@ func matchGroups(all []groups.Group, name string) []groups.Group {
 }
 
 func describeGroup(dir directory, g groups.Group) ListedGroup {
-	listed := ListedGroup{ID: g.JID.String(), Name: g.Subject, Participants: len(g.Participants), Description: strings.TrimSpace(g.Description)}
+	listed := ListedGroup{ID: g.JID.String(), Name: clean(g.Subject), Participants: len(g.Participants), Description: visible(strings.TrimSpace(g.Description))}
 	for _, p := range g.Participants {
 		who := p.JID
 		if who.Server == "" {
@@ -184,13 +183,6 @@ func read(s Sender) mcp.ToolHandlerFor[ReadInput, ReadReport] {
 			report.Detail += fmt.Sprintf(" %d older message(s) were fetched from the phone.", fromPhone)
 		case fromPhone == 0:
 			report.Detail += " The phone was asked for older messages but sent none; it may be offline or keep nothing older for this chat."
-		}
-		if in.MarkRead && len(found) > 0 {
-			if err := s.MarkRead(ctx, found); err != nil {
-				report.Detail += fmt.Sprintf(" Could not mark them as read: %v.", err)
-			} else {
-				report.Detail += " Marked as read."
-			}
 		}
 		return nil, report, nil
 	}
@@ -376,10 +368,10 @@ func describeMessage(dir directory, m store.Message) ReceivedMessage {
 		}
 		out.Edited = !m.Edited.IsZero()
 		if q, ok := message.QuoteOf(inner); ok {
-			out.ReplyTo, out.Quote = q.ID, fmt.Sprintf("%s: %q", dir.who(q.Author), clip(quoted(q.Message), maxQuoted))
+			out.ReplyTo, out.Quote = q.ID, fmt.Sprintf("%s: %q", dir.who(q.Author), clip(visible(quoted(q.Message)), maxQuoted))
 		}
 	}
-	out.Text = body
+	out.Text = visible(body)
 	for _, r := range m.Reactions {
 		out.Reactions = append(out.Reactions, r.Emoji+" "+dir.who(r.By))
 	}

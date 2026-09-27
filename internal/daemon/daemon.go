@@ -6,6 +6,7 @@ import (
 	"fmt"
 	"io"
 	"net"
+	"net/url"
 	"os"
 	"path/filepath"
 	"strings"
@@ -15,7 +16,7 @@ import (
 
 const (
 	maxSocketPath = 100
-	maxLine       = 255
+	maxLine       = 8192
 	helloTimeout  = 5 * time.Second
 	greeting      = "chatwire"
 	replyOK       = "ok"
@@ -68,11 +69,11 @@ func Listen(ctx context.Context, path string) (net.Listener, error) {
 	return nil, fmt.Errorf("daemon: listen %s: %w", path, errStaleRemoved)
 }
 
-func Hello(conn net.Conn, build string) error {
+func Hello(conn net.Conn, build string, settings url.Values) error {
 	if err := conn.SetDeadline(time.Now().Add(helloTimeout)); err != nil {
 		return fmt.Errorf("%w: %w", ErrHello, err)
 	}
-	if _, err := io.WriteString(conn, greeting+" "+build+"\n"); err != nil {
+	if _, err := io.WriteString(conn, greeting+" "+build+" "+settings.Encode()+"\n"); err != nil {
 		return fmt.Errorf("%w: %w", ErrHello, err)
 	}
 	reply, err := readLine(conn)
@@ -105,7 +106,7 @@ func readLine(conn net.Conn) (string, error) {
 	}
 }
 
-type Session func(ctx context.Context, conn io.ReadWriteCloser)
+type Session func(ctx context.Context, conn io.ReadWriteCloser, settings url.Values)
 
 type Server struct {
 	listener net.Listener
@@ -143,8 +144,8 @@ func (s *Server) Serve(ctx context.Context) error {
 			sessions.Go(func() {
 				defer s.end()
 				defer conn.Close()
-				if s.greet(conn) {
-					s.session(ctx, conn)
+				if settings, ok := s.greet(conn); ok {
+					s.session(ctx, conn, settings)
 				}
 			})
 		case ctx.Err() != nil:
@@ -155,24 +156,26 @@ func (s *Server) Serve(ctx context.Context) error {
 	}
 }
 
-func (s *Server) greet(conn net.Conn) bool {
+func (s *Server) greet(conn net.Conn) (url.Values, bool) {
 	if err := conn.SetDeadline(time.Now().Add(helloTimeout)); err != nil {
-		return false
+		return nil, false
 	}
 	line, err := readLine(conn)
-	name, build, _ := strings.Cut(line, " ")
+	name, rest, _ := strings.Cut(line, " ")
+	build, encoded, _ := strings.Cut(rest, " ")
+	settings, badSettings := url.ParseQuery(encoded)
 	switch {
-	case err != nil || name != greeting || build == "":
-		return false
+	case err != nil || name != greeting || build == "" || badSettings != nil:
+		return nil, false
 	case build != s.build:
 		_, _ = io.WriteString(conn, replyRestart+"\n")
 		s.stop()
-		return false
+		return nil, false
 	}
 	if _, err := io.WriteString(conn, replyOK+"\n"); err != nil {
-		return false
+		return nil, false
 	}
-	return conn.SetDeadline(time.Time{}) == nil
+	return settings, conn.SetDeadline(time.Time{}) == nil
 }
 
 func (s *Server) begin() {
