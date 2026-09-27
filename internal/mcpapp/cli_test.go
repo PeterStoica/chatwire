@@ -1,7 +1,9 @@
 package mcpapp_test
 
 import (
+	"os"
 	"os/exec"
+	"path/filepath"
 	"strings"
 	"testing"
 )
@@ -33,5 +35,18 @@ func TestHelpListsTheCommandsAndIsNotAnError(t *testing.T) {
 	cmd.Env = append(cmd.Environ(), "HOME="+w.home)
 	if out, _ := cmd.CombinedOutput(); !strings.Contains(string(out), "-client") {
 		t.Errorf("setup --help leaves out its options:\n%s", out)
+	}
+}
+
+func TestSetupWithoutATerminalWaitsForYes(t *testing.T) {
+	w := newWorld(t, shortHome(t))
+	cmd := exec.CommandContext(t.Context(), builds[0], "setup", "--client", "codex", "--no-link", "--json")
+	cmd.Env = append(cmd.Environ(), "HOME="+w.home, "XDG_CACHE_HOME=", "XDG_CONFIG_HOME=")
+	out, err := cmd.CombinedOutput()
+	if err == nil || !strings.Contains(string(out), "--yes") {
+		t.Fatalf("setup with no one at a terminal and no --yes: %v\n%s", err, out)
+	}
+	if _, err := os.Stat(filepath.Join(w.home, ".codex", "config.toml")); err == nil {
+		t.Fatal("setup changed an app's settings without a yes")
 	}
 }

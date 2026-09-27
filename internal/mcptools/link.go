@@ -152,7 +152,7 @@ func describe(st linker.Status) Report {
 			st.Code, st.Phone)}
 	case linker.ShowingQR:
 		return Report{State: "waiting_for_scan", Detail: "Show the user this QR code. " + scanSteps + " " +
-			"It changes every 20 seconds; if it stops working, call link_whatsapp again, or link with the phone number instead to avoid scanning."}
+			"It refreshes by itself; if it stops working, call link_whatsapp again, or link with the phone number instead to avoid scanning."}
 	case linker.Linked:
 		return Report{State: "linked", LinkedAs: "+" + st.Account.JID.User, Detail: fmt.Sprintf("WhatsApp is linked to +%s.", st.Account.JID.User)}
 	case linker.Expired:
@@ -163,9 +163,9 @@ func describe(st linker.Status) Report {
 		return Report{State: "starting", Detail: "Contacting WhatsApp."}
 	case linker.LoggedOut:
 		return Report{State: "logged_out", Detail: "WhatsApp unlinked this computer: it was removed on the phone, or the phone was offline for about two weeks. " +
-			"Ask the user for their WhatsApp mobile number with country code and call link_whatsapp to link again."}
+			"Call link_whatsapp to link again."}
 	default:
-		return Report{State: stateNotLinked, Detail: "WhatsApp is not linked yet. Ask the user for their WhatsApp mobile number with country code and call link_whatsapp with it."}
+		return Report{State: stateNotLinked, Detail: "WhatsApp is not linked yet. Call link_whatsapp to show the user a QR code to scan."}
 	}
 }
 

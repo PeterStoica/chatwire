@@ -66,7 +66,7 @@ type Options struct {
 }
 
 const Instructions = "Reads and sends WhatsApp messages from the user's own account through a linked device. " +
-	"If whatsapp_status says it is not linked, ask the user for their mobile number with country code, call link_whatsapp, show the code exactly as returned, then wait with whatsapp_status. " +
+	"If whatsapp_status says it is not linked, call link_whatsapp: it opens a page with a live QR code in the user's browser for them to scan from WhatsApp's Linked devices screen; then wait with whatsapp_status. " +
 	"To catch up, call read_whatsapp_messages with unread=true. Chats are named the way the user names them: a contact or group name, a number with country code, me, or status. " +
 	"Message ids from reads work with reply_to, get_whatsapp_media and change_whatsapp_message. " +
 	"Send, react, vote, edit or delete only when the user asked for it, and send exactly the text they approved. " +
@@ -92,7 +92,7 @@ func Register(server *mcp.Server, l Linker, s Sender, opts Options) {
 	add(server, &mcp.Tool{
 		Name:        "get_whatsapp_media",
 		Annotations: reads("Open WhatsApp media"),
-		Description: "Open the photo, video, voice note, sticker or document of a WhatsApp message by its id from read_whatsapp_messages. Photos come back as an image; other files are saved and their path is returned.",
+		Description: "Open the photo, video, voice note, sticker or document of a WhatsApp message by its id from read_whatsapp_messages. Photos up to 4 MB come back as an image; larger ones and other files are saved and their path is returned.",
 	}, getMedia(s, opts))
 	if !opts.ReadOnly {
 		add(server, &mcp.Tool{
@@ -143,9 +143,9 @@ func Register(server *mcp.Server, l Linker, s Sender, opts Options) {
 		Name:        "link_whatsapp",
 		Annotations: writes("Link WhatsApp", false),
 		Description: "Connect the user's WhatsApp to this computer so messages can be read and sent. " +
-			"Ask the user for their WhatsApp mobile number with country code and pass it as phone_number: the result is an 8-character code they type on the phone in WhatsApp's Linked devices screen (Link a device, then Link with phone number instead), with no QR code to scan. " +
-			"Show the code to the user exactly as returned, then call whatsapp_status with wait_seconds to learn when linking finished. " +
-			"Calling again with the same number while linking is in progress returns the same code. Without a phone number this returns a QR code image to scan instead.",
+			"Without a phone number this opens a page with a live QR code in the user's browser and returns its address and the QR code image; the user scans it from WhatsApp's Linked devices screen, and the page renews the code by itself. " +
+			"Only if the user cannot scan a QR code on this computer, pass their WhatsApp mobile number with country code as phone_number: the result is an 8-character code they type on the phone (Link a device, then Link with phone number instead); show it exactly as returned. " +
+			"Then call whatsapp_status with wait_seconds to learn when linking finished. Calling again the same way (the same phone number, or none) keeps the current QR page or code; a different number starts over.",
 	}, link(l, opts))
 	add(server, &mcp.Tool{
 		Name:        "whatsapp_status",

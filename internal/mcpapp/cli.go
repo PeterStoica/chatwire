@@ -3,6 +3,7 @@ package mcpapp
 import (
 	"context"
 	"encoding/json/v2"
+	"errors"
 	"flag"
 	"fmt"
 	"io"
@@ -11,6 +12,7 @@ import (
 	"strings"
 	"time"
 
+	"github.com/mattn/go-isatty"
 	"github.com/modelcontextprotocol/go-sdk/mcp"
 
 	"github.com/PeterStoica/chatwire/internal/mcptools"
@@ -24,13 +26,17 @@ const (
 
 const usage = `Chatwire connects AI apps to your WhatsApp. Unofficial; not affiliated with WhatsApp or Meta.
 
-  chatwire setup            add Chatwire to the AI apps on this computer, then link WhatsApp
+  chatwire setup            add Chatwire to the AI apps on this computer (it asks first), then link WhatsApp
+  chatwire setup --client claude-code
+                            add it to one app only (chatwire setup --help lists the app names)
   chatwire link             link WhatsApp to this computer (a QR page opens in your browser)
-  chatwire link --phone +40 721 234 567
+  chatwire link --phone "+40 721 234 567"
                             link with an 8-character code typed on the phone instead
   chatwire status           show whether WhatsApp is linked and connected
   chatwire update           install the newest Chatwire (--check only says whether there is one)
   chatwire setup --remove   take Chatwire out of every AI app again
+  chatwire version          show which version this is
+  chatwire licenses         show the licences of Chatwire and the software it includes
 
 AI apps start Chatwire by themselves; you never need to leave it running.
 Add --json to setup, link or status for output made for programs.
@@ -47,11 +53,7 @@ type cli struct {
 
 func terminal(r io.Reader) bool {
 	f, ok := r.(*os.File)
-	if !ok {
-		return false
-	}
-	info, err := f.Stat()
-	return err == nil && info.Mode()&os.ModeCharDevice != 0
+	return ok && (isatty.IsTerminal(f.Fd()) || isatty.IsCygwinTerminal(f.Fd()))
 }
 
 func (c cli) session() (*mcp.ClientSession, error) {
@@ -73,8 +75,7 @@ func (c cli) session() (*mcp.ClientSession, error) {
 }
 
 var asCommands = strings.NewReplacer(
-	"Ask the user for their WhatsApp mobile number with country code and call link_whatsapp with it.", "Run chatwire link to link it.",
-	"Ask the user for their WhatsApp mobile number with country code and call link_whatsapp to link again.", "Run chatwire link to link it again.",
+	"Call link_whatsapp to show the user a QR code to scan.", "Run chatwire link to get a QR code to scan.",
 	"call whatsapp_status with wait_seconds", "run chatwire status --wait 50 until it is linked",
 	"Call link_whatsapp", "Run chatwire link",
 	"call link_whatsapp", "run chatwire link",
@@ -216,6 +217,9 @@ func (c cli) setupCommand(args []string, in io.Reader) error {
 	if len(chosen) == 0 {
 		c.print(map[string]any{"results": []setup.Result{}}, "No AI apps found on this computer. Name one with --client, for example: chatwire setup --client claude-desktop")
 		return nil
+	}
+	if !c.human && !*yes {
+		return errors.New("chatwire: setup changes the AI apps' settings, so it asks first; ask the user, then run it again with --yes")
 	}
 	if c.human && !*yes && !confirm(c.out, in, chosen, *remove) {
 		_, _ = fmt.Fprintln(c.out, "Nothing changed.")

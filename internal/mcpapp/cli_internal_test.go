@@ -14,8 +14,8 @@ func TestReportsReadAsCommands(t *testing.T) {
 	for _, tt := range []struct{ detail, want string }{
 		{"The linking code or QR code expired before it was used. Call link_whatsapp again for a fresh one.", "Run chatwire link again for a fresh one."},
 		{"Linking failed: the phone said no. Call link_whatsapp to try again.", "Linking failed: the phone said no. Run chatwire link to try again."},
-		{"WhatsApp is not linked yet. Ask the user for their WhatsApp mobile number with country code and call link_whatsapp with it.", "WhatsApp is not linked yet. Run chatwire link to link it."},
-		{"WhatsApp unlinked this computer. Ask the user for their WhatsApp mobile number with country code and call link_whatsapp to link again.", "WhatsApp unlinked this computer. Run chatwire link to link it again."},
+		{"WhatsApp is not linked yet. Call link_whatsapp to show the user a QR code to scan.", "WhatsApp is not linked yet. Run chatwire link to get a QR code to scan."},
+		{"WhatsApp unlinked this computer. Call link_whatsapp to link again.", "WhatsApp unlinked this computer. Run chatwire link to link again."},
 		{"It changes every 20 seconds; if it stops working, call link_whatsapp again, or link with the phone number instead.", "if it stops working, run chatwire link again"},
 		{"The page keeps up as the code changes and says when linking is done. Tell the user, then call whatsapp_status with wait_seconds.", "Tell the user, then run chatwire status --wait 50 until it is linked."},
 	} {

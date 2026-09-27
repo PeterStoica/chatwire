@@ -199,7 +199,7 @@ func TestLinkingByPhoneNumberFromClaudesSide(t *testing.T) {
 				t.Fatalf("the instructions and the tools disagree about %s", name)
 			}
 		}
-		if report, _ := c.call("whatsapp_status", nil); report.State != "not_linked" || !strings.Contains(report.Detail, "mobile number") {
+		if report, _ := c.call("whatsapp_status", nil); report.State != "not_linked" || !strings.Contains(report.Detail, "QR code") {
 			t.Fatalf("before linking: %+v", report)
 		}
 		report, result := c.call("link_whatsapp", map[string]any{"phone_number": "+40 700 000 000"})

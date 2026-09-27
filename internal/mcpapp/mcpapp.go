@@ -36,6 +36,7 @@ import (
 	"github.com/PeterStoica/chatwire/internal/mcptools"
 	"github.com/PeterStoica/chatwire/internal/messenger"
 	"github.com/PeterStoica/chatwire/internal/node"
+	"github.com/PeterStoica/chatwire/internal/notices"
 	"github.com/PeterStoica/chatwire/internal/pairing"
 	"github.com/PeterStoica/chatwire/internal/qrpage"
 	"github.com/PeterStoica/chatwire/internal/shim"
@@ -86,6 +87,9 @@ func run(ctx context.Context, args []string, stdin io.Reader, stdout, stderr io.
 	case "version", "--version":
 		_, err := fmt.Fprintln(stdout, "chatwire "+version())
 		return err
+	case "licenses", "licences":
+		_, err := io.WriteString(stdout, notices.Text)
+		return err
 	case "update":
 		flags := flag.NewFlagSet(command, flag.ContinueOnError)
 		flags.SetOutput(stderr)
@@ -112,6 +116,9 @@ func run(ctx context.Context, args []string, stdin io.Reader, stdout, stderr io.
 			return helped(err)
 		}
 		rest = flags.Args()
+	}
+	if len(rest) > 0 && (command == "link" || command == "status") {
+		return fmt.Errorf("chatwire: %s does not take %q; put a phone number in quotes, for example --phone \"+40 721 234 567\"", command, strings.Join(rest, " "))
 	}
 	c := cli{ctx: ctx, state: *state, linger: *linger, out: stdout, asJSON: *asJSON, human: terminal(stdin)}
 	switch command {
