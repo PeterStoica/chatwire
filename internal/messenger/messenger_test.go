@@ -8,6 +8,7 @@ import (
 	"net/http"
 	"net/http/httptest"
 	"path/filepath"
+	"slices"
 	"sync/atomic"
 	"testing"
 	"testing/synctest"
@@ -146,15 +147,29 @@ func TestReconnectsAfterWhatsAppDropsTheStream(t *testing.T) {
 	})
 }
 
-func dropMessages(r *rig, drops int, cut bool) *[]string {
-	var ids []string
+type dropped struct {
+	mu  sync.Mutex
+	ids []string
+}
+
+func (d *dropped) sent() []string {
+	d.mu.Lock()
+	defer d.mu.Unlock()
+	return slices.Clone(d.ids)
+}
+
+func dropMessages(r *rig, drops int, cut bool) *dropped {
+	d := &dropped{}
 	r.server.Drop = func(n node.Node) bool {
 		if n.Tag != "message" {
 			return false
 		}
 		id, _ := n.Attr("id").Text()
-		ids = append(ids, id)
-		if len(ids) > drops {
+		d.mu.Lock()
+		d.ids = append(d.ids, id)
+		count := len(d.ids)
+		d.mu.Unlock()
+		if count > drops {
 			return false
 		}
 		if cut {
@@ -162,21 +177,21 @@ func dropMessages(r *rig, drops int, cut bool) *[]string {
 		}
 		return true
 	}
-	return &ids
+	return d
 }
 
 func TestAMessageCutOffByADropIsSentAgainUnderTheSameID(t *testing.T) {
 	synctest.Test(t, func(t *testing.T) {
 		r := newRig(t)
-		ids := dropMessages(r, 1, true)
+		d := dropMessages(r, 1, true)
 		r.world.Script(r.world.Serve(r.server), r.world.Serve(r.server))
 		r.m.Start(t.Context(), r.state)
 		id, err := r.m.SendText(t.Context(), r.bob, "through the drop")
 		if err != nil {
 			t.Fatal(err)
 		}
-		if len(*ids) != 2 || (*ids)[0] != id || (*ids)[1] != id || r.delivers.Load() != 1 || r.world.Dials() != 2 {
-			t.Fatalf("sent ids %v for %q, delivered %d, dialled %d", *ids, id, r.delivers.Load(), r.world.Dials())
+		if ids := d.sent(); len(ids) != 2 || ids[0] != id || ids[1] != id || r.delivers.Load() != 1 || r.world.Dials() != 2 {
+			t.Fatalf("sent ids %v for %q, delivered %d, dialled %d", ids, id, r.delivers.Load(), r.world.Dials())
 		}
 		if recent := r.recent(t); len(recent) != 1 || recent[0].ID != id {
 			t.Fatalf("recent = %+v", recent)
@@ -187,12 +202,12 @@ func TestAMessageCutOffByADropIsSentAgainUnderTheSameID(t *testing.T) {
 func TestAMessageLostTwiceIsReportedUnconfirmed(t *testing.T) {
 	synctest.Test(t, func(t *testing.T) {
 		r := newRig(t)
-		ids := dropMessages(r, 2, true)
+		d := dropMessages(r, 2, true)
 		r.world.Script(r.world.Serve(r.server), r.world.Serve(r.server), r.world.Serve(r.server))
 		r.m.Start(t.Context(), r.state)
 		_, err := r.m.SendText(t.Context(), r.bob, "lost")
-		if !errors.Is(err, client.ErrUnconfirmed) || len(*ids) != 2 || (*ids)[0] != (*ids)[1] {
-			t.Fatalf("SendText() = %v after sending ids %v, want %v", err, *ids, client.ErrUnconfirmed)
+		if ids := d.sent(); !errors.Is(err, client.ErrUnconfirmed) || len(ids) != 2 || ids[0] != ids[1] {
+			t.Fatalf("SendText() = %v after sending ids %v, want %v", err, ids, client.ErrUnconfirmed)
 		}
 		if recent := r.recent(t); len(recent) != 0 {
 			t.Fatalf("stored %+v as sent", recent)
@@ -203,12 +218,12 @@ func TestAMessageLostTwiceIsReportedUnconfirmed(t *testing.T) {
 func TestASlowAckOnALiveConnectionIsNotSentAgain(t *testing.T) {
 	synctest.Test(t, func(t *testing.T) {
 		r := newRig(t)
-		ids := dropMessages(r, 1, false)
+		d := dropMessages(r, 1, false)
 		r.world.Script(r.world.Serve(r.server))
 		r.m.Start(t.Context(), r.state)
 		_, err := r.m.SendText(t.Context(), r.bob, "slow")
-		if !errors.Is(err, client.ErrUnconfirmed) || errors.Is(err, client.ErrClosed) || len(*ids) != 1 || r.world.Dials() != 1 {
-			t.Fatalf("SendText() = %v after sending ids %v on %d connections", err, *ids, r.world.Dials())
+		if ids := d.sent(); !errors.Is(err, client.ErrUnconfirmed) || errors.Is(err, client.ErrClosed) || len(ids) != 1 || r.world.Dials() != 1 {
+			t.Fatalf("SendText() = %v after sending ids %v on %d connections", err, ids, r.world.Dials())
 		}
 	})
 }
