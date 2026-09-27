@@ -1760,13 +1760,25 @@ func TestStanzasWeCannotUseAreRefused(t *testing.T) {
 		garbledID := garbled.Attr("id").String()
 		r.server.Inbox <- fakerelay.Deliver(r.bob, "Bob", time.Now(), garbled)[self]
 		r.server.Inbox <- node.Node{Tag: "message", Attrs: []node.Attr{from, text("id", "3EB0NOTIME"), text("type", "text")}}
-		r.server.Inbox <- node.Node{Tag: "call", Attrs: []node.Attr{from, text("id", "C1"), text("t", "1790000000")}, Children: []node.Node{{Tag: "offer", Attrs: []node.Attr{text("call-id", "X1")}}}}
+		r.server.Inbox <- node.Node{Tag: "call", Attrs: []node.Attr{from, text("id", "C1"), text("t", "1790000000")}, Children: []node.Node{{Tag: "offer", Attrs: []node.Attr{text("call-id", "X1"), {Key: "call-creator", Value: node.Address(r.bob)}}}}}
+		r.server.Inbox <- node.Node{Tag: "call", Attrs: []node.Attr{from, text("id", "C2"), text("t", "1790000001")}, Children: []node.Node{{Tag: "terminate", Attrs: []node.Attr{text("call-id", "X1")}}}}
 		r.server.Inbox <- node.Node{Tag: "status", Attrs: []node.Attr{from, text("id", "S1"), text("t", "1790000000")}}
 		synctest.Wait()
+		r.mu.Lock()
+		for _, n := range r.sent {
+			if got, _ := n.Attr("id").Text(); n.Tag == "receipt" && got == "C1" {
+				offer, _ := n.Child("offer")
+				if offer.Attr("call-id").String() != "X1" || offer.Attr("call-creator").String() != r.bob.String() || n.Attr("to").String() != r.bob.String() {
+					t.Errorf("the offer receipt = %s", n)
+				}
+			}
+		}
+		r.mu.Unlock()
 		for id, want := range map[string][]string{
 			garbledID:    {"ack class=message type=text error=491"},
 			"3EB0NOTIME": {"ack class=message type=text error=487"},
-			"C1":         {"ack class=call"},
+			"C1":         {"receipt"},
+			"C2":         {"ack class=call type=terminate"},
 			"S1":         {"ack class=status error=415"},
 		} {
 			if got := r.answers(id); !slices.Equal(got, want) {

@@ -410,7 +410,7 @@ func (c *Client) handle(ctx context.Context, n node.Node) {
 		_ = c.online.Session.Send(ctx, live.Ack(n))
 		c.notified(n)
 	case "call":
-		_ = c.online.Session.Send(ctx, live.Ack(n))
+		_ = c.online.Session.Send(ctx, callAnswer(n))
 	case "status":
 		_ = c.online.Session.Send(ctx, live.Nack(n, live.Unsupported))
 	case "ack":
@@ -423,6 +423,22 @@ func (c *Client) handle(ctx context.Context, n node.Node) {
 		c.fail(fmt.Errorf("%w: %s", linkflow.Classify(n, ErrClosed), n))
 		_ = c.online.Close()
 	}
+}
+
+func callAnswer(n node.Node) node.Node {
+	if len(n.Children) == 0 {
+		return live.Ack(n)
+	}
+	payload := n.Children[0]
+	switch payload.Tag {
+	case "offer", "accept", "reject", "enc_rekey":
+		return node.Node{Tag: "receipt", Attrs: []node.Attr{{Key: "to", Value: n.Attr("from")}, {Key: "id", Value: n.Attr("id")}}, Children: []node.Node{{
+			Tag: payload.Tag, Attrs: []node.Attr{{Key: "call-id", Value: payload.Attr("call-id")}, {Key: "call-creator", Value: payload.Attr("call-creator")}},
+		}}}
+	}
+	return node.Node{Tag: "ack", Attrs: []node.Attr{
+		{Key: "to", Value: n.Attr("from")}, {Key: "id", Value: n.Attr("id")}, {Key: "class", Value: node.Text("call")}, {Key: "type", Value: node.Text(payload.Tag)},
+	}}
 }
 
 func (c *Client) problem(what string, r any) {

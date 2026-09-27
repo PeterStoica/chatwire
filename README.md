@@ -59,6 +59,10 @@ set `CHATWIRE_FILES` to a list of full paths (separated by `:`, or `;` on Window
 WhatsApp's Terms of Service do not allow unofficial clients. Using Chatwire could get your WhatsApp account
 restricted or banned. Chatwire paces its sends to behave like a person, but the risk is yours.
 
+Chatwire does not take calls. It answers call signals the way a computer without calling does, so your phone keeps
+ringing as usual. If calls on your phone ever get stuck at "Connecting", unlink Chatwire in WhatsApp's Linked devices
+and tell us.
+
 ## Build from source
 
 With Go 1.27 or newer:
