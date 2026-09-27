@@ -106,7 +106,7 @@ func what(m *wire.Message) string {
 	}
 	inner := media.Unwrap(m)
 	if ref, ok := media.ReferenceOf(inner); ok {
-		return "the " + mediaNames[ref.Type]
+		return "the " + noun(ref.Type)
 	}
 	return "the " + message.TypeOf(inner) + " message"
 }
@@ -155,9 +155,24 @@ func refusedChange(target store.Message, err error) (string, string) {
 
 const notEmoji = "A reaction must be a single emoji, like 👍 or ❤️."
 
-var mediaNames = map[media.Type]string{
-	media.Image: "photo", media.Sticker: "sticker", media.Video: "video", media.GIF: "GIF", media.Audio: "audio",
-	media.Voice: "voice note", media.Document: "document",
+func noun(t media.Type) string {
+	switch t {
+	case media.Image:
+		return "photo"
+	case media.Sticker:
+		return "sticker"
+	case media.Video:
+		return "video"
+	case media.GIF:
+		return "GIF"
+	case media.Audio:
+		return "audio"
+	case media.Voice:
+		return "voice note"
+	case media.Document:
+		return "document"
+	}
+	return string(t)
 }
 
 func changeReport(report ChangeReport) (*mcp.CallToolResult, ChangeReport, error) {
