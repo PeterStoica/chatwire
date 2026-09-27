@@ -229,6 +229,20 @@ func TestAQRNobodyIsLookingAtExpires(t *testing.T) {
 	})
 }
 
+func TestAQRSessionWhatsAppEndsEarlyIsRenewedToo(t *testing.T) {
+	synctest.Test(t, func(t *testing.T) {
+		r := newRig(t)
+		r.world.Script(func(c *fakeworld.Conn) { r.world.OfferPairing(c) }, r.world.QRPairing(time.Second), r.world.Login(fakeworld.Success()))
+		r.linker.KeepQRWhile(func() bool { return true })
+		if _, err := r.linker.Start(t.Context(), ""); err != nil {
+			t.Fatal(err)
+		}
+		if final, err := r.linker.Await(t.Context(), linkedOrOver); err != nil || final.Phase != linker.Linked {
+			t.Fatalf("final = %+v, %v", final, err)
+		}
+	})
+}
+
 func TestAQRStopsRenewingAfterAWhile(t *testing.T) {
 	synctest.Test(t, func(t *testing.T) {
 		r := newRig(t)

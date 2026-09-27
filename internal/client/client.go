@@ -277,17 +277,6 @@ func pingGap(every time.Duration) time.Duration {
 	return every + rand.N(every/2+1)
 }
 
-func Pong(ping node.Node) (node.Node, bool) {
-	kind, _ := ping.Attr(attrType).Text()
-	xmlns, _ := ping.Attr("xmlns").Text()
-	if ping.Tag != "iq" || kind != "get" || xmlns != "urn:xmpp:ping" {
-		return node.Node{}, false
-	}
-	return node.Node{Tag: "iq", Attrs: []node.Attr{
-		{Key: "id", Value: ping.Attr("id")}, {Key: attrType, Value: node.Text("result")}, {Key: "to", Value: ping.Attr("from")},
-	}}, true
-}
-
 func PingRequest() node.Node {
 	return node.Node{Tag: "iq", Attrs: []node.Attr{
 		{Key: "id", Value: node.Value{}}, {Key: attrType, Value: node.Text("get")},
@@ -425,10 +414,6 @@ func (c *Client) handle(ctx context.Context, n node.Node) {
 		_ = c.online.Session.Send(ctx, live.Nack(n, live.Unsupported))
 	case "ack":
 		c.acked(n)
-	case "iq":
-		if pong, ok := Pong(n); ok {
-			_ = c.online.Session.Send(ctx, pong)
-		}
 	case "stream:error", "failure":
 		c.fail(fmt.Errorf("%w: %s", linkflow.Classify(n, ErrClosed), n))
 		_ = c.online.Close()
