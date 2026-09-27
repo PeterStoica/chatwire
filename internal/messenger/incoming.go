@@ -224,20 +224,7 @@ func (m *Messenger) addresses(ctx context.Context, j node.JID) ([]node.JID, erro
 	if account.Owns(j) {
 		return []node.JID{account.JID.WithoutDevice(), account.LID.WithoutDevice()}, nil
 	}
-	lids, err := m.store.LIDs(ctx)
-	if err != nil {
-		return nil, err
-	}
-	out := []node.JID{j}
-	for lid, pn := range lids {
-		switch j {
-		case lid:
-			out = append(out, pn)
-		case pn:
-			out = append(out, lid)
-		}
-	}
-	return out, nil
+	return m.store.Forms(ctx, j)
 }
 
 func (m *Messenger) sentMessage(ctx context.Context, chat node.JID, id string) (*wire.Message, bool) {
@@ -295,9 +282,10 @@ func (m *Messenger) sameSender(ctx context.Context, a, b node.JID) (bool, error)
 	if a == b {
 		return true, nil
 	}
-	lids, err := m.store.LIDs(ctx)
+	ca, err := m.store.Canonical(ctx, a)
 	if err != nil {
 		return false, err
 	}
-	return lids[a] == b || lids[b] == a, nil
+	cb, err := m.store.Canonical(ctx, b)
+	return err == nil && ca == cb, err
 }

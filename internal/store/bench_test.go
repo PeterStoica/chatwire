@@ -79,3 +79,36 @@ func BenchmarkStoreAtScale(b *testing.B) {
 		}
 	})
 }
+
+func BenchmarkMessagesThatRepeatAKnownPair(b *testing.B) {
+	s := benchmarkStore(b, 100000)
+	pairs := map[node.JID]node.JID{}
+	for i := range 300 {
+		pairs[node.JID{User: fmt.Sprintf("9%07d", i), Server: node.ServerLID}] = node.JID{User: fmt.Sprintf("4072%07d", i), Server: node.ServerUser}
+	}
+	if err := s.Apply(b.Context(), store.Changes{LIDs: pairs}); err != nil {
+		b.Fatal(err)
+	}
+	lid, pn := node.JID{User: "90000007", Server: node.ServerLID}, node.JID{User: "40720000007", Server: node.ServerUser}
+	b.Run("known pair", func(b *testing.B) {
+		i := 0
+		for b.Loop() {
+			i++
+			m := text2(fmt.Sprintf("3EB1%08X", i), lid, lid, int64(1790000000+i), "hello")
+			if err := s.Apply(b.Context(), store.Changes{Messages: []store.Message{m}, LIDs: map[node.JID]node.JID{lid: pn}}); err != nil {
+				b.Fatal(err)
+			}
+		}
+	})
+	b.Run("new pair", func(b *testing.B) {
+		i := 0
+		for b.Loop() {
+			i++
+			fresh := node.JID{User: fmt.Sprintf("8%07d", i), Server: node.ServerLID}
+			m := text2(fmt.Sprintf("3EB2%08X", i), fresh, fresh, int64(1790000000+i), "hello")
+			if err := s.Apply(b.Context(), store.Changes{Messages: []store.Message{m}, LIDs: map[node.JID]node.JID{fresh: {User: fmt.Sprintf("4079%07d", i), Server: node.ServerUser}}}); err != nil {
+				b.Fatal(err)
+			}
+		}
+	})
+}

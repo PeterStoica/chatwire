@@ -969,3 +969,38 @@ func TestPrivacyTokensKeepTheNewestAndFollowThePrivateID(t *testing.T) {
 	check(bob, []byte{3}, at(3000), at(6000))
 	check(bobLID, []byte{3}, at(3000), at(6000))
 }
+
+func TestLearningAPairRewritesOldAuthorsOnce(t *testing.T) {
+	s := open(t)
+	bob := node.JID{User: "40722222222", Server: node.ServerUser}
+	bobLID := node.JID{User: "99001", Server: node.ServerLID}
+	family := node.JID{User: "120363000000000031", Server: node.ServerGroup}
+	at := time.Unix(1790000000, 0)
+	if err := s.Apply(ctx(t), store.Changes{Messages: []store.Message{
+		{ID: "G1", Chat: family, Author: bobLID, Time: at, Message: &wire.Message{Conversation: new("from the private id")}},
+	}}); err != nil {
+		t.Fatal(err)
+	}
+	for range 2 {
+		if err := s.Apply(ctx(t), store.Changes{LIDs: map[node.JID]node.JID{bobLID: bob}}); err != nil {
+			t.Fatal(err)
+		}
+	}
+	got, ok, err := s.MessageIn(ctx(t), family, "G1")
+	if err != nil || !ok || got.Author != bob {
+		t.Fatalf("after learning the pair the author is %v (%v, %v)", got.Author, ok, err)
+	}
+	for _, j := range []node.JID{bob, bobLID, {User: bob.User, Device: 3, Server: bob.Server}} {
+		forms, err := s.Forms(ctx(t), j)
+		if err != nil || len(forms) != 2 || !slices.Contains(forms, bob) || !slices.Contains(forms, bobLID) {
+			t.Fatalf("Forms(%v) = %v, %v", j, forms, err)
+		}
+	}
+	if c, err := s.Canonical(ctx(t), bobLID); err != nil || c != bob {
+		t.Fatalf("Canonical(%v) = %v, %v", bobLID, c, err)
+	}
+	stranger := node.JID{User: "40799999999", Server: node.ServerUser}
+	if forms, err := s.Forms(ctx(t), stranger); err != nil || len(forms) != 1 || forms[0] != stranger {
+		t.Fatalf("Forms of someone without a pair = %v, %v", forms, err)
+	}
+}

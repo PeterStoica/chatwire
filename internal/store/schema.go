@@ -104,8 +104,12 @@ CREATE TABLE tokens (
 );
 `
 
+const schemaV8 = `
+CREATE INDEX IF NOT EXISTS lids_by_pn ON lids (pn);
+`
+
 func migrations() []string {
-	return []string{schemaV1, schemaV2, schemaV3, schemaV4, schemaV5, foldLIDs, schemaV7}
+	return []string{schemaV1, schemaV2, schemaV3, schemaV4, schemaV5, foldLIDs, schemaV7, schemaV8}
 }
 
 func (s *Store) migrate(ctx context.Context) error {
