@@ -22,7 +22,7 @@ import (
 )
 
 const (
-	maxWait     = 120 * time.Second
+	maxWait     = 50 * time.Second
 	sendTimeout = 45 * time.Second
 	fileTimeout = 5 * time.Minute
 )

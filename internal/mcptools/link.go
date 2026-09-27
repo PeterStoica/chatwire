@@ -26,7 +26,7 @@ type LinkInput struct {
 }
 
 type StatusInput struct {
-	WaitSeconds int `json:"wait_seconds,omitempty" jsonschema:"wait up to this many seconds (at most 120) for a link in progress to finish before answering"`
+	WaitSeconds int `json:"wait_seconds,omitempty" jsonschema:"wait up to this many seconds (at most 50) for a link in progress to finish before answering"`
 }
 
 type Report struct {

@@ -18,7 +18,7 @@ import (
 )
 
 const (
-	maxWaitStep    = 120 * time.Second
+	maxWaitStep    = 50 * time.Second
 	defaultLinkFor = 5 * time.Minute
 )
 

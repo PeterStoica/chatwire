@@ -310,7 +310,7 @@ func TestWaitingGivesUpAfterTheRequestedTime(t *testing.T) {
 			t.Fatalf("after %s: %+v", time.Since(start), report)
 		}
 		start = time.Now()
-		if report, _ := c.call("whatsapp_status", map[string]any{"wait_seconds": 999}); time.Since(start) != 120*time.Second || report.State != "waiting_for_code" {
+		if report, _ := c.call("whatsapp_status", map[string]any{"wait_seconds": 999}); time.Since(start) != 50*time.Second || report.State != "waiting_for_code" {
 			t.Fatalf("an oversized wait lasted %s: %+v", time.Since(start), report)
 		}
 	})
@@ -331,8 +331,12 @@ func TestWaitingEndsWhenTheCodeIsReplaced(t *testing.T) {
 		c, _ := connect(t, w)
 		first, _ := c.call("link_whatsapp", map[string]any{"phone_number": "+40 700 000 000"})
 		start := time.Now()
-		c.call("whatsapp_status", map[string]any{"wait_seconds": 120})
-		report, _ := c.call("whatsapp_status", map[string]any{"wait_seconds": 120})
+		report := first
+		for range 5 {
+			if report, _ = c.call("whatsapp_status", map[string]any{"wait_seconds": 50}); report.Code != first.Code {
+				break
+			}
+		}
 		if time.Since(start) != 195*time.Second || report.Code == first.Code || !strings.Contains(report.Detail, "NEW linking code: "+report.Code) {
 			t.Fatalf("after %s: %+v", time.Since(start), report)
 		}
