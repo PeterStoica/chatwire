@@ -116,7 +116,7 @@ const manyFailures = 10
 func describe(st linker.Status) Report {
 	switch st.Phase {
 	case linker.ShowingCode:
-		intro := "Linking code: %s\n\nWhatsApp on the phone with number +%s shows a notification to link a device; tapping it opens the place to type the code. Without it, open WhatsApp's Linked devices screen:\n"
+		intro := "Linking code: %s\n\nThe phone with number +%s may show a WhatsApp notification about linking a device; tapping it leads to where the code is typed. Otherwise open WhatsApp's Linked devices screen:\n"
 		if st.Renewed {
 			intro = "The earlier code expired, so there is a NEW linking code: %s\n\nShow the user this one instead. On the phone with number +%s, open WhatsApp's Linked devices screen:\n"
 		}
