@@ -217,7 +217,23 @@ func socketPath(state string) (string, error) {
 		return "", fmt.Errorf("mcpapp: state dir: %w", err)
 	}
 	sum := sha256.Sum256([]byte(absolute))
-	return filepath.Join(cache, "chatwire", hex.EncodeToString(sum[:4])+".sock"), nil
+	name := hex.EncodeToString(sum[:4]) + ".sock"
+	for _, base := range []string{cache, os.Getenv("XDG_RUNTIME_DIR"), privateTemp()} {
+		if base == "" {
+			continue
+		}
+		if path := filepath.Join(base, "chatwire", name); daemon.CheckPath(path) == nil {
+			return path, nil
+		}
+	}
+	return filepath.Join(cache, "chatwire", name), nil
+}
+
+func privateTemp() string {
+	if runtime.GOOS == "linux" {
+		return ""
+	}
+	return os.TempDir()
 }
 
 func self() (executable, build string, err error) {
