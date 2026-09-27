@@ -9,6 +9,7 @@ import (
 	"fmt"
 	"io"
 	"maps"
+	"math/rand/v2"
 	"net/http"
 	"runtime/debug"
 	"slices"
@@ -39,12 +40,14 @@ import (
 )
 
 const (
-	MaxDownload = 100 << 20
-	ackTimeout  = 30 * time.Second
-	typeGroup   = "skmsg"
-	attrType    = "type"
-	pingEvery   = 20 * time.Second
-	pingWait    = 20 * time.Second
+	MaxDownload  = 100 << 20
+	ackTimeout   = 30 * time.Second
+	typeGroup    = "skmsg"
+	attrType     = "type"
+	pingEvery    = 20 * time.Second
+	pingWait     = 10 * time.Second
+	maxPingCheck = 5 * time.Second
+	deadAfter    = 75 * time.Second
 )
 
 var (
@@ -214,8 +217,12 @@ func Connect(ctx context.Context, cfg Config, state State) (*Client, error) {
 }
 
 func (c *Client) keepAlive(ctx context.Context, every time.Duration) {
-	ticker := time.NewTicker(every)
+	check := min(every/4, maxPingCheck)
+	ticker := time.NewTicker(check)
 	defer ticker.Stop()
+	wall := func() time.Time { return c.cfg.Link.Now().Round(0) }
+	lastCheck, lastPong := wall(), wall()
+	due := time.Now().Add(pingGap(every))
 	for {
 		select {
 		case <-ctx.Done():
@@ -226,15 +233,34 @@ func (c *Client) keepAlive(ctx context.Context, every time.Duration) {
 			return
 		case <-ticker.C:
 		}
+		now := wall()
+		woke := now.Sub(lastCheck) > 3*check
+		lastCheck = now
+		if !woke && time.Now().Before(due) {
+			continue
+		}
+		due = time.Now().Add(pingGap(every))
 		pingCtx, cancel := context.WithTimeout(ctx, pingWait)
 		_, err := c.online.Session.Query(pingCtx, PingRequest())
 		cancel()
-		if err != nil && ctx.Err() == nil && c.life.Err() == nil {
-			c.fail(fmt.Errorf("%w: no answer to a keepalive ping within %s", ErrClosed, pingWait))
-			_ = c.online.Close()
+		lastCheck = wall()
+		switch {
+		case ctx.Err() != nil || c.life.Err() != nil:
 			return
+		case err == nil:
+			lastPong = lastCheck
+			continue
+		case !woke && wall().Sub(lastPong) < deadAfter:
+			continue
 		}
+		c.fail(fmt.Errorf("%w: no answer to keepalive pings since %s", ErrClosed, lastPong.Format(time.TimeOnly)))
+		_ = c.online.Close()
+		return
 	}
+}
+
+func pingGap(every time.Duration) time.Duration {
+	return every + rand.N(every/2+1)
 }
 
 func Pong(ping node.Node) (node.Node, bool) {

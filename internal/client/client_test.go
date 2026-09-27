@@ -41,6 +41,7 @@ import (
 	"github.com/PeterStoica/chatwire/internal/testkit/fakeusync"
 	"github.com/PeterStoica/chatwire/internal/testkit/fakeworld"
 	"github.com/PeterStoica/chatwire/internal/wire"
+	"sync/atomic"
 )
 
 func TestMain(m *testing.M) {
@@ -68,6 +69,7 @@ type rig struct {
 	receipts  chan message.Receipt
 	http      *http.Client
 	lids      map[node.JID]node.JID
+	now       func() time.Time
 	receive   func(client.Received)
 	seen      func(chat node.JID, id string) bool
 	tokenOf   func(node.JID) privacy.Token
@@ -124,8 +126,12 @@ func (r *rig) connect() *client.Client {
 	r.t.Helper()
 	w := r.world
 	w.Script(w.QRPairing(time.Second), w.Login(fakeworld.Success()), w.Serve(r.server))
+	now := r.now
+	if now == nil {
+		now = time.Now
+	}
 	cfg := linkflow.Config{
-		Dial: w.Dial, Dictionary: w.Dictionary, Root: w.Authority.Root(), Version: w.Version, Random: rand.Reader, Now: time.Now,
+		Dial: w.Dial, Dictionary: w.Dictionary, Root: w.Authority.Root(), Version: w.Version, Random: rand.Reader, Now: now,
 		ShowQR: w.ShowQR, Save: func(linkflow.Linked) error { return nil }, KeepAlive: r.keepAlive,
 	}
 	linked, err := linkflow.Link(r.t.Context(), cfg)
@@ -1406,8 +1412,8 @@ func TestKeepalivePingsFindADeadConnection(t *testing.T) {
 				t.Fatalf("a healthy connection ended: %v", c.Err())
 			default:
 			}
-			if got := pings(r); got < 14 || got > 15 {
-				t.Fatalf("%d pings in five minutes, want one every 20 seconds", got)
+			if got := pings(r); got < 10 || got > 15 {
+				t.Fatalf("%d pings in five minutes, want one every 20 to 30 seconds", got)
 			}
 			_ = c.Close()
 		})
@@ -1428,8 +1434,39 @@ func TestKeepalivePingsFindADeadConnection(t *testing.T) {
 			case <-time.After(2 * time.Minute):
 				t.Fatal("the connection stayed up with its pings unanswered")
 			}
-			if waited := time.Since(start); waited > 41*time.Second || !errors.Is(c.Err(), client.ErrClosed) || !strings.Contains(c.Err().Error(), "keepalive") {
+			if waited := time.Since(start); waited < 75*time.Second || waited > 2*time.Minute || !errors.Is(c.Err(), client.ErrClosed) || !strings.Contains(c.Err().Error(), "keepalive") {
 				t.Fatalf("after %s: %v", waited, c.Err())
+			}
+		})
+	})
+	t.Run("after the computer slept", func(t *testing.T) {
+		t.Parallel()
+		synctest.Test(t, func(t *testing.T) {
+			r := newRig(t)
+			r.keepAlive = 0
+			var asleep atomic.Bool
+			var ahead atomic.Int64
+			r.now = func() time.Time { return time.Now().Add(time.Duration(ahead.Load())) }
+			r.server.Drop = func(n node.Node) bool {
+				xmlns, _ := n.Attr("xmlns").Text()
+				return asleep.Load() && n.Tag == "iq" && xmlns == "w:p"
+			}
+			c := r.connect()
+			time.Sleep(time.Minute)
+			synctest.Wait()
+			if got := pings(r); got < 1 {
+				t.Fatalf("%d pings in the first minute", got)
+			}
+			asleep.Store(true)
+			ahead.Store(int64(time.Hour))
+			woke := time.Now()
+			select {
+			case <-c.Done():
+			case <-time.After(time.Minute):
+				t.Fatal("a connection that slept through an hour was kept")
+			}
+			if waited := time.Since(woke); waited > 20*time.Second {
+				t.Fatalf("noticed the dead connection %s after waking", waited)
 			}
 		})
 	})
