@@ -49,6 +49,8 @@ type Sender interface {
 
 type Options struct {
 	MediaDir string
+	Folders  []string
+	Private  []string
 	LinkPage func(context.Context) (url string, opened bool, err error)
 }
 
@@ -75,8 +77,9 @@ func Register(server *mcp.Server, l Linker, s Sender, opts Options) {
 	}, send(s))
 	add(server, &mcp.Tool{
 		Name:        "send_whatsapp_file",
-		Description: "Send a photo, video, voice note (.opus/.ogg) or any document from this computer over WhatsApp, with an optional caption. to is a contact or group name, a mobile number with country code, or me.",
-	}, sendFile(s))
+		Description: "Send a photo, video, voice note (.opus/.ogg) or any document from this computer over WhatsApp, with an optional caption. to is a contact or group name, a mobile number with country code, or me. " +
+			"For safety, files are only sent from the Desktop, Documents, Downloads, Pictures, Movies, Videos, Music and temporary folders (the user can allow more with the CHATWIRE_FILES setting); hidden files never.",
+	}, sendFile(s, newGate(opts)))
 	add(server, &mcp.Tool{
 		Name: "change_whatsapp_message",
 		Description: "React to a WhatsApp message, vote in a poll, or edit or delete one of the user's own messages, by the message id from read_whatsapp_messages. " +

@@ -4,8 +4,6 @@ import (
 	"context"
 	"errors"
 	"fmt"
-	"os"
-	"path/filepath"
 	"strings"
 	"time"
 
@@ -86,12 +84,12 @@ func send(s Sender) mcp.ToolHandlerFor[SendInput, SendReport] {
 	}
 }
 
-func sendFile(s Sender) mcp.ToolHandlerFor[FileInput, SendReport] {
+func sendFile(s Sender, g gate) mcp.ToolHandlerFor[FileInput, SendReport] {
 	return func(ctx context.Context, _ *mcp.CallToolRequest, in FileInput) (*mcp.CallToolResult, SendReport, error) {
 		if _, linked := s.Self(); !linked {
 			return sendReport(SendReport{State: stateNotLinked, Detail: notLinked})
 		}
-		f, refused := readFile(in.Path)
+		f, refused := g.open(in.Path)
 		if refused != nil {
 			return sendReport(SendReport{State: refused.state, Detail: refused.detail})
 		}
@@ -156,32 +154,6 @@ func deliver(ctx context.Context, s Sender, to string, timeout time.Duration, no
 		return SendReport{State: stateFailed, To: name, Detail: fmt.Sprintf("The %s was not sent: %v", noun, err)}
 	}
 	return SendReport{State: stateSent, To: name, ID: id, Detail: fmt.Sprintf("Sent %sto %s.", what, name)}
-}
-
-func readFile(path string) (messenger.File, *refusal) {
-	path = strings.TrimSpace(path)
-	if rest, ok := strings.CutPrefix(path, "~/"); ok {
-		if home, err := os.UserHomeDir(); err == nil {
-			path = filepath.Join(home, rest)
-		}
-	}
-	if path == "" {
-		return messenger.File{}, &refusal{state: "file_not_found", detail: "Say which file to send, as a path on this computer."}
-	}
-	info, err := os.Stat(path)
-	switch {
-	case err != nil:
-		return messenger.File{}, &refusal{state: "file_not_found", detail: fmt.Sprintf("There is no file at %s.", path)}
-	case info.IsDir():
-		return messenger.File{}, &refusal{state: "not_a_file", detail: fmt.Sprintf("%s is a folder; send the files inside it one by one, or zip it first.", path)}
-	case info.Size() > client.MaxUpload:
-		return messenger.File{}, &refusal{state: "too_large", detail: fmt.Sprintf("%s is %d MB; at most %d MB can be sent.", path, info.Size()>>20, client.MaxUpload>>20)}
-	}
-	data, err := os.ReadFile(path)
-	if err != nil {
-		return messenger.File{}, &refusal{state: stateFailed, detail: fmt.Sprintf("Could not read %s: %v", path, err)}
-	}
-	return messenger.File{Name: filepath.Base(path), Data: data}, nil
 }
 
 func sendReport(report SendReport) (*mcp.CallToolResult, SendReport, error) {

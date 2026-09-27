@@ -299,7 +299,7 @@ func open(ctx context.Context, path string) (*app, error) {
 }
 
 func (a *app) server() *mcp.Server {
-	return mcptools.NewServer(&mcp.Implementation{Name: "chatwire", Version: version()}, a.l, a.m, mcptools.Options{MediaDir: a.media, LinkPage: a.linkPage})
+	return mcptools.NewServer(&mcp.Implementation{Name: "chatwire", Version: version()}, a.l, a.m, mcptools.Options{MediaDir: a.media, Folders: folders(), Private: []string{filepath.Dir(a.media)}, LinkPage: a.linkPage})
 }
 
 func (a *app) close() {
@@ -351,4 +351,14 @@ func version() string {
 		return "dev"
 	}
 	return info.Main.Version
+}
+
+func folders() []string {
+	out := mcptools.DefaultFolders()
+	for _, extra := range filepath.SplitList(os.Getenv(mcptools.FilesVariable)) {
+		if extra = strings.TrimSpace(extra); filepath.IsAbs(extra) {
+			out = append(out, extra)
+		}
+	}
+	return out
 }

@@ -47,6 +47,10 @@ Chatwire links to your WhatsApp as a companion device, the same way WhatsApp Web
 It is one program with nothing else to install. Your messages are stored on your computer only, in a file only your
 user can read. Chatwire talks to WhatsApp directly and to no one else.
 
+Your AI can send files only from Desktop, Documents, Downloads, Pictures, Movies, Videos, Music and the temporary
+folder, never hidden files, so a message crafted to trick it cannot send your keys or passwords. To allow more folders,
+set `CHATWIRE_FILES` to a list of full paths (separated by `:`, or `;` on Windows) in the app's MCP settings.
+
 ## Be aware
 
 WhatsApp's Terms of Service do not allow unofficial clients. Using Chatwire could get your WhatsApp account
