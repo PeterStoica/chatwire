@@ -1617,6 +1617,11 @@ func TestSendingToANumberWithoutWhatsApp(t *testing.T) {
 		if _, err := c.Send(t.Context(), nobody, &wire.Message{Conversation: new("hello?")}); !errors.Is(err, client.ErrNoTarget) {
 			t.Fatalf("Send = %v, want ErrNoTarget", err)
 		}
+		keyless := node.JID{User: "40744444444", Server: node.ServerUser}
+		r.devices.Set(keyless, fakeusync.Device{ID: 0})
+		if _, err := c.Send(t.Context(), keyless, &wire.Message{Conversation: new("hello?")}); !errors.Is(err, client.ErrNoTarget) {
+			t.Fatalf("Send to a device without keys = %v, want ErrNoTarget", err)
+		}
 		if got := r.deliveredTo(r.account); len(got) != 0 {
 			t.Fatalf("our phone got %d copies of a message that went nowhere", len(got))
 		}

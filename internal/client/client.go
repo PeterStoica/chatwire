@@ -583,6 +583,9 @@ func (c *Client) Send(ctx context.Context, to node.JID, m *wire.Message) (string
 	if err != nil {
 		return "", err
 	}
+	if to != self && !slices.ContainsFunc(parts, func(p message.Part) bool { return !c.mine(p.Device) }) {
+		return "", fmt.Errorf("%w: no session could be started with any device of %s", ErrNoTarget, to)
+	}
 	id, err := message.NewID(c.cfg.Link.Now(), self, c.cfg.Link.Random)
 	if err != nil {
 		return "", err
