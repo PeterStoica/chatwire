@@ -11,11 +11,11 @@ import (
 
 	"go.uber.org/goleak"
 
-	"github.com/PeterStoica/chatwire/internal/fakeworld"
 	"github.com/PeterStoica/chatwire/internal/linker"
 	"github.com/PeterStoica/chatwire/internal/linkflow"
 	"github.com/PeterStoica/chatwire/internal/node"
 	"github.com/PeterStoica/chatwire/internal/pairing"
+	"github.com/PeterStoica/chatwire/internal/testkit/fakeworld"
 )
 
 func TestMain(m *testing.M) {

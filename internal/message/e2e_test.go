@@ -7,13 +7,13 @@ import (
 
 	"github.com/PeterStoica/chatwire/internal/curve"
 	"github.com/PeterStoica/chatwire/internal/device"
-	"github.com/PeterStoica/chatwire/internal/fakekeys"
-	"github.com/PeterStoica/chatwire/internal/fakerelay"
-	"github.com/PeterStoica/chatwire/internal/fakeusync"
 	"github.com/PeterStoica/chatwire/internal/message"
 	"github.com/PeterStoica/chatwire/internal/node"
 	"github.com/PeterStoica/chatwire/internal/prekeys"
 	"github.com/PeterStoica/chatwire/internal/signal"
+	"github.com/PeterStoica/chatwire/internal/testkit/fakekeys"
+	"github.com/PeterStoica/chatwire/internal/testkit/fakerelay"
+	"github.com/PeterStoica/chatwire/internal/testkit/fakeusync"
 	"github.com/PeterStoica/chatwire/internal/usync"
 	"github.com/PeterStoica/chatwire/internal/wire"
 )

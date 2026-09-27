@@ -4,8 +4,8 @@ import (
 	"errors"
 	"testing"
 
-	"github.com/PeterStoica/chatwire/internal/fakeusync"
 	"github.com/PeterStoica/chatwire/internal/node"
+	"github.com/PeterStoica/chatwire/internal/testkit/fakeusync"
 	"github.com/PeterStoica/chatwire/internal/usync"
 )
 

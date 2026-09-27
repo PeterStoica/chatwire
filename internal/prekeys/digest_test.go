@@ -8,10 +8,10 @@ import (
 
 	"github.com/PeterStoica/chatwire/internal/curve"
 	"github.com/PeterStoica/chatwire/internal/device"
-	"github.com/PeterStoica/chatwire/internal/fakekeys"
 	"github.com/PeterStoica/chatwire/internal/node"
 	"github.com/PeterStoica/chatwire/internal/prekeys"
 	"github.com/PeterStoica/chatwire/internal/signon"
+	"github.com/PeterStoica/chatwire/internal/testkit/fakekeys"
 )
 
 var self = node.JID{User: "40700000000", Device: 17, Server: node.ServerUser}

@@ -13,16 +13,16 @@ import (
 
 	"github.com/PeterStoica/chatwire/internal/cert"
 	"github.com/PeterStoica/chatwire/internal/curve"
-	"github.com/PeterStoica/chatwire/internal/fakeappstate"
-	"github.com/PeterStoica/chatwire/internal/fakegroups"
-	"github.com/PeterStoica/chatwire/internal/fakekeys"
-	"github.com/PeterStoica/chatwire/internal/fakephone"
-	"github.com/PeterStoica/chatwire/internal/fakerelay"
-	"github.com/PeterStoica/chatwire/internal/fakeserver"
-	"github.com/PeterStoica/chatwire/internal/fakeusync"
 	"github.com/PeterStoica/chatwire/internal/frame"
 	"github.com/PeterStoica/chatwire/internal/node"
 	"github.com/PeterStoica/chatwire/internal/signon"
+	"github.com/PeterStoica/chatwire/internal/testkit/fakeappstate"
+	"github.com/PeterStoica/chatwire/internal/testkit/fakegroups"
+	"github.com/PeterStoica/chatwire/internal/testkit/fakekeys"
+	"github.com/PeterStoica/chatwire/internal/testkit/fakephone"
+	"github.com/PeterStoica/chatwire/internal/testkit/fakerelay"
+	"github.com/PeterStoica/chatwire/internal/testkit/fakeserver"
+	"github.com/PeterStoica/chatwire/internal/testkit/fakeusync"
 	"github.com/PeterStoica/chatwire/internal/wire"
 )
 

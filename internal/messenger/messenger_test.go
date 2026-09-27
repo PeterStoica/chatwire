@@ -17,12 +17,6 @@ import (
 
 	"github.com/PeterStoica/chatwire/internal/client"
 	"github.com/PeterStoica/chatwire/internal/device"
-	"github.com/PeterStoica/chatwire/internal/fakedevice"
-	"github.com/PeterStoica/chatwire/internal/fakegroups"
-	"github.com/PeterStoica/chatwire/internal/fakekeys"
-	"github.com/PeterStoica/chatwire/internal/fakerelay"
-	"github.com/PeterStoica/chatwire/internal/fakeusync"
-	"github.com/PeterStoica/chatwire/internal/fakeworld"
 	"github.com/PeterStoica/chatwire/internal/groups"
 	"github.com/PeterStoica/chatwire/internal/linkflow"
 	"github.com/PeterStoica/chatwire/internal/media"
@@ -30,6 +24,12 @@ import (
 	"github.com/PeterStoica/chatwire/internal/node"
 	"github.com/PeterStoica/chatwire/internal/pairing"
 	"github.com/PeterStoica/chatwire/internal/store"
+	"github.com/PeterStoica/chatwire/internal/testkit/fakedevice"
+	"github.com/PeterStoica/chatwire/internal/testkit/fakegroups"
+	"github.com/PeterStoica/chatwire/internal/testkit/fakekeys"
+	"github.com/PeterStoica/chatwire/internal/testkit/fakerelay"
+	"github.com/PeterStoica/chatwire/internal/testkit/fakeusync"
+	"github.com/PeterStoica/chatwire/internal/testkit/fakeworld"
 	"github.com/PeterStoica/chatwire/internal/wire"
 )
 

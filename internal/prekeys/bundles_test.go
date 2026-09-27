@@ -7,10 +7,10 @@ import (
 
 	"github.com/PeterStoica/chatwire/internal/curve"
 	"github.com/PeterStoica/chatwire/internal/device"
-	"github.com/PeterStoica/chatwire/internal/fakekeys"
 	"github.com/PeterStoica/chatwire/internal/node"
 	"github.com/PeterStoica/chatwire/internal/prekeys"
 	"github.com/PeterStoica/chatwire/internal/signal"
+	"github.com/PeterStoica/chatwire/internal/testkit/fakekeys"
 )
 
 type companion struct {

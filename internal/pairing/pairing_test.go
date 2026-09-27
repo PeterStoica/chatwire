@@ -9,9 +9,9 @@ import (
 	"testing"
 
 	"github.com/PeterStoica/chatwire/internal/curve"
-	"github.com/PeterStoica/chatwire/internal/fakephone"
 	"github.com/PeterStoica/chatwire/internal/node"
 	"github.com/PeterStoica/chatwire/internal/pairing"
+	"github.com/PeterStoica/chatwire/internal/testkit/fakephone"
 )
 
 func mustHex(t *testing.T, s string) []byte {

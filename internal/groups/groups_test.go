@@ -5,9 +5,9 @@ import (
 	"testing"
 	"time"
 
-	"github.com/PeterStoica/chatwire/internal/fakegroups"
 	"github.com/PeterStoica/chatwire/internal/groups"
 	"github.com/PeterStoica/chatwire/internal/node"
+	"github.com/PeterStoica/chatwire/internal/testkit/fakegroups"
 )
 
 func TestParticipatingRequestLayout(t *testing.T) {

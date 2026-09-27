@@ -11,10 +11,10 @@ import (
 	"time"
 
 	"github.com/PeterStoica/chatwire/internal/curve"
-	"github.com/PeterStoica/chatwire/internal/fakeworld"
 	"github.com/PeterStoica/chatwire/internal/handshake"
 	"github.com/PeterStoica/chatwire/internal/live"
 	"github.com/PeterStoica/chatwire/internal/node"
+	"github.com/PeterStoica/chatwire/internal/testkit/fakeworld"
 )
 
 func TestStanzaIDsFollowWhatsAppWebsForm(t *testing.T) {

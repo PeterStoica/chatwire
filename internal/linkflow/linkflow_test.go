@@ -9,12 +9,12 @@ import (
 	"testing/synctest"
 	"time"
 
-	"github.com/PeterStoica/chatwire/internal/fakephone"
-	"github.com/PeterStoica/chatwire/internal/fakeworld"
 	"github.com/PeterStoica/chatwire/internal/frame"
 	"github.com/PeterStoica/chatwire/internal/linkflow"
 	"github.com/PeterStoica/chatwire/internal/node"
 	"github.com/PeterStoica/chatwire/internal/pairing"
+	"github.com/PeterStoica/chatwire/internal/testkit/fakephone"
+	"github.com/PeterStoica/chatwire/internal/testkit/fakeworld"
 )
 
 func world(t *testing.T) *fakeworld.World {

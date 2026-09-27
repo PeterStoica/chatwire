@@ -10,7 +10,7 @@ import (
 
 	"github.com/PeterStoica/chatwire/internal/curve"
 	"github.com/PeterStoica/chatwire/internal/signal"
-	"github.com/PeterStoica/chatwire/internal/signal/signaltest"
+	"github.com/PeterStoica/chatwire/internal/testkit/signaltest"
 )
 
 const crossSessionSeeds = 150

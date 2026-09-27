@@ -9,8 +9,8 @@ import (
 	"google.golang.org/protobuf/proto"
 
 	"github.com/PeterStoica/chatwire/internal/appstate"
-	"github.com/PeterStoica/chatwire/internal/fakeappstate"
 	"github.com/PeterStoica/chatwire/internal/node"
+	"github.com/PeterStoica/chatwire/internal/testkit/fakeappstate"
 	"github.com/PeterStoica/chatwire/internal/wire"
 )
 
