@@ -63,6 +63,7 @@ type Messenger struct {
 	mu        sync.Mutex
 	state     *client.State
 	client    *client.Client
+	retired   chan struct{}
 	ready     chan struct{}
 	failed    chan struct{}
 	lastErr   error
@@ -152,11 +153,14 @@ func (m *Messenger) keepConnected(ctx context.Context) {
 }
 
 func (m *Messenger) online(ctx context.Context, c *client.Client) error {
+	retired := make(chan struct{})
 	m.mu.Lock()
 	m.client, m.lastErr, m.failures, m.retryAt = c, nil, 0, time.Time{}
+	m.retired = retired
 	m.listed, m.known = nil, map[node.JID]cachedGroup{}
 	close(m.ready)
 	m.mu.Unlock()
+	defer close(retired)
 	_, _ = m.Groups(ctx)
 	select {
 	case <-ctx.Done():

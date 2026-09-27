@@ -145,10 +145,15 @@ func (m *Messenger) timerFor(ctx context.Context, to node.JID, group *groups.Gro
 func (m *Messenger) replacement(ctx context.Context, old *client.Client) (*client.Client, bool) {
 	ctx, cancel := context.WithTimeout(ctx, reconnectWait)
 	defer cancel()
-	select {
-	case <-old.Done():
-	case <-ctx.Done():
-		return nil, false
+	m.mu.Lock()
+	current, retired := m.client, m.retired
+	m.mu.Unlock()
+	if current == old {
+		select {
+		case <-retired:
+		case <-ctx.Done():
+			return nil, false
+		}
 	}
 	next, err := m.connected(ctx)
 	return next, err == nil && next != old
