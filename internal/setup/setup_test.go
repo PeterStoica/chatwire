@@ -173,6 +173,61 @@ func TestSetupAddsChatwireWithoutDisturbingAnythingElse(t *testing.T) {
 	}
 }
 
+func TestSetupAgainKeepsEachAppsOwnSettings(t *testing.T) {
+	t.Parallel()
+	w := newWorld(t)
+	ctx := t.Context()
+	w.write(t, "Library/Application Support/Claude/claude_desktop_config.json",
+		"{\n\t\"mcpServers\": {\n\t\t\"chatwire\": {\n\t\t\t\"command\": \"/opt/chatwire\",\n\t\t\t\"args\": [],\n\t\t\t\"env\": {\n\t\t\t\t\"CHATWIRE_READ_ONLY\": \"1\"\n\t\t\t}\n\t\t}\n\t}\n}\n")
+	w.write(t, ".codex/config.toml", "[mcp_servers.chatwire]\ncommand = \"/opt/chatwire\"\nargs = []\nstartup_timeout_sec = 20\n\n[mcp_servers.chatwire.env]\nCHATWIRE_READ_ONLY = \"1\"\n\n[mcp_servers.figma]\ncommand = \"npx\"\n")
+	w.write(t, ".claude.json", `{"numStartups": 3, "mcpServers": {"chatwire": {"type": "stdio", "command": "/opt/chatwire", "args": [], "env": {"CHATWIRE_READ_ONLY": "1", "CHATWIRE_FILES": "/work"}}}}`)
+	clients := func(ids ...string) []setup.Client {
+		var out []setup.Client
+		for _, c := range w.found() {
+			if slices.Contains(ids, c.ID) {
+				out = append(out, c)
+			}
+		}
+		return out
+	}
+	chosen := clients("claude-code", "claude-desktop", "codex")
+
+	same := outcomes(setup.Apply(ctx, w.env, chosen, "/opt/chatwire", false))
+	for _, id := range []string{"claude-code", "claude-desktop", "codex"} {
+		if same[id] != setup.Unchanged {
+			t.Errorf("setup again with the same path: %s %s, want %s", id, same[id], setup.Unchanged)
+		}
+	}
+	if len(w.runs) != 0 {
+		t.Fatalf("Claude Code was registered again although nothing changed: %v", w.runs)
+	}
+
+	moved := outcomes(setup.Apply(ctx, w.env, chosen, "/new/chatwire", false))
+	if moved["claude-desktop"] != setup.Updated || moved["codex"] != setup.Updated || moved["claude-code"] != setup.Updated {
+		t.Fatalf("setup with a new path: %v", moved)
+	}
+	var desktop map[string]map[string]map[string]any
+	if err := json.Unmarshal([]byte(w.read(t, "Library/Application Support/Claude/claude_desktop_config.json")), &desktop); err != nil {
+		t.Fatal(err)
+	}
+	entry := desktop["mcpServers"]["chatwire"]
+	if entry["command"] != "/new/chatwire" || entry["env"].(map[string]any)["CHATWIRE_READ_ONLY"] != "1" {
+		t.Fatalf("Claude Desktop entry after a move: %v", entry)
+	}
+	codex := w.read(t, ".codex/config.toml")
+	for _, want := range []string{`command = "/new/chatwire"`, "startup_timeout_sec = 20", "[mcp_servers.chatwire.env]\nCHATWIRE_READ_ONLY = \"1\"", "[mcp_servers.figma]"} {
+		if !strings.Contains(codex, want) {
+			t.Errorf("codex config lost %q:\n%s", want, codex)
+		}
+	}
+	if strings.Count(codex, "command = ") != 2 || strings.Count(codex, "[mcp_servers.chatwire]") != 1 {
+		t.Errorf("codex config:\n%s", codex)
+	}
+	if last := strings.Join(w.runs[len(w.runs)-1], " "); last != "claude mcp add -s user -e CHATWIRE_FILES=/work -e CHATWIRE_READ_ONLY=1 chatwire -- /new/chatwire" {
+		t.Fatalf("Claude Code was registered as: %s", last)
+	}
+}
+
 func TestSetupRemoveRestoresTheFiles(t *testing.T) {
 	t.Parallel()
 	w := newWorld(t)

@@ -11,6 +11,7 @@ import (
 	"os/exec"
 	"path/filepath"
 	"runtime"
+	"slices"
 	"strings"
 )
 
@@ -194,6 +195,10 @@ func entryOf(c Client, command string, remove bool) any {
 }
 
 func viaClaude(ctx context.Context, env Env, command string, remove bool) (Outcome, error) {
+	current, settings := claudeEntry(env.Home)
+	if !remove && current == command {
+		return Unchanged, nil
+	}
 	removeErr := env.Run(ctx, "claude", "mcp", "remove", "-s", "user", Name)
 	if remove {
 		if removeErr != nil {
@@ -201,13 +206,40 @@ func viaClaude(ctx context.Context, env Env, command string, remove bool) (Outco
 		}
 		return Removed, nil
 	}
-	if err := env.Run(ctx, "claude", "mcp", "add", "-s", "user", Name, "--", command); err != nil {
+	args := []string{"mcp", "add", "-s", "user"}
+	for _, setting := range settings {
+		args = append(args, "-e", setting)
+	}
+	if err := env.Run(ctx, "claude", append(args, Name, "--", command)...); err != nil {
 		return Failed, err
 	}
-	if removeErr == nil {
+	if removeErr == nil || current != "" {
 		return Updated, nil
 	}
 	return Added, nil
+}
+
+func claudeEntry(home string) (string, []string) {
+	raw, err := os.ReadFile(filepath.Join(home, ".claude.json"))
+	if err != nil {
+		return "", nil
+	}
+	var config struct {
+		Servers map[string]struct {
+			Command string            `json:"command"`
+			Env     map[string]string `json:"env"`
+		} `json:"mcpServers"`
+	}
+	if json.Unmarshal(raw, &config) != nil {
+		return "", nil
+	}
+	entry := config.Servers[Name]
+	settings := make([]string, 0, len(entry.Env))
+	for key, value := range entry.Env {
+		settings = append(settings, key+"="+value)
+	}
+	slices.Sort(settings)
+	return entry.Command, settings
 }
 
 func editFile(path string, edit func([]byte) ([]byte, Outcome, error)) (Outcome, error) {
@@ -352,11 +384,34 @@ func place(servers []member, entry any) (Outcome, []member, error) {
 	if at < 0 {
 		return Added, append(servers, member{name: Name, value: value}), nil
 	}
-	if same(servers[at].value, value) {
+	merged, err := keepOthers(servers[at].value, value)
+	if err != nil {
+		return Failed, nil, err
+	}
+	if same(servers[at].value, merged) {
 		return Unchanged, servers, nil
 	}
-	servers[at].value = value
+	servers[at].value = merged
 	return Updated, servers, nil
+}
+
+func keepOthers(current, fresh jsontext.Value) (jsontext.Value, error) {
+	kept, err := members(current)
+	if err != nil {
+		return fresh, nil
+	}
+	updates, err := members(fresh)
+	if err != nil {
+		return nil, err
+	}
+	for _, u := range updates {
+		if i := index(kept, u.name); i >= 0 {
+			kept[i].value = u.value
+		} else {
+			kept = append(kept, u)
+		}
+	}
+	return encode(kept, "")
 }
 
 func same(a, b jsontext.Value) bool {
@@ -467,6 +522,20 @@ func editTOML(raw []byte, command string, remove bool) ([]byte, Outcome, error) 
 		}
 		return []byte(text + strings.Join(section, "\n") + "\n"), Added, nil
 	}
+	var rest []string
+	inTable := false
+	for _, line := range lines[start+1 : end] {
+		trimmed := strings.TrimSpace(line)
+		inTable = inTable || strings.HasPrefix(trimmed, "[")
+		if key, _, found := strings.Cut(trimmed, "="); !inTable && found && (strings.TrimSpace(key) == "command" || strings.TrimSpace(key) == "args") {
+			continue
+		}
+		rest = append(rest, line)
+	}
+	for len(rest) > 0 && strings.TrimSpace(rest[len(rest)-1]) == "" {
+		rest = rest[:len(rest)-1]
+	}
+	section = append(section, rest...)
 	current := strings.TrimSpace(strings.Join(lines[start:end], "\n"))
 	if current == strings.Join(section, "\n") {
 		return raw, Unchanged, nil
