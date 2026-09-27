@@ -155,6 +155,23 @@ func Outgoing(id string, to node.JID, m *wire.Message, parts []Part, deviceIdent
 	return out
 }
 
+func KnownAs(stanza node.Node, other node.JID) node.Node {
+	to, _ := stanza.Attr("to").JID()
+	var peer, recipient []node.Attr
+	switch {
+	case to.Server == node.ServerUser && other.Server == node.ServerLID:
+		peer = []node.Attr{{Key: "peer_recipient_lid", Value: node.Address(other.WithoutDevice())}}
+	case to.Server == node.ServerLID && other.Server == node.ServerUser:
+		peer = []node.Attr{{Key: "peer_recipient_pn", Value: node.Address(other.WithoutDevice())}}
+		recipient = []node.Attr{{Key: "recipient_pn", Value: node.Address(other.WithoutDevice())}}
+	default:
+		return stanza
+	}
+	at := slices.IndexFunc(stanza.Attrs, func(a node.Attr) bool { return a.Key == attrType }) + 1
+	stanza.Attrs = slices.Concat(stanza.Attrs[:at], peer, stanza.Attrs[at:], recipient)
+	return stanza
+}
+
 func Resend(r RetryRequest, m *wire.Message, part Part, deviceIdentity []byte, at time.Time) node.Node {
 	attrs := []node.Attr{{Key: "id", Value: node.Text(r.ID)}, {Key: attrType, Value: node.Text(TypeOf(m))}, {Key: "t", Value: node.Text(strconv.FormatInt(at.Unix(), 10))}}
 	attrs = append(attrs, r.echo...)

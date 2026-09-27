@@ -32,6 +32,20 @@ func (c *Client) numberLocked(j node.JID) (node.JID, bool) {
 	return node.JID{}, false
 }
 
+func (c *Client) alternateLocked(j node.JID) node.JID {
+	switch j.Server {
+	case node.ServerUser:
+		if lid, ok := c.lids[j.User]; ok {
+			return node.JID{User: lid, Server: node.ServerLID}
+		}
+	case node.ServerLID:
+		if pn, ok := c.numberLocked(j); ok {
+			return pn
+		}
+	}
+	return node.JID{}
+}
+
 func (c *Client) Learn(pairs map[node.JID]node.JID) {
 	c.mu.Lock()
 	defer c.mu.Unlock()

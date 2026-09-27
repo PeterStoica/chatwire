@@ -15,6 +15,10 @@ const (
 )
 
 func Deliver(sender node.JID, pushName string, at time.Time, out node.Node) map[node.JID]node.Node {
+	return DeliverFrom(sender, node.JID{}, pushName, at, out)
+}
+
+func DeliverFrom(sender, senderLID node.JID, pushName string, at time.Time, out node.Node) map[node.JID]node.Node {
 	to, _ := out.Attr("to").JID()
 	identity, hasIdentity := out.Child("device-identity")
 	targets := map[node.JID]node.Node{}
@@ -33,7 +37,7 @@ func Deliver(sender node.JID, pushName string, at time.Time, out node.Node) map[
 			{Key: attrFrom, Value: node.Address(sender)}, {Key: attrType, Value: out.Attr(attrType)}, {Key: "id", Value: out.Attr("id")},
 			{Key: "t", Value: node.Text(strconv.FormatInt(at.Unix(), 10))}, {Key: "notify", Value: node.Text(pushName)},
 		}
-		if device.User == sender.User && device.Server == sender.Server {
+		if device.User == sender.User && device.Server == sender.Server || senderLID.User != "" && device.User == senderLID.User && device.Server == senderLID.Server {
 			attrs = append(attrs, node.Attr{Key: "recipient", Value: node.Address(to)})
 		}
 		children := []node.Node{enc}

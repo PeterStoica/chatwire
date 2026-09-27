@@ -464,7 +464,7 @@ func (w *World) answer(c *Conn, s *Server, n node.Node) {
 	case "iq":
 		w.answerIQ(c, s, n)
 	case "message":
-		deliveries := fakerelay.Deliver(w.Phone.JID, s.PushName, time.Now(), n)
+		deliveries := fakerelay.DeliverFrom(w.Phone.JID, w.Phone.LID, s.PushName, time.Now(), n)
 		if to, _ := n.Attr("to").JID(); to.Server == node.ServerGroup {
 			deliveries = fakerelay.DeliverGroup(w.Phone.JID, s.PushName, time.Now(), n, s.Members(to))
 		}

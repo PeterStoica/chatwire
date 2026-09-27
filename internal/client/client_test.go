@@ -98,13 +98,19 @@ func newRig(t *testing.T) *rig {
 			t.Fatal(err)
 		}
 	}
+	ourLID := node.JID{User: w.Phone.LID.User, Server: node.ServerLID}
 	r.devices.Set(r.account, fakeusync.Device{ID: 0}, fakeusync.Device{ID: w.Phone.JID.Device})
+	r.devices.Set(ourLID, fakeusync.Device{ID: 0}, fakeusync.Device{ID: w.Phone.JID.Device})
+	r.keys.Alias(ourLID, r.account)
 	r.devices.Set(r.bob, fakeusync.Device{ID: 0})
 	r.server = &fakeworld.Server{
 		Keys: r.keys, Devices: r.devices, PushName: "Me", Inbox: make(chan node.Node, 8),
 		Deliver: func(device node.JID, stanza node.Node) {
 			r.mu.Lock()
 			defer r.mu.Unlock()
+			if device.WithoutDevice() == ourLID {
+				device = node.JID{User: r.account.User, Device: device.Device, Server: node.ServerUser}
+			}
 			r.delivered[device] = append(r.delivered[device], stanza)
 		},
 		Received: func(n node.Node) {
@@ -2003,6 +2009,45 @@ func TestPrivacyTokensTravelWithPersonalMessages(t *testing.T) {
 		last := r.saved[len(r.saved)-1]
 		if last.Contact != carol || !bytes.Equal(last.Theirs, []byte{4, 2}) || !last.Given.Equal(time.Unix(later.Unix(), 0)) {
 			t.Fatalf("carol's new token was not kept: %+v", last)
+		}
+	})
+}
+
+func TestOneToOneSendsNameTheRecipientsOtherAddress(t *testing.T) {
+	synctest.Test(t, func(t *testing.T) {
+		r := newRig(t)
+		bobLID := node.JID{User: "11112222333", Server: node.ServerLID}
+		r.devices.Set(bobLID, fakeusync.Device{ID: 0})
+		r.keys.Alias(bobLID, r.bob)
+		r.lids = map[node.JID]node.JID{bobLID: r.bob}
+		c := r.connect()
+		attrs := func(n node.Node) string {
+			var keys []string
+			for _, a := range n.Attrs {
+				keys = append(keys, a.Key+"="+a.Value.String())
+			}
+			return strings.Join(keys, " ")
+		}
+		byNumber, err := c.Send(t.Context(), r.bob, &wire.Message{Conversation: new("hi")})
+		if err != nil {
+			t.Fatal(err)
+		}
+		stanza := r.sentStanza(byNumber)
+		if got, want := attrs(stanza), "id="+byNumber+" to="+r.bob.String()+" type=text peer_recipient_lid="+bobLID.String(); got != want {
+			t.Fatalf("attrs = %s, want %s", got, want)
+		}
+		participants, _ := stanza.Child("participants")
+		for _, target := range participants.Children {
+			if device, _ := target.Attr("jid").JID(); device.User == r.account.User {
+				t.Fatalf("our own devices were addressed by number, not by our private ID: %s", device)
+			}
+		}
+		byLID, err := c.Send(t.Context(), bobLID, &wire.Message{Conversation: new("hi again")})
+		if err != nil {
+			t.Fatal(err)
+		}
+		if got, want := attrs(r.sentStanza(byLID)), "id="+byLID+" to="+bobLID.String()+" type=text peer_recipient_pn="+r.bob.String()+" recipient_pn="+r.bob.String(); got != want {
+			t.Fatalf("attrs = %s, want %s", got, want)
 		}
 	})
 }

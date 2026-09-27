@@ -634,11 +634,11 @@ func (c *Client) Send(ctx context.Context, to node.JID, m *wire.Message) (string
 }
 
 func (c *Client) SendWithID(ctx context.Context, to node.JID, id string, m *wire.Message) (string, error) {
-	self, toSelf := c.Self().WithoutDevice(), c.mine(to)
+	toSelf := c.mine(to)
 	theirs := func(d node.JID) bool { return !c.mine(d) }
 	users := []node.JID{to}
 	if !toSelf {
-		users = append(users, self)
+		users = append(users, c.ownDevice().WithoutDevice())
 	}
 	targets, err := c.devices(ctx, users)
 	if err != nil {
@@ -666,7 +666,11 @@ func (c *Client) SendWithID(ctx context.Context, to node.JID, id string, m *wire
 	c.mu.Unlock()
 	c.keep()
 	token, personal := c.tokenFor(ctx, to)
-	if err := c.deliver(ctx, withToken(message.Outgoing(id, to, m, parts, c.state.Linked.Account.SignedIdentity), token, c.cfg.Link.Now())); err != nil {
+	c.mu.Lock()
+	other := c.alternateLocked(to)
+	c.mu.Unlock()
+	stanza := message.KnownAs(message.Outgoing(id, to, m, parts, c.state.Linked.Account.SignedIdentity), other)
+	if err := c.deliver(ctx, withToken(stanza, token, c.cfg.Link.Now())); err != nil {
 		return id, err
 	}
 	if personal && m.GetProtocolMessage() == nil {
@@ -756,9 +760,9 @@ func (c *Client) devices(ctx context.Context, users []node.JID) ([]node.JID, err
 	var out []node.JID
 	c.mu.Lock()
 	defer c.mu.Unlock()
-	self, seen := c.addressLocked(c.Self()), map[address]bool{}
+	self, me, seen := c.addressLocked(c.Self()), address(c.ownDevice()), map[address]bool{}
 	for _, d := range all {
-		if at := c.addressLocked(d); at != self && !seen[at] {
+		if at := c.addressLocked(d); at != self && at != me && !seen[at] {
 			seen[at] = true
 			out = append(out, d)
 		}

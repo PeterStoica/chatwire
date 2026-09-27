@@ -267,3 +267,33 @@ func TestPhashFollowsTheSortedFullDeviceList(t *testing.T) {
 		t.Fatalf("group stanza attrs = %s", out)
 	}
 }
+
+func TestKnownAsPlacesTheOtherAddressLikeTheOfficialClient(t *testing.T) {
+	t.Parallel()
+	pn := node.JID{User: "40722222222", Server: node.ServerUser}
+	lid := node.JID{User: "11112222333", Server: node.ServerLID}
+	edit := &wire.Message{ProtocolMessage: &wire.Message_ProtocolMessage{Type: wire.Message_ProtocolMessage_MESSAGE_EDIT.Enum()}}
+	keys := func(n node.Node) string {
+		var out []string
+		for _, a := range n.Attrs {
+			out = append(out, a.Key)
+		}
+		return strings.Join(out, ",")
+	}
+	for _, tt := range []struct {
+		name  string
+		to    node.JID
+		other node.JID
+		want  string
+	}{
+		{name: "number with private id", to: pn, other: lid, want: "id,to,type,peer_recipient_lid,edit"},
+		{name: "private id with number", to: lid, other: pn, want: "id,to,type,peer_recipient_pn,edit,recipient_pn"},
+		{name: "nothing known", to: pn, want: "id,to,type,edit"},
+		{name: "same kind", to: pn, other: pn, want: "id,to,type,edit"},
+	} {
+		got := message.KnownAs(message.Outgoing("3EB0AA", tt.to, edit, nil, nil), tt.other)
+		if keys(got) != tt.want {
+			t.Errorf("%s: attrs %s, want %s", tt.name, keys(got), tt.want)
+		}
+	}
+}
