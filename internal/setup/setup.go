@@ -103,6 +103,7 @@ func Clients(env Env) []Client {
 		{ID: "claude-code", Name: "Claude Code", format: claudeCLI, found: onPath("claude")},
 		{ID: "claude-desktop", Name: "Claude Desktop", Path: join(claudeDesktop, "claude_desktop_config.json"), format: jsonFile, key: "mcpServers", entry: command, found: exists(claudeDesktop)},
 		{ID: "codex", Name: "Codex", Path: join(env.Home, ".codex", "config.toml"), format: tomlFile, found: exists(join(env.Home, ".codex")) || onPath("codex")},
+		{ID: "grok", Name: "Grok Build", Path: join(env.Home, ".grok", "config.toml"), format: tomlFile, found: exists(join(env.Home, ".grok")) || onPath("grok")},
 		{ID: "gemini", Name: "Gemini CLI", Path: join(env.Home, ".gemini", "settings.json"), format: jsonFile, key: "mcpServers", entry: command, found: exists(join(env.Home, ".gemini")) || onPath("gemini")},
 		{ID: "cursor", Name: "Cursor", Path: join(env.Home, ".cursor", "mcp.json"), format: jsonFile, key: "mcpServers", entry: command, found: exists(join(env.Home, ".cursor"))},
 		{ID: "vscode", Name: "VS Code", Path: join(vscode, "mcp.json"), format: jsonFile, key: "servers", found: exists(vscode),

@@ -228,6 +228,28 @@ func TestSetupAgainKeepsEachAppsOwnSettings(t *testing.T) {
 	}
 }
 
+func TestSetupAddsChatwireToGrokBuild(t *testing.T) {
+	t.Parallel()
+	w := newWorld(t)
+	w.write(t, ".grok/config.toml", "model = \"grok-code\"\n\n[mcp_servers.filesystem]\ncommand = \"npx\"\nargs = [\"-y\", \"fs\"]\n")
+	var grok []setup.Client
+	for _, c := range w.found() {
+		if c.ID == "grok" {
+			grok = append(grok, c)
+		}
+	}
+	if len(grok) != 1 || grok[0].Name != "Grok Build" {
+		t.Fatalf("Grok Build was not found: %v", grok)
+	}
+	if got := outcomes(setup.Apply(t.Context(), w.env, grok, "/opt/chatwire", false)); got["grok"] != setup.Added {
+		t.Fatalf("grok: %v", got)
+	}
+	config := w.read(t, ".grok/config.toml")
+	if !strings.HasPrefix(config, "model = \"grok-code\"\n\n[mcp_servers.filesystem]") || !strings.HasSuffix(config, "\n[mcp_servers.chatwire]\ncommand = \"/opt/chatwire\"\nargs = []\n") {
+		t.Fatalf("grok config:\n%s", config)
+	}
+}
+
 func TestSetupRemoveRestoresTheFiles(t *testing.T) {
 	t.Parallel()
 	w := newWorld(t)

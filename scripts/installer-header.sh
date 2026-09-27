@@ -55,8 +55,8 @@ If you are an AI agent installing this for the user:
 
 2. After a yes, add Chatwire to your own app and show the WhatsApp QR code:
    "$cw" setup --yes --json --client ID
-   ID is the app you run in: claude-code, claude-desktop, codex, gemini, cursor, vscode, windsurf, cline, opencode or
-   lmstudio. It prints one JSON object and opens a page with a live QR code in the user's browser. If "results" shows
+   ID is the app you run in: claude-code, claude-desktop, codex, gemini, grok, cursor, vscode, windsurf, cline,
+   opencode or lmstudio. It prints one JSON object and opens a page with a live QR code in the user's browser. If "results" shows
    your app as "failed" or "skipped", tell the user its "detail": Chatwire is not in that app until that is fixed.
 
 3. Show the user the "say" text from that output, word for word.

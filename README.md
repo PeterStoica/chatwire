@@ -1,7 +1,7 @@
 # Chatwire
 
 Chatwire lets AI apps read, search and send your WhatsApp messages. It is an MCP server, so it works with Claude,
-Codex, Gemini, Cursor, VS Code and other apps that support MCP.
+Codex, Gemini, Grok, Cursor, VS Code and other apps that support MCP.
 
 Unofficial. Not affiliated with, endorsed or sponsored by WhatsApp or Meta. WhatsApp is a trademark of WhatsApp LLC.
 

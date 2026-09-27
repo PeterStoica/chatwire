@@ -35,7 +35,7 @@ use the full path it printed in the steps below. Developers with Go 1.27 can ins
 chatwire setup --yes --json --client ID
 ```
 
-`ID` is the app you run in: `claude-code`, `claude-desktop`, `codex`, `gemini`, `cursor`, `vscode`, `windsurf`,
+`ID` is the app you run in: `claude-code`, `claude-desktop`, `codex`, `gemini`, `grok`, `cursor`, `vscode`, `windsurf`,
 `cline`, `opencode` or `lmstudio`. Setup keeps everything else in that app's settings and, for apps it configures
 through a file, backs up the file once, next to it, with the suffix `.before-chatwire`. It prints one JSON object and
 opens a page with a live QR code in the user's browser. If `results` shows your app as `failed` or `skipped`, tell the
