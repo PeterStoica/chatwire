@@ -218,6 +218,7 @@ func self() (executable, build string, err error) {
 }
 
 type app struct {
+	lock     *os.File
 	messages *store.Store
 	m        *messenger.Messenger
 	l        *linker.Linker
@@ -248,6 +249,23 @@ func (a *app) linkPage(ctx context.Context) (string, bool, error) {
 }
 
 func open(ctx context.Context, path string) (*app, error) {
+	if err := os.MkdirAll(filepath.Dir(path), 0o700); err != nil {
+		return nil, fmt.Errorf("mcpapp: state dir: %w", err)
+	}
+	lock, err := acquire(ctx, filepath.Dir(path), lockWait)
+	if err != nil {
+		return nil, err
+	}
+	a, err := openLocked(ctx, path)
+	if err != nil {
+		_ = lock.Close()
+		return nil, err
+	}
+	a.lock = lock
+	return a, nil
+}
+
+func openLocked(ctx context.Context, path string) (*app, error) {
 	browser := dial.Client(http.DefaultTransport)
 	versions := dial.NewVersions(browser, dial.Page, versionTimeout)
 	go versions.Current()
@@ -267,9 +285,6 @@ func open(ctx context.Context, path string) (*app, error) {
 		Random:     rand.Reader,
 		Now:        time.Now,
 		Save:       func(linked linkflow.Linked) error { return save(path, client.State{Linked: linked}) },
-	}
-	if err := os.MkdirAll(filepath.Dir(path), 0o700); err != nil {
-		return nil, fmt.Errorf("mcpapp: state dir: %w", err)
 	}
 	messages, err := store.Open(ctx, filepath.Join(filepath.Dir(path), "messages.db"))
 	if err != nil {
@@ -306,6 +321,7 @@ func (a *app) close() {
 	a.l.Close()
 	a.m.Close()
 	_ = a.messages.Close()
+	_ = a.lock.Close()
 }
 
 func load(path string) (client.State, bool, error) {
