@@ -50,6 +50,10 @@ func DevicesRequest(sid string, context Context, users []node.JID) node.Node {
 	for i, user := range users {
 		list[i] = node.Node{Tag: "user", Attrs: []node.Attr{{Key: "jid", Value: node.Address(user.WithoutDevice())}}}
 	}
+	return request(sid, context, []node.Node{{Tag: tagDevices, Attrs: []node.Attr{{Key: "version", Value: node.Text(devicesVersion)}}}}, list)
+}
+
+func request(sid string, context Context, query, list []node.Node) node.Node {
 	return node.Node{
 		Tag: "iq",
 		Attrs: []node.Attr{
@@ -62,10 +66,7 @@ func DevicesRequest(sid string, context Context, users []node.JID) node.Node {
 				{Key: "sid", Value: node.Text(sid)}, {Key: "index", Value: node.Text("0")}, {Key: "last", Value: node.Text("true")},
 				{Key: "mode", Value: node.Text("query")}, {Key: "context", Value: node.Text(string(context))},
 			},
-			Children: []node.Node{
-				{Tag: "query", Children: []node.Node{{Tag: tagDevices, Attrs: []node.Attr{{Key: "version", Value: node.Text(devicesVersion)}}}}},
-				{Tag: "list", Children: list},
-			},
+			Children: []node.Node{{Tag: "query", Children: query}, {Tag: "list", Children: list}},
 		}},
 	}
 }

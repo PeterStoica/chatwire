@@ -17,6 +17,7 @@ import (
 	"github.com/PeterStoica/chatwire/internal/node"
 	"github.com/PeterStoica/chatwire/internal/pairing"
 	"github.com/PeterStoica/chatwire/internal/store"
+	"github.com/PeterStoica/chatwire/internal/usync"
 )
 
 const (
@@ -50,6 +51,7 @@ type Sender interface {
 	DescribeGroup(ctx context.Context, group node.JID, text string) error
 	LeaveGroup(ctx context.Context, group node.JID) error
 	ChangeMembers(ctx context.Context, group node.JID, change groups.Change, people []node.JID) ([]messenger.MemberOutcome, error)
+	LookUp(ctx context.Context, numbers []string) ([]usync.Contact, error)
 }
 
 type Options struct {
@@ -105,6 +107,10 @@ func Register(server *mcp.Server, l Linker, s Sender, opts Options) {
 		Name:        "manage_whatsapp_group",
 		Description: manageDescription,
 	}, manageGroup(s))
+	add(server, &mcp.Tool{
+		Name:        "check_whatsapp_numbers",
+		Description: lookUpDescription,
+	}, lookUp(s))
 	add(server, &mcp.Tool{
 		Name: "read_whatsapp_messages",
 		Description: "Read WhatsApp messages, newest last, including history synced from the phone. " +

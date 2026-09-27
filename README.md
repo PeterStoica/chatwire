@@ -41,6 +41,7 @@ chatwire setup
 - React, edit, delete and vote in polls
 - List your chats and groups, with members
 - Rename groups, set descriptions, add or remove people, change admins, or leave a group
+- Check whether numbers are on WhatsApp, with their about text
 - Open photos, voice notes and documents
 
 ## How it works

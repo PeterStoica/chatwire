@@ -2189,3 +2189,37 @@ func TestManagingAGroupFromClaude(t *testing.T) {
 		}
 	})
 }
+
+func TestCheckingNumbersFromClaude(t *testing.T) {
+	synctest.Test(t, func(t *testing.T) {
+		w, err := fakeworld.New(38)
+		if err != nil {
+			t.Fatal(err)
+		}
+		bob := node.JID{User: "40722222222", Server: node.ServerUser}
+		devices := fakeusync.New()
+		devices.Set(bob, fakeusync.Device{ID: 0})
+		devices.Profile(bob, node.JID{User: "99001", Server: node.ServerLID}, "At the gym")
+		w.Script(w.CodePairing(), w.Login(fakeworld.Success()), w.Serve(&fakeworld.Server{Keys: fakekeys.New(), Devices: devices, PushName: "Me", Inbox: make(chan node.Node)}))
+		c, _ := connect(t, w)
+		linking, _ := c.call("link_whatsapp", map[string]any{"phone_number": "+40 700 000 000"})
+		w.Type(linking.Code)
+		c.call("whatsapp_status", map[string]any{"wait_seconds": 60})
+		synctest.Wait()
+		report, result := callAs[mcptools.LookUpReport](c, "check_whatsapp_numbers", map[string]any{"numbers": []string{"+40 722 222 222", "+40799999999"}})
+		if report.State != "ok" || len(report.Numbers) != 2 || !report.Numbers[0].OnWhatsApp || report.Numbers[0].About != "At the gym" ||
+			report.Numbers[1].OnWhatsApp || report.Numbers[1].Number != "+40799999999" || !strings.Contains(textOf(result), "1 of 2 on WhatsApp") {
+			t.Fatalf("lookup = %+v\n%s", report, textOf(result))
+		}
+		many := make([]string, 11)
+		for i := range many {
+			many[i] = fmt.Sprintf("+4072000000%d", i)
+		}
+		if r, _ := callAs[mcptools.LookUpReport](c, "check_whatsapp_numbers", map[string]any{"numbers": many}); r.State != "too_many" {
+			t.Fatalf("eleven numbers: %+v", r)
+		}
+		if r, _ := callAs[mcptools.LookUpReport](c, "check_whatsapp_numbers", map[string]any{"numbers": []string{"bob"}}); r.State != "invalid_number" {
+			t.Fatalf("a name instead of a number: %+v", r)
+		}
+	})
+}

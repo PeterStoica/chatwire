@@ -818,6 +818,25 @@ func (c *Client) Groups(ctx context.Context) ([]groups.Group, error) {
 	return groups.ParseParticipating(reply)
 }
 
+func (c *Client) LookUp(ctx context.Context, numbers []string) ([]usync.Contact, error) {
+	reply, err := c.online.Session.Query(ctx, usync.ContactsRequest(c.online.Session.NewID(), numbers))
+	if err != nil {
+		return nil, fmt.Errorf("client: look up numbers: %w", err)
+	}
+	found, err := usync.ParseContacts(reply)
+	if err != nil {
+		return nil, err
+	}
+	pairs := map[node.JID]node.JID{}
+	for _, f := range found {
+		if f.OnWhatsApp && f.LID.Server == node.ServerLID && f.JID.Server == node.ServerUser {
+			pairs[f.LID.WithoutDevice()] = f.JID.WithoutDevice()
+		}
+	}
+	c.Learn(pairs)
+	return found, nil
+}
+
 func (c *Client) Query(ctx context.Context, request node.Node) (node.Node, error) {
 	return c.online.Session.Query(ctx, request)
 }
