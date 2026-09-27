@@ -35,7 +35,7 @@ type ChangeReport struct {
 func change(s Sender) mcp.ToolHandlerFor[ChangeInput, ChangeReport] {
 	return func(ctx context.Context, _ *mcp.CallToolRequest, in ChangeInput) (*mcp.CallToolResult, ChangeReport, error) {
 		if _, linked := s.Self(); !linked {
-			return changeReport(ChangeReport{State: stateNotLinked, Detail: notLinked})
+			return reply(ChangeReport{State: stateNotLinked, Detail: notLinked})
 		}
 		id := strings.TrimSpace(in.MessageID)
 		chosen := 0
@@ -45,7 +45,7 @@ func change(s Sender) mcp.ToolHandlerFor[ChangeInput, ChangeReport] {
 			}
 		}
 		if id == "" || chosen != 1 {
-			return changeReport(ChangeReport{State: "choose_one", Detail: "Give message_id and exactly one of react, remove_reaction, edit, delete, vote or remove_vote."})
+			return reply(ChangeReport{State: "choose_one", Detail: "Give message_id and exactly one of react, remove_reaction, edit, delete, vote or remove_vote."})
 		}
 		ctx, cancel := context.WithTimeout(ctx, sendTimeout)
 		defer cancel()
@@ -58,7 +58,7 @@ func change(s Sender) mcp.ToolHandlerFor[ChangeInput, ChangeReport] {
 		case in.React != nil:
 			react := strings.TrimSpace(*in.React)
 			if react == "" {
-				return changeReport(ChangeReport{State: "not_an_emoji", Detail: notEmoji})
+				return reply(ChangeReport{State: "not_an_emoji", Detail: notEmoji})
 			}
 			target, err = s.React(ctx, id, react)
 			done = "Reacted " + react + " to"
@@ -79,7 +79,7 @@ func change(s Sender) mcp.ToolHandlerFor[ChangeInput, ChangeReport] {
 			target, votes, err = s.Vote(ctx, id, in.Vote)
 			done = "Voted " + strings.Join(votes, ", ") + " in"
 		}
-		return changeReport(changed(ctx, s, target, done, err))
+		return reply(changed(ctx, s, target, done, err))
 	}
 }
 
@@ -143,8 +143,8 @@ func refusedChange(target store.Message, err error) (string, string) {
 			options = append(options, o.GetOptionName())
 		}
 		problem := fmt.Sprintf("This poll allows at most %d choice(s).", poll.GetSelectableOptionsCount())
-		if errors.Is(err, messenger.ErrNoOption) {
-			problem = strings.TrimPrefix(err.Error(), messenger.ErrNoOption.Error()+": ") + " is not one of its options."
+		if missing := (messenger.NoOption{}); errors.As(err, &missing) {
+			problem = fmt.Sprintf("%q is not one of its options.", missing.Choice)
 		}
 		return "invalid_vote", fmt.Sprintf("%s The options are: %s.", problem, strings.Join(options, " / "))
 	case errors.Is(err, messenger.ErrNoSecret):
@@ -173,8 +173,4 @@ func noun(t media.Type) string {
 		return "document"
 	}
 	return string(t)
-}
-
-func changeReport(report ChangeReport) (*mcp.CallToolResult, ChangeReport, error) {
-	return nil, report, nil
 }

@@ -156,7 +156,7 @@ func choose(poll *wire.Message_PollCreationMessage, wanted []string) ([]string, 
 			}
 		}
 		if found == "" {
-			return nil, fmt.Errorf("%w: %q", ErrNoOption, w)
+			return nil, NoOption{Choice: w}
 		}
 		if !slices.Contains(chosen, found) {
 			chosen = append(chosen, found)
@@ -246,4 +246,16 @@ func viewOnce(m *wire.Message) bool {
 	}
 	inner := media.Unwrap(m)
 	return inner.GetImageMessage().GetViewOnce() || inner.GetVideoMessage().GetViewOnce() || inner.GetAudioMessage().GetViewOnce()
+}
+
+type NoOption struct {
+	Choice string
+}
+
+func (n NoOption) Error() string {
+	return fmt.Sprintf("%v: %q", ErrNoOption, n.Choice)
+}
+
+func (n NoOption) Is(target error) bool {
+	return target == ErrNoOption
 }

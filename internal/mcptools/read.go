@@ -78,7 +78,7 @@ func listGroups(s Sender) mcp.ToolHandlerFor[GroupsInput, GroupsReport] {
 	return func(ctx context.Context, _ *mcp.CallToolRequest, in GroupsInput) (*mcp.CallToolResult, GroupsReport, error) {
 		refuse := func(state, detail string) (*mcp.CallToolResult, GroupsReport, error) {
 			report := GroupsReport{State: state, Groups: []ListedGroup{}, Detail: detail}
-			return nil, report, nil
+			return reply(report)
 		}
 		if _, linked := s.Self(); !linked {
 			return refuse(stateNotLinked, notLinked)
@@ -146,7 +146,7 @@ func read(s Sender) mcp.ToolHandlerFor[ReadInput, ReadReport] {
 	return func(ctx context.Context, _ *mcp.CallToolRequest, in ReadInput) (*mcp.CallToolResult, ReadReport, error) {
 		refuse := func(state, detail string) (*mcp.CallToolResult, ReadReport, error) {
 			report := ReadReport{State: state, Messages: []ReceivedMessage{}, Detail: detail}
-			return nil, report, nil
+			return reply(report)
 		}
 		if _, linked := s.Self(); !linked {
 			return refuse(stateNotLinked, notLinked)
@@ -255,10 +255,10 @@ func readQuery(ctx context.Context, s Sender, dir *directory, in ReadInput) (sto
 		return q, &refusal{state: "invalid_unread", detail: "unread cannot be combined with query, before or from."}
 	}
 	if from := strings.TrimSpace(in.From); from != "" {
-		who, refused := resolve(ctx, s, dir, from)
+		who, refused := resolve(ctx, s, dir, from, "sender")
 		switch {
 		case refused != nil:
-			return q, &refusal{state: strings.Replace(refused.state, "recipient", "sender", 1), detail: refused.detail}
+			return q, refused
 		case who.Server == node.ServerGroup || who.Server == node.ServerBroadcast:
 			return q, &refusal{state: "invalid_sender", detail: "from must be a person, not a group; use chat for the group."}
 		case dir.canonical(who) == dir.self:
@@ -272,9 +272,9 @@ func readQuery(ctx context.Context, s Sender, dir *directory, in ReadInput) (sto
 	case "status", "statuses", "status updates":
 		q.Chat = node.StatusBroadcast()
 	default:
-		chat, refused := resolve(ctx, s, dir, in.Chat)
+		chat, refused := resolve(ctx, s, dir, in.Chat, "chat")
 		if refused != nil {
-			return q, &refusal{state: strings.Replace(refused.state, "recipient", "chat", 1), detail: refused.detail}
+			return q, refused
 		}
 		q.Chat = chat
 	}
@@ -313,7 +313,7 @@ func listChats(s Sender) mcp.ToolHandlerFor[ChatsInput, ChatsReport] {
 	return func(ctx context.Context, _ *mcp.CallToolRequest, in ChatsInput) (*mcp.CallToolResult, ChatsReport, error) {
 		refuse := func(state, detail string) (*mcp.CallToolResult, ChatsReport, error) {
 			report := ChatsReport{State: state, Chats: []ListedChat{}, Detail: detail}
-			return nil, report, nil
+			return reply(report)
 		}
 		if _, linked := s.Self(); !linked {
 			return refuse(stateNotLinked, notLinked)

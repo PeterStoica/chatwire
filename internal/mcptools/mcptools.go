@@ -120,11 +120,11 @@ type refusal struct {
 	detail string
 }
 
-func resolve(ctx context.Context, s Sender, dir *directory, to string) (node.JID, *refusal) {
+func resolve(ctx context.Context, s Sender, dir *directory, to, role string) (node.JID, *refusal) {
 	to = strings.TrimSpace(to)
 	switch {
 	case to == "":
-		return node.JID{}, &refusal{state: "unknown_recipient", detail: "Say who the message is for: a name, a number with country code, or me."}
+		return node.JID{}, &refusal{state: "unknown_" + role, detail: "Say who the message is for: a name, a number with country code, or me."}
 	case strings.EqualFold(to, "me") || strings.EqualFold(to, "myself"):
 		return dir.self, nil
 	}
@@ -146,13 +146,13 @@ func resolve(ctx context.Context, s Sender, dir *directory, to string) (node.JID
 	case 1:
 		return found[0], nil
 	case 0:
-		return node.JID{}, &refusal{state: "unknown_recipient", detail: fmt.Sprintf("No contact, group or chat is called %q. Call list_whatsapp_chats to see names, or use a number with country code.", to)}
+		return node.JID{}, &refusal{state: "unknown_" + role, detail: fmt.Sprintf("No contact, group or chat is called %q. Call list_whatsapp_chats to see names, or use a number with country code.", to)}
 	default:
 		labels := make([]string, 0, min(len(found), maxCandidates))
 		for _, j := range found[:min(len(found), maxCandidates)] {
 			labels = append(labels, dir.label(j))
 		}
-		return node.JID{}, &refusal{state: "ambiguous_recipient", detail: fmt.Sprintf("%d chats match %q: %s. Ask the user which one.", len(found), to, strings.Join(labels, "; "))}
+		return node.JID{}, &refusal{state: "ambiguous_" + role, detail: fmt.Sprintf("%d chats match %q: %s. Ask the user which one.", len(found), to, strings.Join(labels, "; "))}
 	}
 }
 
@@ -205,4 +205,8 @@ func portable(s *jsonschema.Schema) {
 	for _, d := range s.Defs {
 		portable(d)
 	}
+}
+
+func reply[R any](report R) (*mcp.CallToolResult, R, error) {
+	return nil, report, nil
 }

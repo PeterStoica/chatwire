@@ -40,18 +40,18 @@ const (
 func getMedia(s Sender, opts Options) mcp.ToolHandlerFor[MediaInput, MediaReport] {
 	return func(ctx context.Context, _ *mcp.CallToolRequest, in MediaInput) (*mcp.CallToolResult, MediaReport, error) {
 		if _, linked := s.Self(); !linked {
-			return mediaReport(MediaReport{State: stateNotLinked, Detail: notLinked})
+			return reply(MediaReport{State: stateNotLinked, Detail: notLinked})
 		}
 		fetchCtx, cancel := context.WithTimeout(ctx, sendTimeout)
 		defer cancel()
 		ref, data, err := s.Media(fetchCtx, strings.TrimSpace(in.MessageID))
 		switch {
 		case errors.Is(err, messenger.ErrUnknownMessage):
-			return mediaReport(MediaReport{State: stateUnknownMessage, Detail: noSuchMessage})
+			return reply(MediaReport{State: stateUnknownMessage, Detail: noSuchMessage})
 		case errors.Is(err, messenger.ErrNoMedia):
-			return mediaReport(MediaReport{State: "no_media", Detail: "That message has no photo, video, voice note or document."})
+			return reply(MediaReport{State: "no_media", Detail: "That message has no photo, video, voice note or document."})
 		case err != nil:
-			return mediaReport(MediaReport{State: stateFailed, Detail: fmt.Sprintf("Could not download it: %v", err)})
+			return reply(MediaReport{State: stateFailed, Detail: fmt.Sprintf("Could not download it: %v", err)})
 		}
 		ref.Mimetype = mimetypeOf(ref)
 		report := MediaReport{State: "ok", Type: string(ref.Type), Mimetype: ref.Mimetype, Caption: ref.Caption, FileName: ref.FileName, Size: len(data)}
@@ -61,16 +61,12 @@ func getMedia(s Sender, opts Options) mcp.ToolHandlerFor[MediaInput, MediaReport
 		}
 		path, err := saveMedia(opts.MediaDir, in.MessageID, ref, data)
 		if err != nil {
-			return mediaReport(MediaReport{State: stateFailed, Detail: fmt.Sprintf("Downloaded, but could not save it: %v", err)})
+			return reply(MediaReport{State: stateFailed, Detail: fmt.Sprintf("Downloaded, but could not save it: %v", err)})
 		}
 		report.Path = path
 		report.Detail = describeMedia(report) + " Saved to " + path + "."
-		return mediaReport(report)
+		return reply(report)
 	}
-}
-
-func mediaReport(report MediaReport) (*mcp.CallToolResult, MediaReport, error) {
-	return nil, report, nil
 }
 
 func mimetypeOf(ref media.Reference) string {

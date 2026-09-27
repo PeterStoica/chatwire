@@ -146,13 +146,25 @@ func NewPoll(question string, options []string, multiple bool) *wire.Message {
 
 var ErrPoll = errors.New("message: not a valid poll")
 
+type PollProblem struct {
+	Reason string
+}
+
+func (p PollProblem) Error() string {
+	return fmt.Sprintf("%v: %s", ErrPoll, p.Reason)
+}
+
+func (p PollProblem) Is(target error) bool {
+	return target == ErrPoll
+}
+
 func CheckPoll(question string, options []string) (string, []string, error) {
 	question = strings.TrimSpace(question)
 	if question == "" || jsLength(question) > MaxPollQuestion {
-		return "", nil, fmt.Errorf("%w: the question must be 1 to %d characters", ErrPoll, MaxPollQuestion)
+		return "", nil, PollProblem{Reason: fmt.Sprintf("the question must be 1 to %d characters", MaxPollQuestion)}
 	}
 	if len(options) < MinPollOptions || len(options) > MaxPollOptions {
-		return "", nil, fmt.Errorf("%w: give %d to %d options, not %d", ErrPoll, MinPollOptions, MaxPollOptions, len(options))
+		return "", nil, PollProblem{Reason: fmt.Sprintf("give %d to %d options, not %d", MinPollOptions, MaxPollOptions, len(options))}
 	}
 	seen := make(map[string]bool, len(options))
 	out := make([]string, 0, len(options))
@@ -161,9 +173,9 @@ func CheckPoll(question string, options []string) (string, []string, error) {
 		key := strings.ToLower(o)
 		switch {
 		case o == "" || jsLength(o) > MaxPollOption:
-			return "", nil, fmt.Errorf("%w: each option must be 1 to %d characters (%q)", ErrPoll, MaxPollOption, o)
+			return "", nil, PollProblem{Reason: fmt.Sprintf("each option must be 1 to %d characters (%q)", MaxPollOption, o)}
 		case seen[key]:
-			return "", nil, fmt.Errorf("%w: %q is given twice", ErrPoll, o)
+			return "", nil, PollProblem{Reason: fmt.Sprintf("%q is given twice", o)}
 		}
 		seen[key] = true
 		out = append(out, o)
