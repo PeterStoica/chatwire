@@ -126,12 +126,23 @@ func TestReconnectsAfterWhatsAppDropsTheStream(t *testing.T) {
 	synctest.Test(t, func(t *testing.T) {
 		r := newRig(t)
 		w := r.world
-		w.Script(func(c *fakeworld.Conn) { c.Send(fakeworld.Failure("503")) }, w.Serve(r.server), w.Serve(r.server))
+		refuse := make(chan struct{})
+		w.Script(func(c *fakeworld.Conn) {
+			<-refuse
+			c.Send(fakeworld.Failure("503"))
+		}, w.Serve(r.server), w.Serve(r.server))
 		r.m.Start(t.Context(), r.state)
 		if self, linked := r.m.Self(); !linked || self != r.account {
 			t.Fatalf("Self() = %v, %v", self, linked)
 		}
-		if _, err := r.m.SendText(t.Context(), r.bob, "refused"); !errors.Is(err, linkflow.ErrLoginRejected) {
+		refused := make(chan error, 1)
+		go func() {
+			_, err := r.m.SendText(t.Context(), r.bob, "refused")
+			refused <- err
+		}()
+		synctest.Wait()
+		close(refuse)
+		if err := <-refused; !errors.Is(err, linkflow.ErrLoginRejected) {
 			t.Fatalf("SendText() while WhatsApp refuses the login = %v, want the refusal", err)
 		}
 		synctest.Sleep(time.Second)
