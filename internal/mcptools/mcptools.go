@@ -60,6 +60,9 @@ const Instructions = "Reads and sends WhatsApp messages from the user's own acco
 	"Message ids from reads work with reply_to, get_whatsapp_media and change_whatsapp_message. " +
 	"Send, react, vote, edit or delete only when the user asked for it, and send exactly the text they approved."
 
+const sendFileDescription = "Send a photo, video, voice note (.opus/.ogg) or any document from this computer over WhatsApp, with an optional caption. to is a contact or group name, a mobile number with country code, or me. " +
+	"For safety, files are only sent from the Desktop, Documents, Downloads, Pictures, Movies, Videos, Music and temporary folders (the user can allow more with the CHATWIRE_FILES setting); hidden files never."
+
 func NewServer(impl *mcp.Implementation, l Linker, s Sender, opts Options) *mcp.Server {
 	server := mcp.NewServer(impl, &mcp.ServerOptions{Instructions: Instructions})
 	Register(server, l, s, opts)
@@ -77,8 +80,7 @@ func Register(server *mcp.Server, l Linker, s Sender, opts Options) {
 	}, send(s))
 	add(server, &mcp.Tool{
 		Name:        "send_whatsapp_file",
-		Description: "Send a photo, video, voice note (.opus/.ogg) or any document from this computer over WhatsApp, with an optional caption. to is a contact or group name, a mobile number with country code, or me. " +
-			"For safety, files are only sent from the Desktop, Documents, Downloads, Pictures, Movies, Videos, Music and temporary folders (the user can allow more with the CHATWIRE_FILES setting); hidden files never.",
+		Description: sendFileDescription,
 	}, sendFile(s, newGate(opts)))
 	add(server, &mcp.Tool{
 		Name: "change_whatsapp_message",
