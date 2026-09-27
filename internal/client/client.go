@@ -130,6 +130,7 @@ type Config struct {
 	Seen     func(ctx context.Context, chat node.JID, id string) bool
 	TokenOf  func(ctx context.Context, contact node.JID) privacy.Token
 	Tokens   func([]privacy.Token)
+	Changed  func(group node.JID)
 	Problem  func(error)
 	AppState AppStateStore
 	HTTP     *http.Client
@@ -763,6 +764,23 @@ func (c *Client) Groups(ctx context.Context) ([]groups.Group, error) {
 		return nil, fmt.Errorf("client: groups: %w", err)
 	}
 	return groups.ParseParticipating(reply)
+}
+
+func (c *Client) Group(ctx context.Context, jid node.JID) (groups.Group, bool, error) {
+	reply, err := c.online.Session.Query(ctx, groups.InfoRequest(jid))
+	if err != nil {
+		return groups.Group{}, false, fmt.Errorf("client: group %s: %w", jid, err)
+	}
+	found, err := groups.ParseInfo(reply)
+	if err != nil {
+		return groups.Group{}, false, err
+	}
+	for _, g := range found {
+		if g.JID == jid.WithoutDevice() {
+			return g, true, nil
+		}
+	}
+	return groups.Group{}, false, nil
 }
 
 func (c *Client) SendGroup(ctx context.Context, g groups.Group, m *wire.Message) (string, error) {

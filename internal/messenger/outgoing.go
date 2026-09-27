@@ -110,16 +110,31 @@ func (m *Messenger) send(ctx context.Context, to node.JID, build func(*client.Cl
 }
 
 func (m *Messenger) group(ctx context.Context, c *client.Client, jid node.JID) (groups.Group, error) {
-	listed, err := c.Groups(ctx)
+	now := m.link.Now()
+	m.mu.Lock()
+	cached, ok := m.known[jid]
+	m.mu.Unlock()
+	if ok && now.Sub(cached.at) < groupsFresh {
+		return cached.group, nil
+	}
+	g, found, err := c.Group(ctx, jid)
 	if err != nil {
 		return groups.Group{}, err
 	}
-	for _, g := range listed {
-		if g.JID == jid {
-			return g, nil
-		}
+	if !found {
+		return groups.Group{}, fmt.Errorf("%w: %s", ErrNotMember, jid)
 	}
-	return groups.Group{}, fmt.Errorf("%w: %s", ErrNotMember, jid)
+	m.mu.Lock()
+	m.known[jid] = cachedGroup{group: g, at: now}
+	m.mu.Unlock()
+	return g, nil
+}
+
+func (m *Messenger) groupChanged(group node.JID) {
+	m.mu.Lock()
+	defer m.mu.Unlock()
+	delete(m.known, group)
+	m.listed = nil
 }
 
 func (m *Messenger) MarkRead(ctx context.Context, messages []store.Message) error {

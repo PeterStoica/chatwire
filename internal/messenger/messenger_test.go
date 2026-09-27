@@ -346,3 +346,42 @@ func TestARefusalFor463HoldsMessagesToNewContacts(t *testing.T) {
 		}
 	})
 }
+
+func TestGroupSendsReuseWhatTheyKnowUntilTheGroupChanges(t *testing.T) {
+	synctest.Test(t, func(t *testing.T) {
+		r := newRig(t)
+		family := groups.Group{JID: node.JID{User: "120363000000000021", Server: node.ServerGroup}, Subject: "Family",
+			Participants: []groups.Participant{{JID: r.account}, {JID: r.bob}}}
+		known := fakegroups.New(family)
+		r.server.Groups = known
+		r.server.Members = func(node.JID) []node.JID { return []node.JID{r.bob, r.account} }
+		r.world.Script(r.world.Serve(r.server))
+		r.m.Start(t.Context(), r.state)
+		synctest.Wait()
+		for _, text := range []string{"one", "two", "three"} {
+			if _, err := r.m.SendText(t.Context(), family.JID, text); err != nil {
+				t.Fatal(err)
+			}
+		}
+		if lists, lookups := known.Queries(); lists != 1 || lookups != 0 {
+			t.Fatalf("three sends cost %d group lists and %d lookups, want the one list made on connecting", lists, lookups)
+		}
+		r.server.Inbox <- node.Node{Tag: "notification", Attrs: []node.Attr{
+			{Key: "from", Value: node.Address(family.JID)}, {Key: "type", Value: node.Text("w:gp2")}, {Key: "id", Value: node.Text("G1")},
+		}, Children: []node.Node{{Tag: "subject", Attrs: []node.Attr{{Key: "subject", Value: node.Text("Family!")}}}}}
+		synctest.Wait()
+		if _, err := r.m.SendText(t.Context(), family.JID, "four"); err != nil {
+			t.Fatal(err)
+		}
+		if lists, lookups := known.Queries(); lists != 1 || lookups != 1 {
+			t.Fatalf("after the group changed: %d lists and %d lookups, want one fresh lookup", lists, lookups)
+		}
+		time.Sleep(6 * time.Minute)
+		if _, err := r.m.SendText(t.Context(), family.JID, "five"); err != nil {
+			t.Fatal(err)
+		}
+		if _, lookups := known.Queries(); lookups != 2 {
+			t.Fatalf("an old copy was used: %d lookups", lookups)
+		}
+	})
+}

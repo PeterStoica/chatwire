@@ -91,6 +91,11 @@ func (c *Client) notified(n node.Node) {
 			c.cfg.Tokens(tokens)
 		}
 		return
+	case "w:gp2":
+		if group, ok := n.Attr("from").JID(); ok && group.Server == node.ServerGroup && c.cfg.Changed != nil {
+			c.cfg.Changed(group)
+		}
+		return
 	}
 	if kind != "server_sync" {
 		return

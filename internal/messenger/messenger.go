@@ -6,6 +6,7 @@ import (
 	"fmt"
 	"net/http"
 	"os"
+	"slices"
 	"sync"
 	"time"
 
@@ -39,7 +40,15 @@ var (
 	ErrRestricted     = errors.New("messenger: WhatsApp is limiting messages to new contacts")
 )
 
-const restrictedFor = 24 * time.Hour
+const (
+	restrictedFor = 24 * time.Hour
+	groupsFresh   = 5 * time.Minute
+)
+
+type cachedGroup struct {
+	group groups.Group
+	at    time.Time
+}
 
 type Messenger struct {
 	link    linkflow.Config
@@ -59,6 +68,9 @@ type Messenger struct {
 	gone     func(error)
 	synced   HistorySync
 	limited  time.Time
+	listed   []groups.Group
+	listedAt time.Time
+	known    map[node.JID]cachedGroup
 }
 
 type HistorySync struct {
@@ -67,7 +79,7 @@ type HistorySync struct {
 }
 
 func New(link linkflow.Config, httpClient *http.Client, persist func(client.State) error, messages *store.Store) *Messenger {
-	return &Messenger{link: link, http: httpClient, persist: persist, store: messages, ready: make(chan struct{}), failed: make(chan struct{})}
+	return &Messenger{link: link, http: httpClient, persist: persist, store: messages, ready: make(chan struct{}), failed: make(chan struct{}), known: map[node.JID]cachedGroup{}}
 }
 
 func (m *Messenger) Start(parent context.Context, state client.State) {
@@ -90,7 +102,7 @@ func (m *Messenger) keepConnected(ctx context.Context) {
 		state := *m.state
 		m.mu.Unlock()
 		lids, _ := m.store.LIDs(ctx)
-		c, err := client.Connect(ctx, client.Config{LIDs: lids, Link: m.link, HTTP: m.http, Persist: m.save, Receive: m.received, History: m.history, Receipt: m.receipt, Sent: m.sentMessage, Seen: m.seen, TokenOf: m.tokenOf, Tokens: m.tokens, Problem: problem, AppState: m}, state)
+		c, err := client.Connect(ctx, client.Config{LIDs: lids, Link: m.link, HTTP: m.http, Persist: m.save, Receive: m.received, History: m.history, Receipt: m.receipt, Sent: m.sentMessage, Seen: m.seen, TokenOf: m.tokenOf, Tokens: m.tokens, Changed: m.groupChanged, Problem: problem, AppState: m}, state)
 		if errors.Is(err, linkflow.ErrLoggedOut) {
 			m.loggedOut(err)
 			return
@@ -112,6 +124,7 @@ func (m *Messenger) keepConnected(ctx context.Context) {
 		wait = firstRetry
 		m.mu.Lock()
 		m.client, m.lastErr = c, nil
+		m.listed, m.known = nil, map[node.JID]cachedGroup{}
 		close(m.ready)
 		m.mu.Unlock()
 		_, _ = m.Groups(ctx)
@@ -235,6 +248,13 @@ func (m *Messenger) Connection() Connection {
 }
 
 func (m *Messenger) Groups(ctx context.Context) ([]groups.Group, error) {
+	now := m.link.Now()
+	m.mu.Lock()
+	cached, at := m.listed, m.listedAt
+	m.mu.Unlock()
+	if cached != nil && now.Sub(at) < groupsFresh {
+		return slices.Clone(cached), nil
+	}
 	c, err := m.connected(ctx)
 	if err != nil {
 		return nil, err
@@ -243,6 +263,12 @@ func (m *Messenger) Groups(ctx context.Context) ([]groups.Group, error) {
 	if err != nil {
 		return nil, err
 	}
+	m.mu.Lock()
+	m.listed, m.listedAt = listed, now
+	for _, g := range listed {
+		m.known[g.JID] = cachedGroup{group: g, at: now}
+	}
+	m.mu.Unlock()
 	chats := make([]store.Chat, 0, len(listed))
 	for _, g := range listed {
 		chats = append(chats, store.Chat{JID: g.JID, Name: g.Subject})

@@ -37,7 +37,30 @@ func ParticipatingRequest() node.Node {
 	}
 }
 
+func InfoRequest(jids ...node.JID) node.Node {
+	wanted := make([]node.Node, 0, len(jids))
+	for _, j := range jids {
+		wanted = append(wanted, node.Node{Tag: "group", Attrs: []node.Attr{{Key: "jid", Value: node.Address(j.WithoutDevice())}}})
+	}
+	return node.Node{
+		Tag: "iq",
+		Attrs: []node.Attr{
+			{Key: "to", Value: node.Address(node.JID{Server: node.ServerGroup})}, {Key: "xmlns", Value: node.Text("w:g2")},
+			{Key: "id", Value: node.Value{}}, {Key: "type", Value: node.Text("get")},
+		},
+		Children: []node.Node{{Tag: "query", Children: wanted}},
+	}
+}
+
 func ParseParticipating(reply node.Node) ([]Group, error) {
+	return parseList(reply, false)
+}
+
+func ParseInfo(reply node.Node) ([]Group, error) {
+	return parseList(reply, true)
+}
+
+func parseList(reply node.Node, skipUnknown bool) ([]Group, error) {
 	kind, _ := reply.Attr("type").Text()
 	list, ok := reply.Child("groups")
 	if reply.Tag != "iq" || kind != "result" || !ok {
@@ -49,7 +72,10 @@ func ParseParticipating(reply node.Node) ([]Group, error) {
 			continue
 		}
 		g, err := parseGroup(entry)
-		if err != nil {
+		switch {
+		case err != nil && skipUnknown:
+			continue
+		case err != nil:
 			return nil, err
 		}
 		groups = append(groups, g)

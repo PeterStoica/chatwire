@@ -89,3 +89,30 @@ func TestMalformedGroupLists(t *testing.T) {
 		})
 	}
 }
+
+func TestLookingUpOneGroup(t *testing.T) {
+	family := groups.Group{JID: node.JID{User: "120363000000000031", Server: node.ServerGroup}, Subject: "Family", Created: time.Unix(1700000000, 0)}
+	work := groups.Group{JID: node.JID{User: "120363000000000032", Server: node.ServerGroup}, Subject: "Work", Created: time.Unix(1700000001, 0)}
+	request := groups.InfoRequest(family.JID)
+	query, ok := request.Child("query")
+	if !ok || len(query.Children) != 1 || query.Children[0].Tag != "group" || query.Children[0].Attr("jid").String() != family.JID.String() {
+		t.Fatalf("request = %s", request)
+	}
+	server := fakegroups.New(family, work)
+	found, err := groups.ParseInfo(server.Handle(request))
+	if err != nil || len(found) != 1 || found[0].JID != family.JID || found[0].Subject != "Family" {
+		t.Fatalf("ParseInfo = %+v, %v", found, err)
+	}
+	if lists, lookups := server.Queries(); lists != 0 || lookups != 1 {
+		t.Fatalf("the server saw %d list and %d lookup queries", lists, lookups)
+	}
+	reply := node.Node{Tag: "iq", Attrs: []node.Attr{{Key: "type", Value: node.Text("result")}}, Children: []node.Node{{Tag: "groups", Children: []node.Node{
+		{Tag: "group", Attrs: []node.Attr{{Key: "id", Value: node.Text("120363000000000099")}}, Children: []node.Node{{Tag: "error", Attrs: []node.Attr{{Key: "code", Value: node.Text("403")}}}}},
+	}}}}
+	if found, err := groups.ParseInfo(reply); err != nil || len(found) != 0 {
+		t.Fatalf("a group we are not in: %+v, %v", found, err)
+	}
+	if _, err := groups.ParseParticipating(reply); !errors.Is(err, groups.ErrReply) {
+		t.Fatalf("the full list still rejects it: %v", err)
+	}
+}

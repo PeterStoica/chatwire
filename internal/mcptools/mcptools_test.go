@@ -611,6 +611,10 @@ func TestGroupsFromClaude(t *testing.T) {
 		}
 		created := groups.Group{JID: node.JID{User: "120363000000000013", Server: node.ServerGroup}, Subject: "Book Club", Created: time.Unix(1700000000, 0), Participants: members}
 		groupsServer.Add(created)
+		inbox <- node.Node{Tag: "notification", Attrs: []node.Attr{
+			{Key: "from", Value: node.Address(created.JID)}, {Key: "type", Value: node.Text("w:gp2")}, {Key: "id", Value: node.Text("G1")}, {Key: "t", Value: node.Text("1790000100")},
+		}, Children: []node.Node{{Tag: "add", Children: []node.Node{{Tag: "participant", Attrs: []node.Attr{{Key: "jid", Value: node.Address(account)}}}}}}}
+		synctest.Wait()
 		if joined, _ := callAs[mcptools.SendReport](c, "send_whatsapp_message", map[string]any{"to": "book club", "text": "hello club"}); joined.State != "sent" || joined.To != "Book Club" {
 			t.Fatalf("a group made after connecting = %+v", joined)
 		}

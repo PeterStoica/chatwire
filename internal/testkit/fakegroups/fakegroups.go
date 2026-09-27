@@ -9,8 +9,16 @@ import (
 )
 
 type Server struct {
-	mu     sync.Mutex
-	groups []groups.Group
+	mu      sync.Mutex
+	groups  []groups.Group
+	lists   int
+	lookups int
+}
+
+func (s *Server) Queries() (lists, lookups int) {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	return s.lists, s.lookups
 }
 
 func New(g ...groups.Group) *Server {
@@ -20,8 +28,23 @@ func New(g ...groups.Group) *Server {
 func (s *Server) Handle(request node.Node) node.Node {
 	s.mu.Lock()
 	defer s.mu.Unlock()
-	list := make([]node.Node, len(s.groups))
-	for i, g := range s.groups {
+	chosen := s.groups
+	if query, ok := request.Child("query"); ok {
+		s.lookups++
+		chosen = nil
+		for _, wanted := range query.Children {
+			jid, _ := wanted.Attr("jid").JID()
+			for _, g := range s.groups {
+				if g.JID == jid {
+					chosen = append(chosen, g)
+				}
+			}
+		}
+	} else {
+		s.lists++
+	}
+	list := make([]node.Node, len(chosen))
+	for i, g := range chosen {
 		attrs := []node.Attr{
 			{Key: "id", Value: node.Text(g.JID.User)}, {Key: "subject", Value: node.Text(g.Subject)},
 			{Key: "creation", Value: node.Text(strconv.FormatInt(g.Created.Unix(), 10))},
