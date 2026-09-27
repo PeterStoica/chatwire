@@ -9,8 +9,11 @@ import (
 	"fmt"
 	"io"
 	"maps"
+	"math/rand/v2"
 	"net/http"
+	"runtime/debug"
 	"slices"
+	"strconv"
 	"sync"
 	"time"
 
@@ -22,6 +25,7 @@ import (
 	"github.com/PeterStoica/chatwire/internal/dial"
 	"github.com/PeterStoica/chatwire/internal/groups"
 	"github.com/PeterStoica/chatwire/internal/history"
+	"github.com/PeterStoica/chatwire/internal/limits"
 	"github.com/PeterStoica/chatwire/internal/linkflow"
 	"github.com/PeterStoica/chatwire/internal/live"
 	"github.com/PeterStoica/chatwire/internal/media"
@@ -29,26 +33,59 @@ import (
 	"github.com/PeterStoica/chatwire/internal/message"
 	"github.com/PeterStoica/chatwire/internal/node"
 	"github.com/PeterStoica/chatwire/internal/prekeys"
+	"github.com/PeterStoica/chatwire/internal/privacy"
+	"github.com/PeterStoica/chatwire/internal/queue"
 	"github.com/PeterStoica/chatwire/internal/signal"
 	"github.com/PeterStoica/chatwire/internal/usync"
 	"github.com/PeterStoica/chatwire/internal/wire"
 )
 
 const (
-	MaxDownload = 100 << 20
-	ackTimeout  = 30 * time.Second
-	typeGroup   = "skmsg"
-	jobQueue    = 16
-	attrType    = "type"
-	pingEvery   = 20 * time.Second
-	pingWait    = 20 * time.Second
+	MaxDownload  = 100 << 20
+	ackTimeout   = 30 * time.Second
+	typeGroup    = "skmsg"
+	attrType     = "type"
+	pingEvery    = 20 * time.Second
+	pingWait     = 10 * time.Second
+	maxPingCheck = 5 * time.Second
+	deadAfter    = 75 * time.Second
+	maxUnacked   = 2
+	devicesFresh = time.Hour
 )
 
 var (
-	ErrClosed   = errors.New("client: connection closed")
-	ErrRejected = errors.New("client: WhatsApp refused the message")
-	ErrNoTarget = errors.New("client: the recipient has no devices")
+	ErrClosed      = errors.New("client: connection closed")
+	ErrUnconfirmed = errors.New("client: WhatsApp did not confirm the message")
+	ErrRejected    = errors.New("client: WhatsApp refused the message")
+	ErrNoTarget    = errors.New("client: the recipient has no devices")
 )
+
+const (
+	CodeMalformed   = 400
+	CodeForbidden   = 403
+	CodeUnsupported = 405
+	CodeStaleGroup  = 421
+	CodeRestricted  = 463
+	CodeChatCap     = 475
+	CodeInvalid     = 479
+)
+
+type cachedDevices struct {
+	devices []node.JID
+	at      time.Time
+}
+
+type Rejection struct {
+	Code int
+}
+
+func (r Rejection) Error() string {
+	return fmt.Sprintf("%v: error %d", ErrRejected, r.Code)
+}
+
+func (r Rejection) Is(target error) bool {
+	return target == ErrRejected
+}
 
 type State struct {
 	Linked        linkflow.Linked     `json:"linked"`
@@ -101,6 +138,13 @@ type Config struct {
 	Receive  func(Received)
 	History  func(history.Chunk)
 	Receipt  func(message.Receipt)
+	Sent     func(ctx context.Context, chat node.JID, id string) (*wire.Message, bool)
+	Seen     func(ctx context.Context, chat node.JID, id string) bool
+	TokenOf  func(ctx context.Context, contact node.JID) privacy.Token
+	Tokens   func([]privacy.Token)
+	Changed  func(group node.JID)
+	Limits   func(limits.Notice)
+	Problem  func(error)
 	AppState AppStateStore
 	HTTP     *http.Client
 }
@@ -110,22 +154,32 @@ type Client struct {
 	identity device.Identity
 	online   *linkflow.Online
 	done     chan struct{}
-	jobs     chan func(context.Context)
+	jobs     *queue.Queue[func(context.Context)]
 	life     context.Context
 	stop     context.CancelFunc
 	syncKeys map[string]appstate.Keys
 
 	mu       sync.Mutex
 	state    State
-	sessions map[node.JID]*signal.Session
+	sessions map[address]*signal.Session
 	lids     map[string]string
-	groups   map[senderName]*signal.SenderKeys
-	ownKeys  map[node.JID]*signal.SenderKey
-	holders  map[node.JID]map[node.JID]bool
-	acks     map[string]chan node.Node
-	retries  map[string]chan mediaretry.Notification
-	media    media.Conn
-	err      error
+
+	recent       map[string]sentMessage
+	recentOrder  []string
+	resends      map[string]int
+	recreated    map[address]time.Time
+	given        map[node.JID]time.Time
+	askedKeys    map[string]time.Time
+	knownDevices map[node.JID]cachedDevices
+	awaiting     map[string]*wire.MessageKey
+	unacked      int
+	groups       map[senderName]*signal.SenderKeys
+	ownKeys      map[node.JID]*signal.SenderKey
+	holders      map[node.JID]map[address]bool
+	acks         map[string]chan node.Node
+	retries      map[string]chan mediaretry.Notification
+	media        media.Conn
+	err          error
 }
 
 func Connect(ctx context.Context, cfg Config, state State) (*Client, error) {
@@ -145,19 +199,21 @@ func Connect(ctx context.Context, cfg Config, state State) (*Client, error) {
 	}
 	c := &Client{
 		cfg: cfg, identity: identity, done: make(chan struct{}), state: state,
-		sessions: map[node.JID]*signal.Session{}, lids: map[string]string{}, groups: map[senderName]*signal.SenderKeys{}, acks: map[string]chan node.Node{}, retries: map[string]chan mediaretry.Notification{},
-		ownKeys: map[node.JID]*signal.SenderKey{}, holders: map[node.JID]map[node.JID]bool{},
+		sessions: map[address]*signal.Session{}, lids: map[string]string{}, groups: map[senderName]*signal.SenderKeys{}, acks: map[string]chan node.Node{}, retries: map[string]chan mediaretry.Notification{},
+		ownKeys: map[node.JID]*signal.SenderKey{}, holders: map[node.JID]map[address]bool{},
+		recent: map[string]sentMessage{}, resends: map[string]int{}, recreated: map[address]time.Time{}, given: map[node.JID]time.Time{}, askedKeys: map[string]time.Time{}, knownDevices: map[node.JID]cachedDevices{}, awaiting: map[string]*wire.MessageKey{},
 	}
+	account := state.Linked.Account
+	pairs := map[node.JID]node.JID{account.LID.WithoutDevice(): account.JID.WithoutDevice()}
+	maps.Copy(pairs, cfg.LIDs)
+	c.learnLocked(pairs)
 	if err := c.restore(); err != nil {
 		_ = online.Close()
 		return nil, err
 	}
-	account := state.Linked.Account
-	c.learnLocked(map[node.JID]node.JID{account.LID.WithoutDevice(): account.JID.WithoutDevice()})
-	c.learnLocked(cfg.LIDs)
 	c.online = online
 	c.life, c.stop = context.WithCancel(context.WithoutCancel(ctx))
-	c.jobs = make(chan func(context.Context), jobQueue)
+	c.jobs = queue.New[func(context.Context)]()
 	workerDone := make(chan struct{})
 	go func() {
 		defer close(workerDone)
@@ -175,8 +231,12 @@ func Connect(ctx context.Context, cfg Config, state State) (*Client, error) {
 }
 
 func (c *Client) keepAlive(ctx context.Context, every time.Duration) {
-	ticker := time.NewTicker(every)
+	check := min(every/4, maxPingCheck)
+	ticker := time.NewTicker(check)
 	defer ticker.Stop()
+	wall := func() time.Time { return c.cfg.Link.Now().Round(0) }
+	lastCheck, lastPong := wall(), wall()
+	due := time.Now().Add(pingGap(every))
 	for {
 		select {
 		case <-ctx.Done():
@@ -187,15 +247,34 @@ func (c *Client) keepAlive(ctx context.Context, every time.Duration) {
 			return
 		case <-ticker.C:
 		}
+		now := wall()
+		woke := now.Sub(lastCheck) > 3*check
+		lastCheck = now
+		if !woke && time.Now().Before(due) {
+			continue
+		}
+		due = time.Now().Add(pingGap(every))
 		pingCtx, cancel := context.WithTimeout(ctx, pingWait)
 		_, err := c.online.Session.Query(pingCtx, PingRequest())
 		cancel()
-		if err != nil && ctx.Err() == nil && c.life.Err() == nil {
-			c.fail(fmt.Errorf("%w: no answer to a keepalive ping within %s", ErrClosed, pingWait))
-			_ = c.online.Close()
+		lastCheck = wall()
+		switch {
+		case ctx.Err() != nil || c.life.Err() != nil:
 			return
+		case err == nil:
+			lastPong = lastCheck
+			continue
+		case !woke && wall().Sub(lastPong) < deadAfter:
+			continue
 		}
+		c.fail(fmt.Errorf("%w: no answer to keepalive pings since %s", ErrClosed, lastPong.Format(time.TimeOnly)))
+		_ = c.online.Close()
+		return
 	}
+}
+
+func pingGap(every time.Duration) time.Duration {
+	return every + rand.N(every/2+1)
 }
 
 func Pong(ping node.Node) (node.Node, bool) {
@@ -305,27 +384,7 @@ func (c *Client) loop(ctx context.Context, workerDone <-chan struct{}) {
 		close(c.done)
 	}()
 	for n := range c.online.Session.Events() {
-		switch n.Tag {
-		case "message":
-			c.receive(ctx, n)
-		case "receipt":
-			_ = c.online.Session.Send(ctx, live.Ack(n))
-			if r, err := message.ParseReceipt(n); err == nil && c.cfg.Receipt != nil {
-				c.cfg.Receipt(r)
-			}
-		case "notification":
-			_ = c.online.Session.Send(ctx, live.Ack(n))
-			c.notified(n)
-		case "ack":
-			c.acked(n)
-		case "iq":
-			if pong, ok := Pong(n); ok {
-				_ = c.online.Session.Send(ctx, pong)
-			}
-		case "stream:error", "failure":
-			c.fail(fmt.Errorf("%w: %s", linkflow.Classify(n, ErrClosed), n))
-			_ = c.online.Close()
-		}
+		c.handle(ctx, n)
 	}
 	c.fail(fmt.Errorf("%w: %w", ErrClosed, c.online.Session.Err()))
 	c.mu.Lock()
@@ -333,6 +392,68 @@ func (c *Client) loop(ctx context.Context, workerDone <-chan struct{}) {
 	for id, waiter := range c.acks {
 		close(waiter)
 		delete(c.acks, id)
+	}
+}
+
+func (c *Client) handle(ctx context.Context, n node.Node) {
+	defer func() {
+		if r := recover(); r != nil {
+			c.problem(n.Tag+" "+n.Attr("id").String(), r)
+			if n.Tag == "message" {
+				_ = c.online.Session.Send(ctx, live.Nack(n, live.HandlerCrash))
+			}
+		}
+	}()
+	switch n.Tag {
+	case "message":
+		c.receive(ctx, n)
+	case "receipt":
+		_ = c.online.Session.Send(ctx, live.Ack(n))
+		if req, err := message.ParseRetryRequest(n); err == nil {
+			c.enqueue(func(ctx context.Context) { _ = c.resend(ctx, req) })
+			return
+		}
+		if r, err := message.ParseReceipt(n); err == nil && c.cfg.Receipt != nil {
+			c.cfg.Receipt(r)
+		}
+	case "notification":
+		_ = c.online.Session.Send(ctx, live.Ack(n))
+		c.notified(n)
+	case "call":
+		_ = c.online.Session.Send(ctx, callAnswer(n))
+	case "status":
+		_ = c.online.Session.Send(ctx, live.Nack(n, live.Unsupported))
+	case "ack":
+		c.acked(n)
+	case "iq":
+		if pong, ok := Pong(n); ok {
+			_ = c.online.Session.Send(ctx, pong)
+		}
+	case "stream:error", "failure":
+		c.fail(fmt.Errorf("%w: %s", linkflow.Classify(n, ErrClosed), n))
+		_ = c.online.Close()
+	}
+}
+
+func callAnswer(n node.Node) node.Node {
+	if len(n.Children) == 0 {
+		return live.Ack(n)
+	}
+	payload := n.Children[0]
+	switch payload.Tag {
+	case "offer", "accept", "reject", "enc_rekey":
+		return node.Node{Tag: "receipt", Attrs: []node.Attr{{Key: "to", Value: n.Attr("from")}, {Key: "id", Value: n.Attr("id")}}, Children: []node.Node{{
+			Tag: payload.Tag, Attrs: []node.Attr{{Key: "call-id", Value: payload.Attr("call-id")}, {Key: "call-creator", Value: payload.Attr("call-creator")}},
+		}}}
+	}
+	return node.Node{Tag: "ack", Attrs: []node.Attr{
+		{Key: "to", Value: n.Attr("from")}, {Key: "id", Value: n.Attr("id")}, {Key: "class", Value: node.Text("call")}, {Key: "type", Value: node.Text(payload.Tag)},
+	}}
+}
+
+func (c *Client) problem(what string, r any) {
+	if c.cfg.Problem != nil {
+		c.cfg.Problem(fmt.Errorf("client: %s crashed: %v\n%s", what, r, debug.Stack()))
 	}
 }
 
@@ -358,23 +479,41 @@ func (c *Client) acked(n node.Node) {
 func (c *Client) receive(ctx context.Context, n node.Node) {
 	in, err := message.ParseIncoming(c.mine, n)
 	if err != nil {
-		_ = c.online.Session.Send(ctx, live.Ack(n))
+		_ = c.online.Session.Send(ctx, live.Nack(n, live.Unparsable))
 		return
 	}
-	deferred := false
+	reply, ok := c.open(ctx, n, in)
+	c.keep()
+	if ok {
+		_ = c.online.Session.Send(ctx, reply)
+	}
+}
+
+func (c *Client) open(ctx context.Context, n node.Node, in message.Incoming) (node.Node, bool) {
+	if len(in.Encs) == 0 {
+		c.unavailable(n, in)
+	}
+	deferred, readable, unreadable := false, false, false
 	for _, enc := range pairwiseFirst(in.Encs) {
 		plaintext, err := c.decrypt(in, enc)
-		if errors.Is(err, errUnsupported) {
+		switch {
+		case errors.Is(err, errUnsupported):
 			continue
-		}
-		if err != nil {
-			c.retry(ctx, in, enc)
-			return
+		case errors.Is(err, signal.ErrDuplicate):
+			if c.cfg.Seen != nil && c.cfg.Seen(ctx, in.Chat, in.ID) {
+				return message.DeliveryReceipt(c.mine, in), true
+			}
+			return live.Nack(n, live.AlreadySeen), true
+		case err != nil:
+			c.expectResend(in)
+			return c.retry(in, enc)
 		}
 		decoded, err := message.Decode(plaintext)
 		if err != nil {
+			unreadable = true
 			continue
 		}
+		readable = true
 		if distribution := decoded.GetSenderKeyDistributionMessage(); distribution != nil {
 			c.distribute(in, distribution.GetAxolotlSenderKeyDistributionMessage())
 		}
@@ -382,20 +521,24 @@ func (c *Client) receive(ctx context.Context, n node.Node) {
 			deferred = c.fromOurPhone(in, decoded.GetProtocolMessage()) || deferred
 		}
 		if c.cfg.Receive != nil && hasContent(decoded) {
+			c.readable(in.ID)
 			c.cfg.Receive(Received{ID: in.ID, Chat: in.Chat, Author: in.Author, Time: in.Timestamp, Name: in.PushName, Edit: in.Edit, Message: decoded, Pairs: in.Pairs})
 		}
 	}
-	c.keep()
-	if !deferred {
-		_ = c.online.Session.Send(ctx, message.DeliveryReceipt(c.mine, in))
+	switch {
+	case unreadable && !readable:
+		return live.Nack(n, live.BadContent), true
+	case deferred:
+		return node.Node{}, false
 	}
+	return message.DeliveryReceipt(c.mine, in), true
 }
 
 var errUnsupported = errors.New("client: unsupported encryption")
 
 type senderName struct {
 	group  node.JID
-	sender node.JID
+	sender address
 }
 
 func pairwiseFirst(encs []message.Enc) []message.Enc {
@@ -414,7 +557,11 @@ func boolRank(b bool) int {
 }
 
 func hasContent(m *wire.Message) bool {
-	if p := m.GetProtocolMessage(); p.GetKey() != nil && p.Type != nil && (p.GetType() == wire.Message_ProtocolMessage_REVOKE || p.GetType() == wire.Message_ProtocolMessage_MESSAGE_EDIT) {
+	p := m.GetProtocolMessage()
+	switch {
+	case p.GetKey() != nil && p.Type != nil && (p.GetType() == wire.Message_ProtocolMessage_REVOKE || p.GetType() == wire.Message_ProtocolMessage_MESSAGE_EDIT):
+		return true
+	case p.GetType() == wire.Message_ProtocolMessage_EPHEMERAL_SETTING:
 		return true
 	}
 	rest := proto.CloneOf(m)
@@ -464,7 +611,7 @@ func (c *Client) decrypt(in message.Incoming, enc message.Enc) ([]byte, error) {
 	}
 }
 
-func (c *Client) retry(ctx context.Context, in message.Incoming, enc message.Enc) {
+func (c *Client) retry(in message.Incoming, enc message.Enc) (node.Node, bool) {
 	c.mu.Lock()
 	keys, next, err := prekeys.Generate(c.cfg.Link.Random, c.state.NextPreKeyID, 1)
 	if err == nil {
@@ -474,54 +621,167 @@ func (c *Client) retry(ctx context.Context, in message.Incoming, enc message.Enc
 	}
 	c.mu.Unlock()
 	if err != nil {
-		return
+		return node.Node{}, false
 	}
 	receipt, err := message.RetryReceipt(c.mine, in, message.Retry{
 		Count: enc.Retry + 1, Registration: c.identity.Registration(device.Props()), PreKey: keys[0], DeviceIdentity: c.state.Linked.Account.SignedIdentity,
 	})
-	if err == nil {
-		_ = c.online.Session.Send(ctx, receipt)
-	}
+	return receipt, err == nil
 }
 
 func (c *Client) Send(ctx context.Context, to node.JID, m *wire.Message) (string, error) {
-	self := node.JID{User: c.Self().User, Server: c.Self().Server}
+	return c.SendWithID(ctx, to, "", m)
+}
+
+func (c *Client) SendWithID(ctx context.Context, to node.JID, id string, m *wire.Message) (string, error) {
+	toSelf := c.mine(to)
+	theirs := func(d node.JID) bool { return !c.mine(d) }
 	users := []node.JID{to}
-	if to != self {
-		users = append(users, self)
+	if !toSelf {
+		users = append(users, c.ownDevice().WithoutDevice())
 	}
-	reply, err := c.online.Session.Query(ctx, usync.DevicesRequest(c.online.Session.NewID(), usync.ContextMessage, users))
-	if err != nil {
-		return "", fmt.Errorf("client: devices: %w", err)
-	}
-	listed, err := usync.ParseDevices(reply)
+	targets, err := c.devices(ctx, users)
 	if err != nil {
 		return "", err
 	}
-	var targets []node.JID
-	for _, user := range listed {
-		for _, d := range user.Devices {
-			if d.JID != c.Self() {
-				targets = append(targets, d.JID)
-			}
-		}
-	}
-	if len(targets) == 0 {
+	if !toSelf && !slices.ContainsFunc(targets, theirs) {
 		return "", fmt.Errorf("%w: %s", ErrNoTarget, to)
 	}
 	if err := c.startSessions(ctx, targets); err != nil {
 		return "", err
 	}
-	parts, err := c.encrypt(to, self, targets, m)
+	parts, err := c.encrypt(to, targets, m)
 	if err != nil {
 		return "", err
 	}
-	id, err := message.NewID(c.cfg.Link.Now(), self, c.cfg.Link.Random)
+	if !toSelf && !slices.ContainsFunc(parts, func(p message.Part) bool { return theirs(p.Device) }) {
+		return "", fmt.Errorf("%w: no session could be started with any device of %s", ErrNoTarget, to)
+	}
+	id, err = c.idFor(id)
 	if err != nil {
 		return "", err
 	}
+	c.mu.Lock()
+	c.rememberLocked(id, to, m)
+	c.mu.Unlock()
 	c.keep()
-	return id, c.deliver(ctx, message.Outgoing(id, to, m, parts, c.state.Linked.Account.SignedIdentity))
+	token, personal := c.tokenFor(ctx, to)
+	c.mu.Lock()
+	other := c.alternateLocked(to)
+	c.mu.Unlock()
+	stanza := message.KnownAs(message.Outgoing(id, to, m, parts, c.state.Linked.Account.SignedIdentity), other)
+	if err := c.deliver(ctx, withToken(stanza, token, c.cfg.Link.Now())); err != nil {
+		return id, err
+	}
+	if personal && m.GetProtocolMessage() == nil {
+		c.giveToken(token)
+	}
+	return id, nil
+}
+
+func (c *Client) tokenFor(ctx context.Context, to node.JID) (privacy.Token, bool) {
+	if c.cfg.TokenOf == nil || to.Server != node.ServerUser && to.Server != node.ServerLID || c.mine(to) {
+		return privacy.Token{}, false
+	}
+	token := c.cfg.TokenOf(ctx, to.WithoutDevice())
+	token.Contact = to.WithoutDevice()
+	return token, true
+}
+
+func withToken(stanza node.Node, token privacy.Token, now time.Time) node.Node {
+	if token.Usable(now) {
+		stanza.Children = append(slices.Clone(stanza.Children), token.Node())
+	}
+	return stanza
+}
+
+func (c *Client) giveToken(token privacy.Token) {
+	now := c.cfg.Link.Now()
+	c.mu.Lock()
+	if last := c.given[token.Contact]; last.After(token.Ours) {
+		token.Ours = last
+	}
+	number, known := c.numberLocked(token.Contact)
+	due := known && token.Due(now)
+	if due {
+		c.given[token.Contact] = now
+	}
+	c.mu.Unlock()
+	if !due {
+		return
+	}
+	c.enqueue(func(ctx context.Context) {
+		if _, err := c.online.Session.Query(ctx, privacy.Give(number, now)); err != nil {
+			c.mu.Lock()
+			delete(c.given, token.Contact)
+			c.mu.Unlock()
+			return
+		}
+		if c.cfg.Tokens != nil {
+			c.cfg.Tokens([]privacy.Token{{Contact: token.Contact, Ours: now}})
+		}
+	})
+}
+
+func (c *Client) devices(ctx context.Context, users []node.JID) ([]node.JID, error) {
+	now := c.cfg.Link.Now()
+	var all, missing []node.JID
+	c.mu.Lock()
+	for _, u := range users {
+		if known, ok := c.knownDevices[u.WithoutDevice()]; ok && now.Sub(known.at) < devicesFresh {
+			all = append(all, known.devices...)
+		} else {
+			missing = append(missing, u.WithoutDevice())
+		}
+	}
+	c.mu.Unlock()
+	if len(missing) > 0 {
+		reply, err := c.online.Session.Query(ctx, usync.DevicesRequest(c.online.Session.NewID(), usync.ContextMessage, missing))
+		if err != nil {
+			return nil, fmt.Errorf("client: devices: %w", err)
+		}
+		listed, err := usync.ParseDevices(reply)
+		if err != nil {
+			return nil, err
+		}
+		c.mu.Lock()
+		for _, user := range listed {
+			found := make([]node.JID, 0, len(user.Devices))
+			for _, d := range user.Devices {
+				found = append(found, d.JID)
+			}
+			if user.Err == nil {
+				c.knownDevices[user.JID.WithoutDevice()] = cachedDevices{devices: found, at: now}
+			}
+			all = append(all, found...)
+		}
+		c.mu.Unlock()
+	}
+	var out []node.JID
+	c.mu.Lock()
+	defer c.mu.Unlock()
+	self, me, seen := c.addressLocked(c.Self()), address(c.ownDevice()), map[address]bool{}
+	for _, d := range all {
+		if at := c.addressLocked(d); at != self && at != me && !seen[at] {
+			seen[at] = true
+			out = append(out, d)
+		}
+	}
+	return out, nil
+}
+
+func (c *Client) forgetDevicesLocked(users ...node.JID) {
+	for _, u := range users {
+		delete(c.knownDevices, u.WithoutDevice())
+		delete(c.knownDevices, node.JID(c.addressLocked(u.WithoutDevice())))
+	}
+}
+
+func (c *Client) ownDevice() node.JID {
+	if lid := c.state.Linked.Account.LID; lid.Server == node.ServerLID {
+		return node.JID{User: lid.User, Device: c.Self().Device, Server: node.ServerLID}
+	}
+	return c.Self()
 }
 
 func (c *Client) startSessions(ctx context.Context, targets []node.JID) error {
@@ -536,41 +796,32 @@ func (c *Client) startSessions(ctx context.Context, targets []node.JID) error {
 	if len(missing) == 0 {
 		return nil
 	}
-	reply, err := c.online.Session.Query(ctx, prekeys.FetchRequest(missing))
-	if err != nil {
-		return fmt.Errorf("client: key bundles: %w", err)
-	}
-	bundles, _, err := prekeys.ParseBundles(reply)
-	if err != nil {
-		return err
-	}
-	c.mu.Lock()
-	defer c.mu.Unlock()
-	for _, b := range bundles {
-		address := c.addressLocked(b.Device)
-		session, err := signal.Initiate(c.cfg.Link.Random, c.identity.Signal(), c.sessions[address], b.Keys)
-		if err != nil {
-			return fmt.Errorf("client: session with %s: %w", b.Device, err)
-		}
-		c.sessions[address] = session
-	}
-	return nil
+	return c.fetchSessions(ctx, missing)
 }
 
-func (c *Client) encrypt(to, self node.JID, targets []node.JID, m *wire.Message) ([]message.Part, error) {
+func (c *Client) encrypt(to node.JID, targets []node.JID, m *wire.Message) ([]message.Part, error) {
 	c.mu.Lock()
 	defer c.mu.Unlock()
-	parts := make([]message.Part, 0, len(targets))
-	for _, target := range targets {
-		session := c.sessions[c.addressLocked(target)]
+	parts, err := c.sealLocked(targets, func(target node.JID) ([]byte, error) {
+		if c.mine(target) {
+			return message.Encode(c.cfg.Link.Random, message.SentByUs(to, m))
+		}
+		return message.Encode(c.cfg.Link.Random, m)
+	})
+	if err == nil && len(parts) == 0 {
+		err = fmt.Errorf("%w: no device accepted a session", ErrNoTarget)
+	}
+	return parts, err
+}
+
+func (c *Client) sealLocked(devices []node.JID, payload func(node.JID) ([]byte, error)) ([]message.Part, error) {
+	parts := make([]message.Part, 0, len(devices))
+	for _, device := range devices {
+		session := c.sessions[c.addressLocked(device)]
 		if session == nil {
 			continue
 		}
-		payload := m
-		if target.User == self.User && target.Server == self.Server {
-			payload = message.SentByUs(to, m)
-		}
-		padded, err := message.Encode(c.cfg.Link.Random, payload)
+		padded, err := payload(device)
 		if err != nil {
 			return nil, err
 		}
@@ -578,15 +829,17 @@ func (c *Client) encrypt(to, self node.JID, targets []node.JID, m *wire.Message)
 		if err != nil {
 			return nil, err
 		}
-		parts = append(parts, message.Part{Device: target, Ciphertext: ciphertext})
-	}
-	if len(parts) == 0 {
-		return nil, fmt.Errorf("%w: no device accepted a session", ErrNoTarget)
+		parts = append(parts, message.Part{Device: device, Ciphertext: ciphertext})
 	}
 	return parts, nil
 }
 
 func (c *Client) deliver(ctx context.Context, stanza node.Node) error {
+	_, err := c.deliverAck(ctx, stanza)
+	return err
+}
+
+func (c *Client) deliverAck(ctx context.Context, stanza node.Node) (node.Node, error) {
 	id, _ := stanza.Attr("id").Text()
 	waiter := make(chan node.Node, 1)
 	c.mu.Lock()
@@ -598,22 +851,48 @@ func (c *Client) deliver(ctx context.Context, stanza node.Node) error {
 		c.mu.Unlock()
 	}()
 	if err := c.online.Session.Send(ctx, stanza); err != nil {
-		return err
+		if ctx.Err() == nil {
+			c.broken(fmt.Errorf("%w: writing %s failed: %w", ErrClosed, id, err))
+			return node.Node{}, fmt.Errorf("%w: %w: %w", ErrUnconfirmed, ErrClosed, err)
+		}
+		return node.Node{}, err
 	}
 	timeout, cancel := context.WithTimeout(ctx, ackTimeout)
 	defer cancel()
 	select {
 	case ack, open := <-waiter:
 		if !open {
-			return ErrClosed
+			return node.Node{}, fmt.Errorf("%w: %w", ErrUnconfirmed, ErrClosed)
 		}
+		c.mu.Lock()
+		c.unacked = 0
+		c.mu.Unlock()
 		if failure, _ := ack.Attr("error").Text(); failure != "" {
-			return fmt.Errorf("%w: error %s", ErrRejected, failure)
+			code, err := strconv.Atoi(failure)
+			if err != nil {
+				return ack, fmt.Errorf("%w: error %q", ErrRejected, failure)
+			}
+			return ack, Rejection{Code: code}
 		}
-		return nil
+		return ack, nil
 	case <-timeout.Done():
-		return fmt.Errorf("client: no acknowledgement for %s: %w", id, timeout.Err())
+		if ctx.Err() == nil {
+			c.mu.Lock()
+			c.unacked++
+			stuck := c.unacked >= maxUnacked
+			c.mu.Unlock()
+			if stuck {
+				c.broken(fmt.Errorf("%w: WhatsApp acknowledged none of the last %d messages", ErrClosed, maxUnacked))
+				return node.Node{}, fmt.Errorf("%w: %w: no acknowledgement for %s", ErrUnconfirmed, ErrClosed, id)
+			}
+		}
+		return node.Node{}, fmt.Errorf("%w: no acknowledgement for %s: %w", ErrUnconfirmed, id, timeout.Err())
 	}
+}
+
+func (c *Client) broken(err error) {
+	c.fail(err)
+	_ = c.online.Close()
 }
 
 func (c *Client) Groups(ctx context.Context) ([]groups.Group, error) {
@@ -624,26 +903,65 @@ func (c *Client) Groups(ctx context.Context) ([]groups.Group, error) {
 	return groups.ParseParticipating(reply)
 }
 
+func (c *Client) LookUp(ctx context.Context, numbers []string) ([]usync.Contact, error) {
+	reply, err := c.online.Session.Query(ctx, usync.ContactsRequest(c.online.Session.NewID(), numbers))
+	if err != nil {
+		return nil, fmt.Errorf("client: look up numbers: %w", err)
+	}
+	found, err := usync.ParseContacts(reply)
+	if err != nil {
+		return nil, err
+	}
+	pairs := map[node.JID]node.JID{}
+	for _, f := range found {
+		if f.OnWhatsApp && f.LID.Server == node.ServerLID && f.JID.Server == node.ServerUser {
+			pairs[f.LID.WithoutDevice()] = f.JID.WithoutDevice()
+		}
+	}
+	c.Learn(pairs)
+	return found, nil
+}
+
+func (c *Client) Query(ctx context.Context, request node.Node) (node.Node, error) {
+	return c.online.Session.Query(ctx, request)
+}
+
+func (c *Client) Group(ctx context.Context, jid node.JID) (groups.Group, bool, error) {
+	reply, err := c.online.Session.Query(ctx, groups.InfoRequest(jid))
+	if err != nil {
+		return groups.Group{}, false, fmt.Errorf("client: group %s: %w", jid, err)
+	}
+	found, err := groups.ParseInfo(reply)
+	if err != nil {
+		return groups.Group{}, false, err
+	}
+	for _, g := range found {
+		if g.JID == jid.WithoutDevice() {
+			return g, true, nil
+		}
+	}
+	return groups.Group{}, false, nil
+}
+
 func (c *Client) SendGroup(ctx context.Context, g groups.Group, m *wire.Message) (string, error) {
+	return c.SendGroupWithID(ctx, g, "", m)
+}
+
+func (c *Client) idFor(id string) (string, error) {
+	if id != "" {
+		return id, nil
+	}
+	return message.NewID(c.cfg.Link.Now(), c.Self().WithoutDevice(), c.cfg.Link.Random)
+}
+
+func (c *Client) SendGroupWithID(ctx context.Context, g groups.Group, id string, m *wire.Message) (string, error) {
 	users := make([]node.JID, 0, len(g.Participants))
 	for _, p := range g.Participants {
 		users = append(users, p.JID.WithoutDevice())
 	}
-	reply, err := c.online.Session.Query(ctx, usync.DevicesRequest(c.online.Session.NewID(), usync.ContextMessage, users))
-	if err != nil {
-		return "", fmt.Errorf("client: group devices: %w", err)
-	}
-	listed, err := usync.ParseDevices(reply)
+	members, err := c.devices(ctx, users)
 	if err != nil {
 		return "", err
-	}
-	var members []node.JID
-	for _, user := range listed {
-		for _, d := range user.Devices {
-			if d.JID != c.Self() {
-				members = append(members, d.JID)
-			}
-		}
 	}
 	key, needing, err := c.senderKeyFor(g.JID, members)
 	if err != nil {
@@ -653,7 +971,7 @@ func (c *Client) SendGroup(ctx context.Context, g groups.Group, m *wire.Message)
 	if err != nil {
 		return "", err
 	}
-	id, err := message.NewID(c.cfg.Link.Now(), node.JID{User: c.Self().User, Server: c.Self().Server}, c.cfg.Link.Random)
+	id, err = c.idFor(id)
 	if err != nil {
 		return "", err
 	}
@@ -661,15 +979,23 @@ func (c *Client) SendGroup(ctx context.Context, g groups.Group, m *wire.Message)
 	if err != nil {
 		return "", err
 	}
-	stanza := message.OutgoingGroup(id, g.JID, m, g.AddressingMode, parts, ciphertext, c.state.Linked.Account.SignedIdentity)
-	if err := c.deliver(ctx, stanza); err != nil {
-		return "", err
+	phash := message.Phash(append(slices.Clone(members), c.ownDevice()))
+	stanza := message.OutgoingGroup(id, g.JID, m, g.AddressingMode, phash, parts, ciphertext, c.state.Linked.Account.SignedIdentity)
+	ack, err := c.deliverAck(ctx, stanza)
+	if theirs, _ := ack.Attr("phash").Text(); theirs != "" && theirs != phash {
+		c.mu.Lock()
+		c.forgetDevicesLocked(users...)
+		c.mu.Unlock()
+	}
+	if err != nil {
+		return id, err
 	}
 	c.mu.Lock()
 	defer c.mu.Unlock()
 	for _, part := range parts {
 		c.holders[g.JID][c.addressLocked(part.Device)] = true
 	}
+	c.rememberLocked(id, g.JID, m)
 	return id, c.keepLocked()
 }
 
@@ -683,7 +1009,7 @@ func (c *Client) senderKeyFor(group node.JID, members []node.JID) (*signal.Sende
 			return nil, nil, err
 		}
 		key = created
-		c.ownKeys[group], c.holders[group] = key, map[node.JID]bool{}
+		c.ownKeys[group], c.holders[group] = key, map[address]bool{}
 	}
 	var needing []node.JID
 	for _, member := range members {
@@ -711,19 +1037,7 @@ func (c *Client) distributeKey(ctx context.Context, group node.JID, key *signal.
 	if err != nil {
 		return nil, err
 	}
-	parts := make([]message.Part, 0, len(needing))
-	for _, device := range needing {
-		session := c.sessions[c.addressLocked(device)]
-		if session == nil {
-			continue
-		}
-		ciphertext, err := session.Encrypt(padded)
-		if err != nil {
-			return nil, err
-		}
-		parts = append(parts, message.Part{Device: device, Ciphertext: ciphertext})
-	}
-	return parts, nil
+	return c.sealLocked(needing, func(node.JID) ([]byte, error) { return padded, nil })
 }
 
 func (c *Client) encryptForGroup(key *signal.SenderKey, m *wire.Message) ([]byte, error) {
@@ -742,23 +1056,27 @@ func (c *Client) restore() error {
 		if err := session.UnmarshalBinary(entry.Record); err != nil {
 			return fmt.Errorf("client: session with %s: %w", entry.Device, err)
 		}
-		c.sessions[entry.Device] = session
+		to := c.addressLocked(entry.Device)
+		c.sessions[to] = c.sessions[to].Merge(session)
 	}
 	for _, entry := range c.state.SenderKeys {
 		keys := &signal.SenderKeys{}
 		if err := keys.UnmarshalBinary(entry.Record); err != nil {
 			return fmt.Errorf("client: sender key of %s in %s: %w", entry.Sender, entry.Group, err)
 		}
-		c.groups[senderName{group: entry.Group, sender: entry.Sender}] = keys
+		name := senderName{group: entry.Group, sender: c.addressLocked(entry.Sender)}
+		if c.groups[name] == nil {
+			c.groups[name] = keys
+		}
 	}
 	for _, entry := range c.state.OwnSenderKeys {
 		key := &signal.SenderKey{}
 		if err := key.UnmarshalBinary(entry.Record); err != nil {
 			return fmt.Errorf("client: our sender key in %s: %w", entry.Group, err)
 		}
-		c.ownKeys[entry.Group], c.holders[entry.Group] = key, map[node.JID]bool{}
+		c.ownKeys[entry.Group], c.holders[entry.Group] = key, map[address]bool{}
 		for _, holder := range entry.Holders {
-			c.holders[entry.Group][holder] = true
+			c.holders[entry.Group][c.addressLocked(holder)] = true
 		}
 	}
 	return nil
@@ -771,7 +1089,7 @@ func (c *Client) keepLocked() error {
 		if err != nil {
 			return err
 		}
-		c.state.Sessions = append(c.state.Sessions, SessionEntry{Device: device, Record: record})
+		c.state.Sessions = append(c.state.Sessions, SessionEntry{Device: node.JID(device), Record: record})
 	}
 	c.state.SenderKeys = nil
 	for name, keys := range c.groups {
@@ -779,7 +1097,7 @@ func (c *Client) keepLocked() error {
 		if err != nil {
 			return err
 		}
-		c.state.SenderKeys = append(c.state.SenderKeys, SenderKeyEntry{Group: name.group, Sender: name.sender, Record: record})
+		c.state.SenderKeys = append(c.state.SenderKeys, SenderKeyEntry{Group: name.group, Sender: node.JID(name.sender), Record: record})
 	}
 	c.state.OwnSenderKeys = nil
 	for group, key := range c.ownKeys {
@@ -789,7 +1107,7 @@ func (c *Client) keepLocked() error {
 		}
 		entry := OwnSenderKeyEntry{Group: group, Record: record}
 		for holder := range c.holders[group] {
-			entry.Holders = append(entry.Holders, holder)
+			entry.Holders = append(entry.Holders, node.JID(holder))
 		}
 		c.state.OwnSenderKeys = append(c.state.OwnSenderKeys, entry)
 	}
@@ -828,13 +1146,21 @@ func (c *Client) Download(ctx context.Context, ref media.Reference) ([]byte, err
 			return nil, err
 		}
 		file, err := c.fetch(ctx, address)
-		if err != nil {
-			failures = append(failures, err)
-			continue
+		if err == nil {
+			var plain []byte
+			if plain, err = media.Decrypt(ref.MediaKey, ref.Type, file, ref.FileEncSHA256, ref.FileSHA256); err == nil {
+				return plain, nil
+			}
 		}
-		return media.Decrypt(ref.MediaKey, ref.Type, file, ref.FileEncSHA256, ref.FileSHA256)
+		failures = append(failures, err)
 	}
-	return nil, fmt.Errorf("%w: %w", ErrDownload, errors.Join(failures...))
+	failed := errors.Join(failures...)
+	if len(failures) > 0 && !slices.ContainsFunc(failures, func(err error) bool {
+		return !errors.Is(err, ErrGone) && !errors.Is(err, media.ErrHash) && !errors.Is(err, media.ErrMAC)
+	}) {
+		return nil, fmt.Errorf("%w: %w", ErrGone, failed)
+	}
+	return nil, fmt.Errorf("%w: %w", ErrDownload, failed)
 }
 
 func (c *Client) mediaConn(ctx context.Context) (media.Conn, error) {
@@ -872,7 +1198,7 @@ func (c *Client) fetch(ctx context.Context, address string) ([]byte, error) {
 	defer response.Body.Close()
 	switch response.StatusCode {
 	case http.StatusOK:
-	case http.StatusNotFound, http.StatusGone:
+	case http.StatusForbidden, http.StatusNotFound, http.StatusGone:
 		return nil, fmt.Errorf("%w: %s answered %d", ErrGone, request.URL.Host, response.StatusCode)
 	default:
 		return nil, fmt.Errorf("%s answered %d", request.URL.Host, response.StatusCode)

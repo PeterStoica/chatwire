@@ -6,7 +6,6 @@ import (
 	"image/gif"
 	"image/jpeg"
 	"image/png"
-	"math"
 )
 
 const (
@@ -57,5 +56,5 @@ func Describe(data []byte) (Picture, bool) {
 	if err := jpeg.Encode(&out, thumb, &jpeg.Options{Quality: thumbnailQuality}); err != nil {
 		return Picture{}, false
 	}
-	return Picture{Width: uint32(width & math.MaxUint32), Height: uint32(height & math.MaxUint32), Thumbnail: out.Bytes()}, true
+	return Picture{Width: uint32(width), Height: uint32(height), Thumbnail: out.Bytes()}, true
 }

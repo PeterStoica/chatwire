@@ -12,9 +12,12 @@ import (
 	"io"
 	"io/fs"
 	"net/http"
+	"net/url"
 	"os"
 	"os/signal"
 	"path/filepath"
+	"runtime"
+	"runtime/debug"
 	"strings"
 	"sync"
 	"time"
@@ -34,7 +37,6 @@ import (
 	"github.com/PeterStoica/chatwire/internal/pairing"
 	"github.com/PeterStoica/chatwire/internal/qrpage"
 	"github.com/PeterStoica/chatwire/internal/shim"
-	"github.com/PeterStoica/chatwire/internal/signon"
 	"github.com/PeterStoica/chatwire/internal/store"
 )
 
@@ -42,6 +44,7 @@ const (
 	versionTimeout = 5 * time.Second
 	defaultLinger  = 10 * time.Minute
 	reopenAfter    = 2 * time.Minute
+	parentCheck    = 5 * time.Second
 	buildIDLength  = 16
 )
 
@@ -49,7 +52,7 @@ func Main() int {
 	ctx, stop := signal.NotifyContext(context.Background(), os.Interrupt)
 	defer stop()
 	if err := run(ctx, os.Args[1:], os.Stdin, os.Stdout, os.Stderr); err != nil {
-		fmt.Fprintln(os.Stderr, "mcp:", err)
+		fmt.Fprintln(os.Stderr, "chatwire:", strings.TrimPrefix(err.Error(), "chatwire: "))
 		return 1
 	}
 	return 0
@@ -64,6 +67,9 @@ func defaultState() string {
 }
 
 func run(ctx context.Context, args []string, stdin io.Reader, stdout, stderr io.Writer) error {
+	if exe, err := os.Executable(); err == nil && runtime.GOOS == "windows" {
+		_ = os.Remove(exe + ".old")
+	}
 	command := "stdio"
 	if len(args) > 0 && !strings.HasPrefix(args[0], "-") {
 		command, args = args[0], args[1:]
@@ -75,6 +81,18 @@ func run(ctx context.Context, args []string, stdin io.Reader, stdout, stderr io.
 	case "help", "-h", "--help":
 		_, err := io.WriteString(stdout, usage)
 		return err
+	case "version", "--version":
+		_, err := fmt.Fprintln(stdout, "chatwire "+version())
+		return err
+	case "update":
+		flags := flag.NewFlagSet(command, flag.ContinueOnError)
+		flags.SetOutput(stderr)
+		check := flags.Bool("check", false, "only say whether a newer version exists")
+		asJSON := flags.Bool("json", false, "print results as JSON")
+		if err := flags.Parse(args); err != nil {
+			return err
+		}
+		return runUpdate(ctx, stdout, *check, *asJSON)
 	}
 	flags := flag.NewFlagSet(command, flag.ContinueOnError)
 	flags.SetOutput(stderr)
@@ -118,22 +136,31 @@ func waitFor(asked time.Duration, human bool) time.Duration {
 	return 0
 }
 
-func viaDaemon(ctx context.Context, state string, linger time.Duration, stdin io.Reader, stdout, stderr io.Writer) error {
+func launcher(state string, linger time.Duration) (shim.Launcher, error) {
 	executable, build, err := self()
 	if err != nil {
-		return err
+		return shim.Launcher{}, err
 	}
 	socket, err := socketPath(state)
 	if err != nil {
-		return err
+		return shim.Launcher{}, err
 	}
-	launcher := shim.Launcher{
+	return shim.Launcher{
 		Socket: socket, Log: filepath.Join(filepath.Dir(state), "daemon.log"), Build: build, Executable: executable,
-		DaemonArgs: []string{"daemon", "-state", state, "-linger", linger.String()},
+		DaemonArgs: []string{"daemon", "-state", state, "-linger", linger.String()}, Settings: ownSettings(),
+	}, nil
+}
+
+func viaDaemon(ctx context.Context, state string, linger time.Duration, stdin io.Reader, stdout, stderr io.Writer) error {
+	ctx, stop := shim.WhileParentLives(ctx, os.Getppid, parentCheck)
+	defer stop()
+	launcher, err := launcher(state, linger)
+	if err != nil {
+		return err
 	}
 	conn, err := launcher.Connect(ctx)
 	if err != nil {
-		fmt.Fprintf(stderr, "mcp: serving this window on its own, without the shared background process: %v\n", err)
+		fmt.Fprintf(stderr, "chatwire: serving this window on its own, without the shared background process: %v\n", err)
 		return serveAlone(ctx, state, stdin, stdout)
 	}
 	return shim.Pipe(ctx, conn, stdin, stdout)
@@ -162,8 +189,8 @@ func serveDaemon(ctx context.Context, state string, linger time.Duration) error 
 		return err
 	}
 	defer a.close()
-	return daemon.New(listener, build, linger, func(ctx context.Context, conn io.ReadWriteCloser) {
-		_ = a.server().Run(ctx, &mcp.IOTransport{Reader: conn, Writer: conn})
+	return daemon.New(listener, build, linger, func(ctx context.Context, conn io.ReadWriteCloser, settings url.Values) {
+		_ = a.server(settings).Run(ctx, &mcp.IOTransport{Reader: conn, Writer: conn})
 	}).Serve(ctx)
 }
 
@@ -173,7 +200,7 @@ func serveAlone(ctx context.Context, state string, stdin io.Reader, stdout io.Wr
 		return err
 	}
 	defer a.close()
-	return a.server().Run(ctx, &mcp.IOTransport{Reader: io.NopCloser(stdin), Writer: nopWriteCloser{stdout}})
+	return a.server(ownSettings()).Run(ctx, &mcp.IOTransport{Reader: io.NopCloser(stdin), Writer: nopWriteCloser{stdout}})
 }
 
 type nopWriteCloser struct{ io.Writer }
@@ -215,10 +242,13 @@ func self() (executable, build string, err error) {
 }
 
 type app struct {
+	lock     *os.File
+	updates  *updates
 	messages *store.Store
 	m        *messenger.Messenger
 	l        *linker.Linker
 	media    string
+	repeats  *mcptools.Repeats
 	mu       sync.Mutex
 	page     *linkpage.Page
 	opened   time.Time
@@ -245,14 +275,27 @@ func (a *app) linkPage(ctx context.Context) (string, bool, error) {
 }
 
 func open(ctx context.Context, path string) (*app, error) {
+	if err := os.MkdirAll(filepath.Dir(path), 0o700); err != nil {
+		return nil, fmt.Errorf("mcpapp: state dir: %w", err)
+	}
+	lock, err := acquire(ctx, filepath.Dir(path), lockWait)
+	if err != nil {
+		return nil, err
+	}
+	a, err := openLocked(ctx, path)
+	if err != nil {
+		_ = lock.Close()
+		return nil, err
+	}
+	a.lock, a.updates = lock, newUpdates(filepath.Dir(path))
+	go a.updates.watch(ctx)
+	return a, nil
+}
+
+func openLocked(ctx context.Context, path string) (*app, error) {
 	browser := dial.Client(http.DefaultTransport)
-	version := sync.OnceValue(func() signon.Version {
-		versionCtx, cancel := context.WithTimeout(context.WithoutCancel(ctx), versionTimeout)
-		defer cancel()
-		latest, _ := dial.LatestVersion(versionCtx, browser, dial.Page)
-		return latest
-	})
-	go version()
+	versions := dial.NewVersions(browser, dial.Page, versionTimeout)
+	go versions.Current()
 	dictionary, err := node.LoadDictionary()
 	if err != nil {
 		return nil, err
@@ -265,19 +308,17 @@ func open(ctx context.Context, path string) (*app, error) {
 		Dial:       dial.Dialer(browser),
 		Dictionary: dictionary,
 		Root:       cert.WhatsAppRoot(),
-		Version:    version,
+		Version:    versions.Current,
 		Random:     rand.Reader,
 		Now:        time.Now,
 		Save:       func(linked linkflow.Linked) error { return save(path, client.State{Linked: linked}) },
-	}
-	if err := os.MkdirAll(filepath.Dir(path), 0o700); err != nil {
-		return nil, fmt.Errorf("mcpapp: state dir: %w", err)
 	}
 	messages, err := store.Open(ctx, filepath.Join(filepath.Dir(path), "messages.db"))
 	if err != nil {
 		return nil, err
 	}
 	m := messenger.New(cfg, browser, func(s client.State) error { return save(path, s) }, messages)
+	m.WhenOutdated(versions.Refresh)
 	var existing *pairing.Account
 	if linked {
 		existing = &state.Linked.Account
@@ -291,11 +332,14 @@ func open(ctx context.Context, path string) (*app, error) {
 	if linked {
 		m.Start(ctx, state)
 	}
-	return &app{messages: messages, m: m, l: l, media: filepath.Join(filepath.Dir(path), "media")}, nil
+	return &app{messages: messages, m: m, l: l, media: filepath.Join(filepath.Dir(path), "media"), repeats: mcptools.NewRepeats()}, nil
 }
 
-func (a *app) server() *mcp.Server {
-	return mcptools.NewServer(&mcp.Implementation{Name: "chatwire", Version: "0.0.0"}, a.l, a.m, mcptools.Options{MediaDir: a.media, LinkPage: a.linkPage})
+func (a *app) server(settings url.Values) *mcp.Server {
+	return mcptools.NewServer(&mcp.Implementation{Name: "chatwire", Version: version()}, a.l, a.m, mcptools.Options{
+		MediaDir: a.media, Folders: folders(settings.Get(settingFiles)), Private: []string{filepath.Dir(a.media)}, LinkPage: a.linkPage,
+		Update: a.updates.available, Repeats: a.repeats, ReadOnly: settings.Get(settingReadOnly) == "1",
+	})
 }
 
 func (a *app) close() {
@@ -307,6 +351,7 @@ func (a *app) close() {
 	a.l.Close()
 	a.m.Close()
 	_ = a.messages.Close()
+	_ = a.lock.Close()
 }
 
 func load(path string) (client.State, bool, error) {
@@ -339,4 +384,40 @@ func save(path string, state client.State) error {
 		return fmt.Errorf("mcpapp: replace: %w", err)
 	}
 	return nil
+}
+
+func version() string {
+	info, ok := debug.ReadBuildInfo()
+	if !ok || info.Main.Version == "" || info.Main.Version == "(devel)" {
+		return "dev"
+	}
+	return info.Main.Version
+}
+
+const (
+	settingFiles     = "files"
+	settingReadOnly  = "read_only"
+	readOnlyVariable = "CHATWIRE_READ_ONLY"
+)
+
+func ownSettings() url.Values {
+	settings := url.Values{}
+	if files := os.Getenv(mcptools.FilesVariable); files != "" {
+		settings.Set(settingFiles, files)
+	}
+	switch strings.ToLower(strings.TrimSpace(os.Getenv(readOnlyVariable))) {
+	case "1", "true", "yes", "on":
+		settings.Set(settingReadOnly, "1")
+	}
+	return settings
+}
+
+func folders(allowed string) []string {
+	out := mcptools.DefaultFolders()
+	for _, extra := range filepath.SplitList(allowed) {
+		if extra = strings.TrimSpace(extra); filepath.IsAbs(extra) {
+			out = append(out, extra)
+		}
+	}
+	return out
 }

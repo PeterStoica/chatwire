@@ -10,6 +10,7 @@ import (
 	"net/http"
 	"net/http/httptest"
 	"slices"
+	"strconv"
 	"strings"
 	"sync"
 	"testing"
@@ -22,14 +23,6 @@ import (
 	"github.com/PeterStoica/chatwire/internal/appstate"
 	"github.com/PeterStoica/chatwire/internal/client"
 	"github.com/PeterStoica/chatwire/internal/dial"
-	"github.com/PeterStoica/chatwire/internal/fakeappstate"
-	"github.com/PeterStoica/chatwire/internal/fakecdn"
-	"github.com/PeterStoica/chatwire/internal/fakedevice"
-	"github.com/PeterStoica/chatwire/internal/fakegroups"
-	"github.com/PeterStoica/chatwire/internal/fakekeys"
-	"github.com/PeterStoica/chatwire/internal/fakerelay"
-	"github.com/PeterStoica/chatwire/internal/fakeusync"
-	"github.com/PeterStoica/chatwire/internal/fakeworld"
 	"github.com/PeterStoica/chatwire/internal/groups"
 	"github.com/PeterStoica/chatwire/internal/history"
 	"github.com/PeterStoica/chatwire/internal/linkflow"
@@ -38,8 +31,18 @@ import (
 	"github.com/PeterStoica/chatwire/internal/message"
 	"github.com/PeterStoica/chatwire/internal/node"
 	"github.com/PeterStoica/chatwire/internal/prekeys"
+	"github.com/PeterStoica/chatwire/internal/privacy"
 	"github.com/PeterStoica/chatwire/internal/signal"
+	"github.com/PeterStoica/chatwire/internal/testkit/fakeappstate"
+	"github.com/PeterStoica/chatwire/internal/testkit/fakecdn"
+	"github.com/PeterStoica/chatwire/internal/testkit/fakedevice"
+	"github.com/PeterStoica/chatwire/internal/testkit/fakegroups"
+	"github.com/PeterStoica/chatwire/internal/testkit/fakekeys"
+	"github.com/PeterStoica/chatwire/internal/testkit/fakerelay"
+	"github.com/PeterStoica/chatwire/internal/testkit/fakeusync"
+	"github.com/PeterStoica/chatwire/internal/testkit/fakeworld"
 	"github.com/PeterStoica/chatwire/internal/wire"
+	"sync/atomic"
 )
 
 func TestMain(m *testing.M) {
@@ -67,6 +70,12 @@ type rig struct {
 	receipts  chan message.Receipt
 	http      *http.Client
 	lids      map[node.JID]node.JID
+	now       func() time.Time
+	receive   func(client.Received)
+	seen      func(chat node.JID, id string) bool
+	tokenOf   func(node.JID) privacy.Token
+	saved     []privacy.Token
+	problems  []error
 }
 
 func newRig(t *testing.T) *rig {
@@ -89,13 +98,19 @@ func newRig(t *testing.T) *rig {
 			t.Fatal(err)
 		}
 	}
+	ourLID := node.JID{User: w.Phone.LID.User, Server: node.ServerLID}
 	r.devices.Set(r.account, fakeusync.Device{ID: 0}, fakeusync.Device{ID: w.Phone.JID.Device})
+	r.devices.Set(ourLID, fakeusync.Device{ID: 0}, fakeusync.Device{ID: w.Phone.JID.Device})
+	r.keys.Alias(ourLID, r.account)
 	r.devices.Set(r.bob, fakeusync.Device{ID: 0})
 	r.server = &fakeworld.Server{
 		Keys: r.keys, Devices: r.devices, PushName: "Me", Inbox: make(chan node.Node, 8),
 		Deliver: func(device node.JID, stanza node.Node) {
 			r.mu.Lock()
 			defer r.mu.Unlock()
+			if device.WithoutDevice() == ourLID {
+				device = node.JID{User: r.account.User, Device: device.Device, Server: node.ServerUser}
+			}
 			r.delivered[device] = append(r.delivered[device], stanza)
 		},
 		Received: func(n node.Node) {
@@ -118,8 +133,12 @@ func (r *rig) connect() *client.Client {
 	r.t.Helper()
 	w := r.world
 	w.Script(w.QRPairing(time.Second), w.Login(fakeworld.Success()), w.Serve(r.server))
+	now := r.now
+	if now == nil {
+		now = time.Now
+	}
 	cfg := linkflow.Config{
-		Dial: w.Dial, Dictionary: w.Dictionary, Root: w.Authority.Root(), Version: w.Version, Random: rand.Reader, Now: time.Now,
+		Dial: w.Dial, Dictionary: w.Dictionary, Root: w.Authority.Root(), Version: w.Version, Random: rand.Reader, Now: now,
 		ShowQR: w.ShowQR, Save: func(linkflow.Linked) error { return nil }, KeepAlive: r.keepAlive,
 	}
 	linked, err := linkflow.Link(r.t.Context(), cfg)
@@ -138,7 +157,29 @@ func (r *rig) connect() *client.Client {
 			r.persisted = append(r.persisted, s)
 			return nil
 		},
-		Receive: func(m client.Received) { r.received <- m },
+		Receive: func(m client.Received) {
+			if r.receive != nil {
+				r.receive(m)
+			}
+			r.received <- m
+		},
+		Seen: func(_ context.Context, chat node.JID, id string) bool { return r.seen != nil && r.seen(chat, id) },
+		TokenOf: func(_ context.Context, contact node.JID) privacy.Token {
+			if r.tokenOf == nil {
+				return privacy.Token{}
+			}
+			return r.tokenOf(contact)
+		},
+		Tokens: func(tokens []privacy.Token) {
+			r.mu.Lock()
+			defer r.mu.Unlock()
+			r.saved = append(r.saved, tokens...)
+		},
+		Problem: func(err error) {
+			r.mu.Lock()
+			defer r.mu.Unlock()
+			r.problems = append(r.problems, err)
+		},
 	}, client.State{Linked: linked})
 	if err != nil {
 		r.t.Fatal(err)
@@ -591,6 +632,10 @@ func TestDownloadingMedia(t *testing.T) {
 				http.Error(w, "busy", http.StatusServiceUnavailable)
 				return
 			}
+			if strings.Contains(req.URL.Path, "expired") {
+				http.Error(w, "expired", http.StatusForbidden)
+				return
+			}
 			file, ok := files[req.URL.Path]
 			if !ok {
 				http.NotFound(w, req)
@@ -670,11 +715,21 @@ func TestDownloadingMedia(t *testing.T) {
 		mu.Unlock()
 		edge, over := ref, ref
 		edge.DirectPath, over.DirectPath = "/v/edge.enc", "/v/over.enc"
-		if _, err := c.Download(t.Context(), edge); err == nil || errors.Is(err, client.ErrDownload) {
+		if _, err := c.Download(t.Context(), edge); err == nil || strings.Contains(err.Error(), "more than") || !errors.Is(err, media.ErrHash) && !errors.Is(err, media.ErrMAC) {
 			t.Fatalf("a file of exactly the cap must reach decryption: %v", err)
 		}
 		if _, err := c.Download(t.Context(), over); !errors.Is(err, client.ErrDownload) || !strings.Contains(err.Error(), "more than") {
 			t.Fatalf("a file over the cap: %v", err)
+		}
+		mu.Lock()
+		primaryDown = false
+		mu.Unlock()
+		expired := ref
+		expired.DirectPath = "/v/expired.enc"
+		for name, gone := range map[string]media.Reference{"forbidden everywhere": expired, "wrong on every host": forged, "on no host": missing} {
+			if _, err := c.Download(t.Context(), gone); !errors.Is(err, client.ErrGone) {
+				t.Errorf("%s: %v, want %v so the phone is asked", name, err, client.ErrGone)
+			}
 		}
 	})
 }
@@ -1029,11 +1084,25 @@ func TestContactsFromTheAddressBook(t *testing.T) {
 		if kept.saves != saves {
 			t.Fatal("a collection under a key we were never given was saved")
 		}
+		asked := r.deliveredTo(r.account)
+		if len(asked) != 1 {
+			t.Fatalf("%d messages to our phone, want one key request", len(asked))
+		}
+		_, request, err := r.ourPhone.Receive(asked[0])
+		if ids := request.GetProtocolMessage().GetAppStateSyncKeyRequest().GetKeyIds(); err != nil || len(ids) != 1 || !bytes.Equal(ids[0].GetKeyId(), []byte{9, 9}) {
+			t.Fatalf("our phone got %v: %v", request, err)
+		}
+		deliverPeer(keyShare([]byte{9, 9}, bytes.Repeat([]byte{8}, 32)))
+		synctest.Wait()
+		if got := kept.names(appstate.Regular); got["1@s.whatsapp.net"] != "X" {
+			t.Fatalf("after our phone shared the missing key: %v", got)
+		}
+		before := stranger.Requests
 		r.server.Inbox <- node.Node{Tag: "notification", Attrs: []node.Attr{{Key: "type", Value: node.Text("devices")}, {Key: "id", Value: node.Text("n4")}},
 			Children: []node.Node{{Tag: "collection", Attrs: []node.Attr{{Key: "name", Value: node.Text(appstate.Regular)}}}}}
 		synctest.Wait()
-		if stranger.Requests != 1 {
-			t.Fatalf("%d sync requests; only server_sync notifications start one", stranger.Requests)
+		if stranger.Requests != before {
+			t.Fatalf("%d sync requests; only server_sync notifications start one", stranger.Requests-before)
 		}
 	})
 }
@@ -1276,12 +1345,15 @@ func TestAStaleMediaAuthIsFetchedAgain(t *testing.T) {
 		if _, err := c.Upload(t.Context(), media.Document, []byte("x")); err == nil {
 			t.Fatal("an upload with a stale auth succeeded")
 		}
+		if got := r.mediaConns(); got != 2 {
+			t.Fatalf("%d media_conn queries; a refused upload must fetch a fresh key once and try again", got)
+		}
 		cdn.ExpectAuth(fakecdn.Auth)
 		if _, err := c.Upload(t.Context(), media.Document, []byte("x")); err != nil {
 			t.Fatal(err)
 		}
-		if got := r.mediaConns(); got != 2 {
-			t.Fatalf("%d media_conn queries; a 401 must drop the cached auth", got)
+		if got := r.mediaConns(); got != 3 {
+			t.Fatalf("%d media_conn queries; the key refused twice must not be reused", got)
 		}
 	})
 }
@@ -1378,8 +1450,8 @@ func TestKeepalivePingsFindADeadConnection(t *testing.T) {
 				t.Fatalf("a healthy connection ended: %v", c.Err())
 			default:
 			}
-			if got := pings(r); got < 14 || got > 15 {
-				t.Fatalf("%d pings in five minutes, want one every 20 seconds", got)
+			if got := pings(r); got < 10 || got > 15 {
+				t.Fatalf("%d pings in five minutes, want one every 20 to 30 seconds", got)
 			}
 			_ = c.Close()
 		})
@@ -1400,8 +1472,39 @@ func TestKeepalivePingsFindADeadConnection(t *testing.T) {
 			case <-time.After(2 * time.Minute):
 				t.Fatal("the connection stayed up with its pings unanswered")
 			}
-			if waited := time.Since(start); waited > 41*time.Second || !errors.Is(c.Err(), client.ErrClosed) || !strings.Contains(c.Err().Error(), "keepalive") {
+			if waited := time.Since(start); waited < 75*time.Second || waited > 2*time.Minute || !errors.Is(c.Err(), client.ErrClosed) || !strings.Contains(c.Err().Error(), "keepalive") {
 				t.Fatalf("after %s: %v", waited, c.Err())
+			}
+		})
+	})
+	t.Run("after the computer slept", func(t *testing.T) {
+		t.Parallel()
+		synctest.Test(t, func(t *testing.T) {
+			r := newRig(t)
+			r.keepAlive = 0
+			var asleep atomic.Bool
+			var ahead atomic.Int64
+			r.now = func() time.Time { return time.Now().Add(time.Duration(ahead.Load())) }
+			r.server.Drop = func(n node.Node) bool {
+				xmlns, _ := n.Attr("xmlns").Text()
+				return asleep.Load() && n.Tag == "iq" && xmlns == "w:p"
+			}
+			c := r.connect()
+			time.Sleep(time.Minute)
+			synctest.Wait()
+			if got := pings(r); got < 1 {
+				t.Fatalf("%d pings in the first minute", got)
+			}
+			asleep.Store(true)
+			ahead.Store(int64(time.Hour))
+			woke := time.Now()
+			select {
+			case <-c.Done():
+			case <-time.After(time.Minute):
+				t.Fatal("a connection that slept through an hour was kept")
+			}
+			if waited := time.Since(woke); waited > 20*time.Second {
+				t.Fatalf("noticed the dead connection %s after waking", waited)
 			}
 		})
 	})
@@ -1490,4 +1593,903 @@ func TestARepliesFromAPrivateIDOnTheSessionStartedByNumber(t *testing.T) {
 			})
 		})
 	}
+}
+
+func (r *rig) deliveredTo(device node.JID) []node.Node {
+	r.mu.Lock()
+	defer r.mu.Unlock()
+	return slices.Clone(r.delivered[device])
+}
+
+func TestRetriesAreAnsweredWithTheMessageAgain(t *testing.T) {
+	synctest.Test(t, func(t *testing.T) {
+		r := newRig(t)
+		c := r.connect()
+		ask := func(stanza node.Node, count int) node.Node {
+			t.Helper()
+			before := len(r.deliveredTo(r.bob))
+			receipt, err := r.bobPhone.AskAgain(stanza, count)
+			if err != nil {
+				t.Fatal(err)
+			}
+			r.server.Inbox <- fakerelay.DeliverReceipt(r.bob, receipt)
+			synctest.Wait()
+			got := r.deliveredTo(r.bob)
+			if len(got) != before+1 {
+				t.Fatalf("retry %d: %d new deliveries to bob, want 1", count, len(got)-before)
+			}
+			return got[before]
+		}
+		check := func(resend node.Node, id string, count int, text string) {
+			t.Helper()
+			enc, _ := resend.Child("enc")
+			if got, _ := resend.Attr("id").Text(); got != id {
+				t.Fatalf("resend id %s, want %s", got, id)
+			}
+			if got, _ := enc.Attr("count").Text(); got != fmt.Sprint(count) {
+				t.Fatalf("resend count %q, want %d", got, count)
+			}
+			_, m, err := r.bobPhone.Receive(resend)
+			if err != nil || m.GetConversation() != text {
+				t.Fatalf("bob read %v: %v", m, err)
+			}
+		}
+
+		first, err := c.Send(t.Context(), r.bob, &wire.Message{Conversation: new("did you get this")})
+		if err != nil {
+			t.Fatal(err)
+		}
+		original := r.deliveredTo(r.bob)[0]
+		check(ask(original, 1), first, 1, "did you get this")
+
+		second, err := c.Send(t.Context(), r.bob, &wire.Message{Conversation: new("and this")})
+		if err != nil {
+			t.Fatal(err)
+		}
+		resend := ask(r.deliveredTo(r.bob)[2], 2)
+		if enc, _ := resend.Child("enc"); enc.Attr("type").String() != "pkmsg" {
+			t.Fatalf("a retry with keys was answered on the old session: %s", resend)
+		}
+		check(resend, second, 2, "and this")
+
+		for count := 3; count <= 6; count++ {
+			ask(original, count)
+		}
+		receipt, err := r.bobPhone.AskAgain(original, 7)
+		if err != nil {
+			t.Fatal(err)
+		}
+		r.server.Inbox <- fakerelay.DeliverReceipt(r.bob, receipt)
+		synctest.Wait()
+		if n := len(r.deliveredTo(r.bob)); n != 8 {
+			t.Fatalf("%d deliveries to bob after a sixth retry, want 8", n)
+		}
+
+		stranger := original
+		stranger.Attrs = slices.Clone(original.Attrs)
+		for i, a := range stranger.Attrs {
+			if a.Key == "id" {
+				stranger.Attrs[i].Value = node.Text("3EB0NEVERSENT")
+			}
+		}
+		receipt, err = r.bobPhone.AskAgain(stranger, 1)
+		if err != nil {
+			t.Fatal(err)
+		}
+		r.server.Inbox <- fakerelay.DeliverReceipt(r.bob, receipt)
+		synctest.Wait()
+		if n := len(r.deliveredTo(r.bob)); n != 8 {
+			t.Fatalf("a message we never sent was sent: %d deliveries", n)
+		}
+	})
+}
+
+func TestSendingToANumberWithoutWhatsApp(t *testing.T) {
+	synctest.Test(t, func(t *testing.T) {
+		r := newRig(t)
+		c := r.connect()
+		nobody := node.JID{User: "40733333333", Server: node.ServerUser}
+		if _, err := c.Send(t.Context(), nobody, &wire.Message{Conversation: new("hello?")}); !errors.Is(err, client.ErrNoTarget) {
+			t.Fatalf("Send = %v, want ErrNoTarget", err)
+		}
+		keyless := node.JID{User: "40744444444", Server: node.ServerUser}
+		r.devices.Set(keyless, fakeusync.Device{ID: 0})
+		if _, err := c.Send(t.Context(), keyless, &wire.Message{Conversation: new("hello?")}); !errors.Is(err, client.ErrNoTarget) {
+			t.Fatalf("Send to a device without keys = %v, want ErrNoTarget", err)
+		}
+		if got := r.deliveredTo(r.account); len(got) != 0 {
+			t.Fatalf("our phone got %d copies of a message that went nowhere", len(got))
+		}
+	})
+}
+
+func (r *rig) answers(id string) []string {
+	r.mu.Lock()
+	defer r.mu.Unlock()
+	var out []string
+	for _, n := range r.sent {
+		if got, _ := n.Attr("id").Text(); got != id || n.Tag != "receipt" && n.Tag != "ack" {
+			continue
+		}
+		answer := n.Tag
+		for _, key := range []string{"class", "type", "error"} {
+			if v, ok := n.Attr(key).Text(); ok {
+				answer += " " + key + "=" + v
+			}
+		}
+		out = append(out, answer)
+	}
+	return out
+}
+
+func TestADuplicateIsNeverAskedForAgain(t *testing.T) {
+	for _, tt := range []struct {
+		name   string
+		stored bool
+		reply  bool
+		want   []string
+	}{
+		{name: "a first message we kept", stored: true, want: []string{"receipt", "receipt"}},
+		{name: "a first message we lost", want: []string{"receipt", "ack class=message type=text error=496"}},
+		{name: "a reply we kept", stored: true, reply: true, want: []string{"receipt", "receipt"}},
+		{name: "a reply we lost", reply: true, want: []string{"receipt", "ack class=message type=text error=496"}},
+	} {
+		t.Run(tt.name, func(t *testing.T) {
+			synctest.Test(t, func(t *testing.T) {
+				r := newRig(t)
+				c := r.connect()
+				self := r.world.Phone.JID
+				r.seen = func(node.JID, string) bool { return tt.stored }
+				if tt.reply {
+					if _, err := c.Send(t.Context(), r.bob, &wire.Message{Conversation: new("hi bob")}); err != nil {
+						t.Fatal(err)
+					}
+					if _, _, err := r.bobPhone.Receive(r.deliveredTo(r.bob)[0]); err != nil {
+						t.Fatal(err)
+					}
+				}
+				out, err := r.bobPhone.Send(r.keys, r.devices, r.account, &wire.Message{Conversation: new("twice")})
+				if err != nil {
+					t.Fatal(err)
+				}
+				stanza := fakerelay.Deliver(r.bob, "Bob", time.Now(), out)[self]
+				r.server.Inbox <- stanza
+				<-r.received
+				r.server.Inbox <- stanza
+				synctest.Wait()
+				if got := r.answers(stanza.Attr("id").String()); !slices.Equal(got, tt.want) {
+					t.Fatalf("answers %q, want %q", got, tt.want)
+				}
+				select {
+				case m := <-r.received:
+					t.Fatalf("the duplicate reached the app: %v", m.Message)
+				default:
+				}
+			})
+		})
+	}
+}
+
+func TestStanzasWeCannotUseAreRefused(t *testing.T) {
+	synctest.Test(t, func(t *testing.T) {
+		r := newRig(t)
+		r.connect()
+		self := r.world.Phone.JID
+		from := node.Attr{Key: "from", Value: node.Address(r.bob)}
+		text := func(k, v string) node.Attr { return node.Attr{Key: k, Value: node.Text(v)} }
+		garbled, err := r.bobPhone.SendUnreadable(r.keys, self)
+		if err != nil {
+			t.Fatal(err)
+		}
+		garbledID := garbled.Attr("id").String()
+		r.server.Inbox <- fakerelay.Deliver(r.bob, "Bob", time.Now(), garbled)[self]
+		r.server.Inbox <- node.Node{Tag: "message", Attrs: []node.Attr{from, text("id", "3EB0NOTIME"), text("type", "text")}}
+		r.server.Inbox <- node.Node{Tag: "call", Attrs: []node.Attr{from, text("id", "C1"), text("t", "1790000000")}, Children: []node.Node{{Tag: "offer", Attrs: []node.Attr{text("call-id", "X1"), {Key: "call-creator", Value: node.Address(r.bob)}}}}}
+		r.server.Inbox <- node.Node{Tag: "call", Attrs: []node.Attr{from, text("id", "C2"), text("t", "1790000001")}, Children: []node.Node{{Tag: "terminate", Attrs: []node.Attr{text("call-id", "X1")}}}}
+		r.server.Inbox <- node.Node{Tag: "status", Attrs: []node.Attr{from, text("id", "S1"), text("t", "1790000000")}}
+		synctest.Wait()
+		r.mu.Lock()
+		for _, n := range r.sent {
+			if got, _ := n.Attr("id").Text(); n.Tag == "receipt" && got == "C1" {
+				offer, _ := n.Child("offer")
+				if offer.Attr("call-id").String() != "X1" || offer.Attr("call-creator").String() != r.bob.String() || n.Attr("to").String() != r.bob.String() {
+					t.Errorf("the offer receipt = %s", n)
+				}
+			}
+		}
+		r.mu.Unlock()
+		for id, want := range map[string][]string{
+			garbledID:    {"ack class=message type=text error=491"},
+			"3EB0NOTIME": {"ack class=message type=text error=487"},
+			"C1":         {"receipt"},
+			"C2":         {"ack class=call type=terminate"},
+			"S1":         {"ack class=status error=415"},
+		} {
+			if got := r.answers(id); !slices.Equal(got, want) {
+				t.Errorf("answers to %s: %q, want %q", id, got, want)
+			}
+		}
+	})
+}
+
+func TestACrashOnOneMessageDoesNotStopTheNext(t *testing.T) {
+	synctest.Test(t, func(t *testing.T) {
+		r := newRig(t)
+		r.connect()
+		self := r.world.Phone.JID
+		r.receive = func(m client.Received) {
+			if m.Message.GetConversation() == "boom" {
+				panic("the app choked")
+			}
+		}
+		var ids []string
+		for _, text := range []string{"boom", "still here"} {
+			out, err := r.bobPhone.Send(r.keys, r.devices, r.account, &wire.Message{Conversation: new(text)})
+			if err != nil {
+				t.Fatal(err)
+			}
+			ids = append(ids, out.Attr("id").String())
+			r.server.Inbox <- fakerelay.Deliver(r.bob, "Bob", time.Now(), out)[self]
+		}
+		if got := <-r.received; got.Message.GetConversation() != "still here" {
+			t.Fatalf("received %v after the crash", got.Message)
+		}
+		synctest.Wait()
+		if got := r.answers(ids[0]); !slices.Equal(got, []string{"ack class=message type=text error=500"}) {
+			t.Fatalf("answers to the crashing message: %q", got)
+		}
+		if got := r.answers(ids[1]); !slices.Equal(got, []string{"receipt"}) {
+			t.Fatalf("answers to the next message: %q", got)
+		}
+		r.mu.Lock()
+		defer r.mu.Unlock()
+		if len(r.problems) != 1 || !strings.Contains(r.problems[0].Error(), "the app choked") {
+			t.Fatalf("problems reported: %v", r.problems)
+		}
+	})
+}
+
+func TestSessionsKeptUnderANumberMoveToThePrivateIDOnRestart(t *testing.T) {
+	synctest.Test(t, func(t *testing.T) {
+		r := newRig(t)
+		bobLID := node.JID{User: "99001", Server: node.ServerLID}
+		w := r.world
+		w.Script(w.QRPairing(time.Second), w.Login(fakeworld.Success()), w.Serve(r.server), w.Serve(r.server))
+		cfg := linkflow.Config{Dial: w.Dial, Dictionary: w.Dictionary, Root: w.Authority.Root(), Version: w.Version, Random: rand.Reader, Now: time.Now, ShowQR: w.ShowQR, Save: func(linkflow.Linked) error { return nil }, KeepAlive: -1}
+		linked, err := linkflow.Link(t.Context(), cfg)
+		if err != nil {
+			t.Fatal(err)
+		}
+		var saved client.State
+		open := func(state client.State, lids map[node.JID]node.JID) *client.Client {
+			t.Helper()
+			c, err := client.Connect(t.Context(), client.Config{Link: cfg, LIDs: lids, Receive: func(m client.Received) { r.received <- m },
+				Persist: func(s client.State) error {
+					r.mu.Lock()
+					defer r.mu.Unlock()
+					saved = s
+					return nil
+				}}, state)
+			if err != nil {
+				t.Fatal(err)
+			}
+			return c
+		}
+		first := open(client.State{Linked: linked}, nil)
+		if _, err := first.Send(t.Context(), r.bob, &wire.Message{Conversation: new("hello bob")}); err != nil {
+			t.Fatal(err)
+		}
+		if _, _, err := r.bobPhone.Receive(r.deliveredTo(r.bob)[0]); err != nil {
+			t.Fatal(err)
+		}
+		_ = first.Close()
+		r.mu.Lock()
+		before := saved
+		r.mu.Unlock()
+		if !slices.ContainsFunc(before.Sessions, func(s client.SessionEntry) bool { return s.Device.User == r.bob.User }) {
+			t.Fatal("the first run kept no session under bob's number")
+		}
+
+		second := open(before, map[node.JID]node.JID{bobLID: r.bob})
+		defer second.Close()
+		reply, err := r.bobPhone.Send(r.keys, r.devices, r.account, &wire.Message{Conversation: new("from my private id")})
+		if err != nil {
+			t.Fatal(err)
+		}
+		r.server.Inbox <- fakerelay.Deliver(bobLID, "Bob", time.Now(), reply)[w.Phone.JID]
+		if got := <-r.received; got.Message.GetConversation() != "from my private id" {
+			t.Fatalf("received %+v", got)
+		}
+		synctest.Wait()
+		r.mu.Lock()
+		defer r.mu.Unlock()
+		for _, s := range saved.Sessions {
+			if s.Device.User == r.bob.User {
+				t.Fatalf("a session is still kept under bob's number after the restart: %v", s.Device)
+			}
+		}
+	})
+}
+
+func (r *rig) sentStanza(id string) node.Node {
+	r.mu.Lock()
+	defer r.mu.Unlock()
+	for _, n := range r.sent {
+		if got, _ := n.Attr("id").Text(); n.Tag == "message" && got == id {
+			return n
+		}
+	}
+	r.t.Fatalf("no message %s was sent", id)
+	return node.Node{}
+}
+
+func (r *rig) gives() []string {
+	r.mu.Lock()
+	defer r.mu.Unlock()
+	var out []string
+	for _, n := range r.sent {
+		if xmlns, _ := n.Attr("xmlns").Text(); n.Tag == "iq" && xmlns == "privacy" {
+			tokens, _ := n.Child("tokens")
+			for _, token := range tokens.Children {
+				out = append(out, token.Attr("jid").String()+" t="+token.Attr("t").String())
+			}
+		}
+	}
+	return out
+}
+
+func TestPrivacyTokensTravelWithPersonalMessages(t *testing.T) {
+	synctest.Test(t, func(t *testing.T) {
+		r := newRig(t)
+		var start time.Time
+		carol := node.JID{User: "40733333333", Server: node.ServerUser}
+		carolPhone, err := fakedevice.New(rand.Reader, carol)
+		if err != nil {
+			t.Fatal(err)
+		}
+		if err := carolPhone.Upload(r.keys, 3); err != nil {
+			t.Fatal(err)
+		}
+		r.devices.Set(carol, fakeusync.Device{ID: 0})
+		r.tokenOf = func(contact node.JID) privacy.Token {
+			switch contact {
+			case r.bob:
+				return privacy.Token{Theirs: []byte{9, 9}, Given: start.Add(-24 * time.Hour)}
+			case carol:
+				return privacy.Token{Theirs: []byte{8}, Given: start.Add(-40 * 24 * time.Hour)}
+			}
+			return privacy.Token{}
+		}
+		c := r.connect()
+		start = time.Now()
+		send := func(to node.JID, m *wire.Message) node.Node {
+			t.Helper()
+			id, err := c.Send(t.Context(), to, m)
+			if err != nil {
+				t.Fatal(err)
+			}
+			synctest.Wait()
+			return r.sentStanza(id)
+		}
+		token := func(stanza node.Node) []byte {
+			last := stanza.Children[len(stanza.Children)-1]
+			if last.Tag != "tctoken" {
+				return nil
+			}
+			return last.Bytes
+		}
+		stamp := func(at time.Time) string { return fmt.Sprint(at.Unix()) }
+
+		if got := token(send(r.bob, &wire.Message{Conversation: new("hello")})); !bytes.Equal(got, []byte{9, 9}) {
+			t.Fatalf("tctoken on a message to bob = %v", got)
+		}
+		send(r.bob, &wire.Message{Conversation: new("again")})
+		if got := token(send(carol, &wire.Message{Conversation: new("hi carol")})); got != nil {
+			t.Fatalf("an expired token went out: %v", got)
+		}
+		if got := token(send(r.account, &wire.Message{Conversation: new("note to self")})); got != nil {
+			t.Fatalf("a note to self carried a token: %v", got)
+		}
+		want := []string{"40722222222@s.whatsapp.net t=" + stamp(start), "40733333333@s.whatsapp.net t=" + stamp(start)}
+		if got := r.gives(); !slices.Equal(got, want) {
+			t.Fatalf("tokens given %q, want %q", got, want)
+		}
+
+		time.Sleep(8 * 24 * time.Hour)
+		later := time.Now()
+		revoke := &wire.Message{ProtocolMessage: &wire.Message_ProtocolMessage{Type: wire.Message_ProtocolMessage_REVOKE.Enum(), Key: &wire.MessageKey{Id: new("3EB0OLD")}}}
+		if got := token(send(r.bob, revoke)); !bytes.Equal(got, []byte{9, 9}) {
+			t.Fatalf("tctoken on a delete = %v", got)
+		}
+		if got := r.gives(); len(got) != 2 {
+			t.Fatalf("a delete gave our token again: %q", got)
+		}
+		send(r.bob, &wire.Message{Conversation: new("a week later")})
+		if got := r.gives(); len(got) != 3 || got[2] != "40722222222@s.whatsapp.net t="+stamp(later) {
+			t.Fatalf("tokens given after a week: %q", got)
+		}
+		r.mu.Lock()
+		saved := slices.Clone(r.saved)
+		r.mu.Unlock()
+		if len(saved) != 3 || saved[0].Contact != r.bob || !saved[0].Ours.Equal(start) || saved[2].Contact != r.bob || !saved[2].Ours.Equal(later) {
+			t.Fatalf("our tokens were not remembered: %+v", saved)
+		}
+
+		r.server.Inbox <- node.Node{Tag: "notification", Attrs: []node.Attr{
+			{Key: "from", Value: node.Address(carol)}, {Key: "type", Value: node.Text("privacy_token")}, {Key: "id", Value: node.Text("PT1")}, {Key: "t", Value: node.Text(stamp(later))},
+		}, Children: []node.Node{{Tag: "tokens", Children: []node.Node{{Tag: "token", Attrs: []node.Attr{
+			{Key: "jid", Value: node.Address(r.account)}, {Key: "t", Value: node.Text(stamp(later))}, {Key: "type", Value: node.Text("trusted_contact")},
+		}, Bytes: []byte{4, 2}}}}}}
+		synctest.Wait()
+		r.mu.Lock()
+		defer r.mu.Unlock()
+		last := r.saved[len(r.saved)-1]
+		if last.Contact != carol || !bytes.Equal(last.Theirs, []byte{4, 2}) || !last.Given.Equal(time.Unix(later.Unix(), 0)) {
+			t.Fatalf("carol's new token was not kept: %+v", last)
+		}
+	})
+}
+
+func TestOneToOneSendsNameTheRecipientsOtherAddress(t *testing.T) {
+	synctest.Test(t, func(t *testing.T) {
+		r := newRig(t)
+		bobLID := node.JID{User: "11112222333", Server: node.ServerLID}
+		r.devices.Set(bobLID, fakeusync.Device{ID: 0})
+		r.keys.Alias(bobLID, r.bob)
+		r.lids = map[node.JID]node.JID{bobLID: r.bob}
+		c := r.connect()
+		attrs := func(n node.Node) string {
+			var keys []string
+			for _, a := range n.Attrs {
+				keys = append(keys, a.Key+"="+a.Value.String())
+			}
+			return strings.Join(keys, " ")
+		}
+		byNumber, err := c.Send(t.Context(), r.bob, &wire.Message{Conversation: new("hi")})
+		if err != nil {
+			t.Fatal(err)
+		}
+		stanza := r.sentStanza(byNumber)
+		if got, want := attrs(stanza), "id="+byNumber+" to="+r.bob.String()+" type=text peer_recipient_lid="+bobLID.String(); got != want {
+			t.Fatalf("attrs = %s, want %s", got, want)
+		}
+		participants, _ := stanza.Child("participants")
+		for _, target := range participants.Children {
+			if device, _ := target.Attr("jid").JID(); device.User == r.account.User {
+				t.Fatalf("our own devices were addressed by number, not by our private ID: %s", device)
+			}
+		}
+		byLID, err := c.Send(t.Context(), bobLID, &wire.Message{Conversation: new("hi again")})
+		if err != nil {
+			t.Fatal(err)
+		}
+		if got, want := attrs(r.sentStanza(byLID)), "id="+byLID+" to="+bobLID.String()+" type=text peer_recipient_pn="+r.bob.String()+" recipient_pn="+r.bob.String(); got != want {
+			t.Fatalf("attrs = %s, want %s", got, want)
+		}
+	})
+}
+
+func TestANoteToSelfByPrivateIDReachesEachDeviceOnce(t *testing.T) {
+	synctest.Test(t, func(t *testing.T) {
+		r := newRig(t)
+		ourLID := node.JID{User: r.world.Phone.LID.User, Server: node.ServerLID}
+		r.devices.Set(ourLID, fakeusync.Device{ID: 0}, fakeusync.Device{ID: r.world.Phone.JID.Device})
+		r.keys.Alias(ourLID, r.account)
+		c := r.connect()
+		id, err := c.Send(t.Context(), ourLID, &wire.Message{Conversation: new("note to self")})
+		if err != nil {
+			t.Fatal(err)
+		}
+		stanza := r.sentStanza(id)
+		envelopes := 0
+		for _, child := range stanza.Children {
+			switch child.Tag {
+			case "enc":
+				envelopes++
+			case "participants":
+				envelopes += len(child.Children)
+			}
+		}
+		if envelopes != 1 {
+			t.Fatalf("the note went out %d times: %s", envelopes, stanza)
+		}
+	})
+}
+
+func TestANewPhoneOrIdentityGetsFreshSessionsAndOurGroupKey(t *testing.T) {
+	for _, tt := range []struct {
+		name   string
+		notice func(r *rig) node.Node
+	}{
+		{name: "a new identity", notice: func(r *rig) node.Node {
+			return node.Node{Tag: "notification", Attrs: []node.Attr{
+				{Key: "from", Value: node.Address(r.bob)}, {Key: "type", Value: node.Text("encrypt")}, {Key: "id", Value: node.Text("E1")},
+				{Key: "lid", Value: node.Address(node.JID{User: "99001", Server: node.ServerLID})},
+			}, Children: []node.Node{{Tag: "identity"}}}
+		}},
+		{name: "a removed device", notice: func(r *rig) node.Node {
+			return node.Node{Tag: "notification", Attrs: []node.Attr{
+				{Key: "from", Value: node.Address(r.bob)}, {Key: "type", Value: node.Text("devices")}, {Key: "id", Value: node.Text("D1")},
+			}, Children: []node.Node{{Tag: "remove", Children: []node.Node{{Tag: "device", Attrs: []node.Attr{{Key: "jid", Value: node.Address(r.bob)}}}}}}}
+		}},
+	} {
+		t.Run(tt.name, func(t *testing.T) {
+			synctest.Test(t, func(t *testing.T) {
+				r := newRig(t)
+				family := groups.Group{
+					JID: node.JID{User: "120363000000000009", Server: node.ServerGroup}, Subject: "Family", Created: time.Unix(1700000000, 0), AddressingMode: "pn",
+					Participants: []groups.Participant{{JID: r.account, Admin: true}, {JID: r.bob}},
+				}
+				r.server.Groups = fakegroups.New(family)
+				r.server.Members = func(node.JID) []node.JID { return []node.JID{r.bob, r.account, r.world.Phone.JID} }
+				c := r.connect()
+				bobHas := func() (kind string, withKey bool) {
+					t.Helper()
+					toBob := r.deliveredTo(r.bob)
+					in, _, err := r.bobPhone.Receive(toBob[len(toBob)-1])
+					if err != nil {
+						t.Fatal(err)
+					}
+					for _, enc := range in.Encs {
+						if enc.Type != "skmsg" {
+							kind, withKey = enc.Type, true
+						}
+					}
+					return kind, withKey
+				}
+				if _, err := c.Send(t.Context(), r.bob, &wire.Message{Conversation: new("hi")}); err != nil {
+					t.Fatal(err)
+				}
+				bobHas()
+				reply, err := r.bobPhone.Send(r.keys, r.devices, r.account, &wire.Message{Conversation: new("hello back")})
+				if err != nil {
+					t.Fatal(err)
+				}
+				r.server.Inbox <- fakerelay.Deliver(r.bob, "Bob", time.Now(), reply)[r.world.Phone.JID]
+				<-r.received
+				for i, text := range []string{"to the group", "again"} {
+					if _, err := c.SendGroup(t.Context(), family, &wire.Message{Conversation: new(text)}); err != nil {
+						t.Fatal(err)
+					}
+					if _, withKey := bobHas(); withKey != (i == 0) {
+						t.Fatalf("group message %d carried our key: %v", i, withKey)
+					}
+				}
+				if _, err := c.Send(t.Context(), r.bob, &wire.Message{Conversation: new("before")}); err != nil {
+					t.Fatal(err)
+				}
+				if kind, _ := bobHas(); kind != "msg" {
+					t.Fatalf("an established session sent %s", kind)
+				}
+
+				r.server.Inbox <- tt.notice(r)
+				synctest.Wait()
+				if _, err := c.Send(t.Context(), r.bob, &wire.Message{Conversation: new("after")}); err != nil {
+					t.Fatal(err)
+				}
+				if kind, _ := bobHas(); kind != "pkmsg" {
+					t.Fatalf("after %s the old session was kept (%s)", tt.name, kind)
+				}
+				if _, err := c.SendGroup(t.Context(), family, &wire.Message{Conversation: new("welcome back")}); err != nil {
+					t.Fatal(err)
+				}
+				if _, withKey := bobHas(); !withKey {
+					t.Fatalf("after %s bob did not get our group key again", tt.name)
+				}
+			})
+		})
+	}
+}
+
+func TestAServerLowOnOurPrekeysGetsMore(t *testing.T) {
+	synctest.Test(t, func(t *testing.T) {
+		r := newRig(t)
+		r.connect()
+		self := r.world.Phone.JID
+		before := r.keys.Keys(self)
+		r.server.Inbox <- node.Node{Tag: "notification", Attrs: []node.Attr{
+			{Key: "from", Value: node.Address(node.JID{Server: node.ServerUser})}, {Key: "type", Value: node.Text("encrypt")}, {Key: "id", Value: node.Text("K1")},
+		}, Children: []node.Node{{Tag: "count", Attrs: []node.Attr{{Key: "value", Value: node.Text("4")}}}}}
+		synctest.Wait()
+		if after := r.keys.Keys(self); after != before+prekeys.Batch {
+			t.Fatalf("WhatsApp holds %d prekeys after asking for more, had %d", after, before)
+		}
+	})
+}
+
+func TestAConnectionThatAcknowledgesNothingIsReplaced(t *testing.T) {
+	synctest.Test(t, func(t *testing.T) {
+		r := newRig(t)
+		r.server.Drop = func(n node.Node) bool { return n.Tag == "message" }
+		c := r.connect()
+		for i := range 2 {
+			if _, err := c.Send(t.Context(), r.bob, &wire.Message{Conversation: new("anyone there?")}); err == nil {
+				t.Fatalf("send %d was acknowledged", i)
+			}
+			synctest.Wait()
+			select {
+			case <-c.Done():
+				if i == 0 {
+					t.Fatal("one missing acknowledgement ended the connection")
+				}
+			default:
+				if i == 1 {
+					t.Fatal("the connection stayed up after two unacknowledged messages")
+				}
+			}
+		}
+		if !errors.Is(c.Err(), client.ErrClosed) || !strings.Contains(c.Err().Error(), "acknowledged none") {
+			t.Fatalf("ended with %v", c.Err())
+		}
+	})
+}
+
+func TestPeerMessagesReachOurPhoneAlone(t *testing.T) {
+	synctest.Test(t, func(t *testing.T) {
+		r := newRig(t)
+		c := r.connect()
+		request := message.KeyRequest([][]byte{{1, 2, 3}})
+		id, err := c.SendPeer(t.Context(), request)
+		if err != nil {
+			t.Fatal(err)
+		}
+		stanza := r.sentStanza(id)
+		for _, want := range []string{"category=peer", "push_priority=high"} {
+			k, v, _ := strings.Cut(want, "=")
+			if got := stanza.Attr(k).String(); got != v {
+				t.Fatalf("%s = %q in %s", k, got, stanza)
+			}
+		}
+		if to := stanza.Attr("to").String(); to != r.account.String() {
+			t.Fatalf("sent to %s, want our phone %s", to, r.account)
+		}
+		if meta, ok := stanza.Child("meta"); !ok || meta.Attr("appdata").String() != "default" {
+			t.Fatalf("meta = %s", meta)
+		}
+		if got := r.deliveredTo(r.bob); len(got) != 0 {
+			t.Fatalf("a peer message went to bob: %d", len(got))
+		}
+		toPhone := r.deliveredTo(r.account)
+		if len(toPhone) != 1 {
+			t.Fatalf("%d deliveries to our phone", len(toPhone))
+		}
+		_, m, err := r.ourPhone.Receive(toPhone[0])
+		if err != nil || m.GetDeviceSentMessage() != nil || m.GetProtocolMessage().GetType() != wire.Message_ProtocolMessage_APP_STATE_SYNC_KEY_REQUEST ||
+			!bytes.Equal(m.GetProtocolMessage().GetAppStateSyncKeyRequest().GetKeyIds()[0].GetKeyId(), []byte{1, 2, 3}) {
+			t.Fatalf("our phone read %v: %v", m, err)
+		}
+	})
+}
+
+func TestOurPhoneIsAskedForMessagesWeCouldNotRead(t *testing.T) {
+	synctest.Test(t, func(t *testing.T) {
+		r := newRig(t)
+		r.connect()
+		companion := r.world.Phone.JID
+		unreadable := func(id string) node.Node {
+			return node.Node{Tag: "message", Attrs: []node.Attr{
+				{Key: "from", Value: node.Address(r.bob)}, {Key: "type", Value: node.Text("text")},
+				{Key: "id", Value: node.Text(id)}, {Key: "t", Value: node.Text("1790000000")},
+			}, Children: []node.Node{{Tag: "enc", Attrs: []node.Attr{{Key: "v", Value: node.Text("2")}, {Key: "type", Value: node.Text("msg")}}, Bytes: []byte{0x33, 1, 2, 3, 4, 5, 6, 7, 8, 9}}}}
+		}
+		r.server.Inbox <- unreadable("3EB0LATE")
+		synctest.Wait()
+		resent, err := r.bobPhone.Send(r.keys, r.devices, r.account, &wire.Message{Conversation: new("sent again")})
+		if err != nil {
+			t.Fatal(err)
+		}
+		resent = resent.With("id", node.Text("3EB0LATE"))
+		r.server.Inbox <- fakerelay.Deliver(r.bob, "Bob", time.Now(), resent)[companion]
+		if got := <-r.received; got.ID != "3EB0LATE" || got.Message.GetConversation() != "sent again" {
+			t.Fatalf("received %+v", got)
+		}
+		r.server.Inbox <- unreadable("3EB0LOST")
+		time.Sleep(10 * time.Second)
+		synctest.Wait()
+		toPhone := r.deliveredTo(r.account)
+		if len(toPhone) != 1 {
+			t.Fatalf("%d messages to our phone, want one resend request for the message nobody resent", len(toPhone))
+		}
+		_, request, err := r.ourPhone.Receive(toPhone[0])
+		wanted := request.GetProtocolMessage().GetPeerDataOperationRequestMessage().GetPlaceholderMessageResendRequest()
+		if err != nil || len(wanted) != 1 || wanted[0].GetMessageKey().GetId() != "3EB0LOST" || wanted[0].GetMessageKey().GetRemoteJid() != r.bob.String() {
+			t.Fatalf("our phone got %v: %v", request, err)
+		}
+		info, err := proto.Marshal(&wire.MessageInfo{
+			Key:     &wire.MessageKey{RemoteJid: new(r.bob.String()), FromMe: new(false), Id: new("3EB0LOST")},
+			Message: &wire.Message{Conversation: new("the lost one")}, MessageTimestamp: new(uint64(1790000000)), PushName: new("Bob"),
+		})
+		if err != nil {
+			t.Fatal(err)
+		}
+		answer := &wire.Message{ProtocolMessage: &wire.Message_ProtocolMessage{
+			Type: wire.Message_ProtocolMessage_PEER_DATA_OPERATION_REQUEST_RESPONSE_MESSAGE.Enum(),
+			PeerDataOperationRequestResponseMessage: &wire.Message_PeerDataOperationRequestResponseMessage{
+				PeerDataOperationRequestType: wire.Message_PLACEHOLDER_MESSAGE_RESEND.Enum(),
+				PeerDataOperationResult: []*wire.Message_PeerDataOperationRequestResponseMessage_PeerDataOperationResult{{
+					PlaceholderMessageResendResponse: &wire.Message_PeerDataOperationRequestResponseMessage_PeerDataOperationResult_PlaceholderMessageResendResponse{WebMessageInfoBytes: info},
+				}},
+			},
+		}}
+		out, err := r.ourPhone.SendPeer(r.keys, companion, answer)
+		if err != nil {
+			t.Fatal(err)
+		}
+		r.server.Inbox <- fakerelay.DeliverPeer(r.ourPhone.JID, time.Now(), out)
+		got := <-r.received
+		if got.ID != "3EB0LOST" || got.Chat != r.bob || got.Author != r.bob || got.Message.GetConversation() != "the lost one" || !got.Time.Equal(time.Unix(1790000000, 0)) {
+			t.Fatalf("recovered %+v", got)
+		}
+	})
+}
+
+func TestOurPhoneIsAskedForMessagesSentOnlyToIt(t *testing.T) {
+	synctest.Test(t, func(t *testing.T) {
+		r := newRig(t)
+		r.connect()
+		withheld := func(id, kind string, at time.Time) node.Node {
+			unavailable := node.Node{Tag: "unavailable"}
+			if kind != "" {
+				unavailable.Attrs = []node.Attr{{Key: "type", Value: node.Text(kind)}}
+			}
+			return node.Node{Tag: "message", Attrs: []node.Attr{
+				{Key: "from", Value: node.Address(r.bob)}, {Key: "type", Value: node.Text("text")},
+				{Key: "id", Value: node.Text(id)}, {Key: "t", Value: node.Text(strconv.FormatInt(at.Unix(), 10))},
+			}, Children: []node.Node{unavailable}}
+		}
+		r.server.Inbox <- withheld("3EB0AD", "", time.Now())
+		r.server.Inbox <- withheld("3EB0ONCE", "view_once", time.Now())
+		r.server.Inbox <- withheld("3EB0OLD", "", time.Now().Add(-15*24*time.Hour))
+		time.Sleep(10 * time.Second)
+		synctest.Wait()
+		toPhone := r.deliveredTo(r.account)
+		if len(toPhone) != 1 {
+			t.Fatalf("%d requests to our phone, want one for the ad message only", len(toPhone))
+		}
+		_, request, err := r.ourPhone.Receive(toPhone[0])
+		wanted := request.GetProtocolMessage().GetPeerDataOperationRequestMessage().GetPlaceholderMessageResendRequest()
+		if err != nil || len(wanted) != 1 || wanted[0].GetMessageKey().GetId() != "3EB0AD" {
+			t.Fatalf("our phone got %v: %v", request, err)
+		}
+		if got := <-r.received; got.ID != "3EB0ONCE" || !message.IsViewOnceStub(got.Message) || got.Chat != r.bob {
+			t.Fatalf("the view-once message came through as %+v", got)
+		}
+		select {
+		case extra := <-r.received:
+			t.Fatalf("also received %+v", extra)
+		default:
+		}
+	})
+}
+
+func TestOneBrokenKeyBundleDoesNotStopAGroupSend(t *testing.T) {
+	synctest.Test(t, func(t *testing.T) {
+		r := newRig(t)
+		carol := node.JID{User: "40733333333", Server: node.ServerUser}
+		carolPhone, err := fakedevice.New(rand.Reader, carol)
+		if err != nil {
+			t.Fatal(err)
+		}
+		if err := carolPhone.Upload(r.keys, 3); err != nil {
+			t.Fatal(err)
+		}
+		r.devices.Set(carol, fakeusync.Device{ID: 0})
+		family := groups.Group{
+			JID: node.JID{User: "120363000000000009", Server: node.ServerGroup}, Subject: "Family", Created: time.Unix(1700000000, 0),
+			Participants: []groups.Participant{{JID: r.account, Admin: true}, {JID: r.bob}, {JID: carol}},
+		}
+		r.server.Groups = fakegroups.New(family)
+		r.server.Members = func(node.JID) []node.JID { return []node.JID{r.bob, carol, r.account, r.world.Phone.JID} }
+		r.server.Override = func(n node.Node) (node.Node, bool) {
+			if xmlns, _ := n.Attr("xmlns").Text(); n.Tag != "iq" || xmlns != "encrypt" {
+				return node.Node{}, false
+			}
+			reply := r.keys.Handle(r.world.Phone.JID, n)
+			list, ok := reply.Child("list")
+			if !ok {
+				return reply, true
+			}
+			for i, user := range list.Children {
+				if device, _ := user.Attr("jid").JID(); device.User == carol.User {
+					user.Children = slices.DeleteFunc(slices.Clone(user.Children), func(child node.Node) bool { return child.Tag == "identity" })
+					list.Children[i] = user
+				}
+			}
+			reply.Children = []node.Node{list}
+			return reply, true
+		}
+		c := r.connect()
+		if _, err := c.SendGroup(t.Context(), family, &wire.Message{Conversation: new("dinner at 8")}); err != nil {
+			t.Fatalf("SendGroup() with one broken bundle = %v", err)
+		}
+		if got := r.deliveredTo(r.bob); len(got) != 1 {
+			t.Fatalf("bob got %d messages", len(got))
+		}
+	})
+}
+
+func TestAGroupAddressedByPrivateIDsIsSentThatWay(t *testing.T) {
+	synctest.Test(t, func(t *testing.T) {
+		r := newRig(t)
+		ourLID := node.JID{User: r.world.Phone.LID.User, Server: node.ServerLID}
+		bobLID := node.JID{User: "11112222333", Server: node.ServerLID}
+		r.devices.Set(bobLID, fakeusync.Device{ID: 0})
+		r.keys.Alias(bobLID, r.bob)
+		community := groups.Group{
+			JID: node.JID{User: "120363000000000077", Server: node.ServerGroup}, Subject: "Street", Created: time.Unix(1700000000, 0), AddressingMode: "lid",
+			Participants: []groups.Participant{{JID: ourLID, Phone: r.account, Admin: true}, {JID: bobLID, Phone: r.bob}},
+		}
+		r.server.Groups = fakegroups.New(community)
+		r.server.Members = func(node.JID) []node.JID { return []node.JID{bobLID, ourLID, node.JID{User: ourLID.User, Device: r.world.Phone.JID.Device, Server: node.ServerLID}} }
+		c := r.connect()
+		id, err := c.SendGroup(t.Context(), community, &wire.Message{Conversation: new("bins go out tonight")})
+		if err != nil {
+			t.Fatal(err)
+		}
+		stanza := r.sentStanza(id)
+		if mode, _ := stanza.Attr("addressing_mode").Text(); mode != "lid" {
+			t.Fatalf("addressing_mode = %q", mode)
+		}
+		participants, _ := stanza.Child("participants")
+		for _, target := range participants.Children {
+			device, _ := target.Attr("jid").JID()
+			if device.Server != node.ServerLID || device.User == ourLID.User && device.Device == r.world.Phone.JID.Device {
+				t.Fatalf("the sender key went to %s", device)
+			}
+		}
+		if len(r.deliveredTo(bobLID)) == 0 || len(r.deliveredTo(r.account)) == 0 {
+			t.Fatalf("delivered to bob %d, to our phone %d", len(r.deliveredTo(bobLID)), len(r.deliveredTo(r.account)))
+		}
+	})
+}
+
+func TestDeviceListsAreReusedUntilTheyChange(t *testing.T) {
+	synctest.Test(t, func(t *testing.T) {
+		r := newRig(t)
+		family := groups.Group{
+			JID: node.JID{User: "120363000000000009", Server: node.ServerGroup}, Subject: "Family", Created: time.Unix(1700000000, 0),
+			Participants: []groups.Participant{{JID: r.account, Admin: true}, {JID: r.bob}},
+		}
+		r.server.Groups = fakegroups.New(family)
+		r.server.Members = func(node.JID) []node.JID { return []node.JID{r.bob, r.account, r.world.Phone.JID} }
+		c := r.connect()
+		queries := func() int { synctest.Wait(); return r.devices.Queries() }
+		start := queries()
+		for _, text := range []string{"one", "two"} {
+			if _, err := c.Send(t.Context(), r.bob, &wire.Message{Conversation: new(text)}); err != nil {
+				t.Fatal(err)
+			}
+		}
+		if got := queries() - start; got != 1 {
+			t.Fatalf("two messages to bob asked for his devices %d times", got)
+		}
+		r.server.Inbox <- node.Node{Tag: "notification", Attrs: []node.Attr{
+			{Key: "from", Value: node.Address(r.bob)}, {Key: "type", Value: node.Text("devices")}, {Key: "id", Value: node.Text("D1")},
+		}, Children: []node.Node{{Tag: "add", Children: []node.Node{{Tag: "device", Attrs: []node.Attr{{Key: "jid", Value: node.Address(node.JID{User: r.bob.User, Device: 4, Server: r.bob.Server})}}}}}}}
+		before := queries()
+		if _, err := c.Send(t.Context(), r.bob, &wire.Message{Conversation: new("three")}); err != nil {
+			t.Fatal(err)
+		}
+		if got := queries() - before; got != 1 {
+			t.Fatalf("after bob's devices changed: %d device queries, want a fresh one", got)
+		}
+
+		if _, err := c.SendGroup(t.Context(), family, &wire.Message{Conversation: new("hello family")}); err != nil {
+			t.Fatal(err)
+		}
+		r.devices.Set(r.bob, fakeusync.Device{ID: 0}, fakeusync.Device{ID: 5})
+		before = queries()
+		if _, err := c.SendGroup(t.Context(), family, &wire.Message{Conversation: new("from memory")}); err != nil {
+			t.Fatal(err)
+		}
+		if got := queries() - before; got != 0 {
+			t.Fatalf("a group send with fresh device lists asked %d times", got)
+		}
+		if _, err := c.SendGroup(t.Context(), family, &wire.Message{Conversation: new("after the server said otherwise")}); err != nil {
+			t.Fatal(err)
+		}
+		if got := queries() - before; got != 1 {
+			t.Fatalf("after WhatsApp's phash differed: %d device queries, want one", got)
+		}
+	})
 }

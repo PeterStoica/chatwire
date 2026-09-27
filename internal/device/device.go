@@ -98,6 +98,8 @@ func (i Identity) Registration(props signon.DeviceProps) signon.Registration {
 	}
 }
 
+const fullSyncDays = 3650
+
 func Props() signon.DeviceProps {
-	return signon.DeviceProps{OS: "Chatwire", Version: signon.Version{Primary: 0, Secondary: 1, Tertiary: 0}}
+	return signon.DeviceProps{OS: "Chatwire", Version: signon.Version{Primary: 0, Secondary: 1, Tertiary: 0}, FullSyncDays: fullSyncDays}
 }

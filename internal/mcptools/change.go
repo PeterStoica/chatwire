@@ -24,6 +24,7 @@ type ChangeInput struct {
 	Delete         bool     `json:"delete,omitempty" jsonschema:"delete one of the user's own messages for everyone, at most 2.5 days after it was sent; only when the user asks"`
 	Vote           []string `json:"vote,omitempty" jsonschema:"the poll options to vote for, by name; replaces the user's earlier vote"`
 	RemoveVote     bool     `json:"remove_vote,omitempty" jsonschema:"take the user's vote on a poll back"`
+	MarkRead       bool     `json:"mark_read,omitempty" jsonschema:"mark every unread message in this message's chat as read, as opening the chat on the phone does; the senders see blue ticks, so only when the user asks"`
 }
 
 type ChangeReport struct {
@@ -35,20 +36,23 @@ type ChangeReport struct {
 func change(s Sender) mcp.ToolHandlerFor[ChangeInput, ChangeReport] {
 	return func(ctx context.Context, _ *mcp.CallToolRequest, in ChangeInput) (*mcp.CallToolResult, ChangeReport, error) {
 		if _, linked := s.Self(); !linked {
-			return changeReport(ChangeReport{State: stateNotLinked, Detail: notLinked})
+			return reply(ChangeReport{State: stateNotLinked, Detail: notLinked})
 		}
 		id := strings.TrimSpace(in.MessageID)
 		chosen := 0
-		for _, set := range []bool{in.React != nil, in.RemoveReaction, in.Edit != nil, in.Delete, len(in.Vote) > 0, in.RemoveVote} {
+		for _, set := range []bool{in.React != nil, in.RemoveReaction, in.Edit != nil, in.Delete, len(in.Vote) > 0, in.RemoveVote, in.MarkRead} {
 			if set {
 				chosen++
 			}
 		}
 		if id == "" || chosen != 1 {
-			return changeReport(ChangeReport{State: "choose_one", Detail: "Give message_id and exactly one of react, remove_reaction, edit, delete, vote or remove_vote."})
+			return reply(ChangeReport{State: "choose_one", Detail: "Give message_id and exactly one of react, remove_reaction, edit, delete, vote, remove_vote or mark_read."})
 		}
 		ctx, cancel := context.WithTimeout(ctx, sendTimeout)
 		defer cancel()
+		if in.MarkRead {
+			return reply(markRead(ctx, s, id))
+		}
 		var (
 			target store.Message
 			done   string
@@ -58,7 +62,7 @@ func change(s Sender) mcp.ToolHandlerFor[ChangeInput, ChangeReport] {
 		case in.React != nil:
 			react := strings.TrimSpace(*in.React)
 			if react == "" {
-				return changeReport(ChangeReport{State: "not_an_emoji", Detail: notEmoji})
+				return reply(ChangeReport{State: "not_an_emoji", Detail: notEmoji})
 			}
 			target, err = s.React(ctx, id, react)
 			done = "Reacted " + react + " to"
@@ -79,15 +83,41 @@ func change(s Sender) mcp.ToolHandlerFor[ChangeInput, ChangeReport] {
 			target, votes, err = s.Vote(ctx, id, in.Vote)
 			done = "Voted " + strings.Join(votes, ", ") + " in"
 		}
-		return changeReport(changed(ctx, s, target, done, err))
+		return reply(changed(ctx, s, target, done, err))
 	}
+}
+
+func markRead(ctx context.Context, s Sender, id string) ChangeReport {
+	chat, err := s.ChatOf(ctx, id)
+	if state, detail := refusedChange(store.Message{}, err); state != "" {
+		return ChangeReport{State: state, Detail: detail}
+	}
+	if err != nil {
+		return ChangeReport{State: stateFailed, Detail: fmt.Sprintf("Nothing was marked read: %v", err)}
+	}
+	dir, err := loadDirectory(ctx, s)
+	if err != nil {
+		return ChangeReport{State: stateFailed, Detail: fmt.Sprintf("Nothing was marked read: %v", err)}
+	}
+	label := dir.label(chat)
+	found, err := unread(ctx, s, dir, chat)
+	switch {
+	case err != nil:
+		return ChangeReport{State: stateFailed, Chat: label, Detail: fmt.Sprintf("Nothing was marked read: %v", err)}
+	case len(found) == 0:
+		return ChangeReport{State: "done", Chat: label, Detail: "Nothing in " + label + " was unread."}
+	}
+	if err := s.MarkRead(ctx, found); err != nil {
+		return ChangeReport{State: stateFailed, Chat: label, Detail: fmt.Sprintf("Could not mark them as read: %v", err)}
+	}
+	return ChangeReport{State: "done", Chat: label, Detail: fmt.Sprintf("Marked %d message(s) in %s as read; the senders see blue ticks.", len(found), label)}
 }
 
 func changed(ctx context.Context, s Sender, target store.Message, done string, err error) ChangeReport {
 	if state, detail := refusedChange(target, err); state != "" {
 		return ChangeReport{State: state, Detail: detail}
 	}
-	if state, detail, ok := paced(err); ok {
+	if state, detail, ok := stopped(err); ok {
 		return ChangeReport{State: state, Detail: detail}
 	}
 	chat := display(target.Chat)
@@ -106,7 +136,7 @@ func what(m *wire.Message) string {
 	}
 	inner := media.Unwrap(m)
 	if ref, ok := media.ReferenceOf(inner); ok {
-		return "the " + mediaNames[ref.Type]
+		return "the " + noun(ref.Type)
 	}
 	return "the " + message.TypeOf(inner) + " message"
 }
@@ -143,8 +173,8 @@ func refusedChange(target store.Message, err error) (string, string) {
 			options = append(options, o.GetOptionName())
 		}
 		problem := fmt.Sprintf("This poll allows at most %d choice(s).", poll.GetSelectableOptionsCount())
-		if errors.Is(err, messenger.ErrNoOption) {
-			problem = strings.TrimPrefix(err.Error(), messenger.ErrNoOption.Error()+": ") + " is not one of its options."
+		if missing := (messenger.NoOption{}); errors.As(err, &missing) {
+			problem = fmt.Sprintf("%q is not one of its options.", missing.Choice)
 		}
 		return "invalid_vote", fmt.Sprintf("%s The options are: %s.", problem, strings.Join(options, " / "))
 	case errors.Is(err, messenger.ErrNoSecret):
@@ -155,11 +185,22 @@ func refusedChange(target store.Message, err error) (string, string) {
 
 const notEmoji = "A reaction must be a single emoji, like 👍 or ❤️."
 
-var mediaNames = map[media.Type]string{
-	media.Image: "photo", media.Sticker: "sticker", media.Video: "video", media.GIF: "GIF", media.Audio: "audio",
-	media.Voice: "voice note", media.Document: "document",
-}
-
-func changeReport(report ChangeReport) (*mcp.CallToolResult, ChangeReport, error) {
-	return nil, report, nil
+func noun(t media.Type) string {
+	switch t {
+	case media.Image:
+		return "photo"
+	case media.Sticker:
+		return "sticker"
+	case media.Video:
+		return "video"
+	case media.GIF:
+		return "GIF"
+	case media.Audio:
+		return "audio"
+	case media.Voice:
+		return "voice note"
+	case media.Document:
+		return "document"
+	}
+	return string(t)
 }

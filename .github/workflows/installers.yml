@@ -1,0 +1,68 @@
+name: installers
+
+on:
+  workflow_dispatch:
+  push:
+    branches: [master]
+    tags: ["v*"]
+
+jobs:
+  install:
+    strategy:
+      fail-fast: false
+      matrix:
+        os: [ubuntu-latest, macos-latest, windows-latest]
+    runs-on: ${{ matrix.os }}
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-go@v5
+        with:
+          go-version-file: go.mod
+      - name: Build the release files
+        shell: bash
+        run: sh scripts/build-release.sh dist
+      - name: Serve them locally
+        shell: bash
+        run: |
+          cd dist
+          python3 -m http.server 8931 --bind 127.0.0.1 >/dev/null 2>&1 &
+          sleep 2
+      - name: Install on macOS or Linux
+        if: runner.os != 'Windows'
+        shell: bash
+        env:
+          CHATWIRE_BASE_URL: http://127.0.0.1:8931
+          CHATWIRE_INSTALL_DIR: ${{ runner.temp }}/bin
+        run: |
+          sh dist/install.sh
+          "$CHATWIRE_INSTALL_DIR/chatwire" version
+          "$CHATWIRE_INSTALL_DIR/chatwire" help | grep -q "chatwire setup"
+          export HOME="$RUNNER_TEMP/home" && mkdir -p "$HOME/.codex"
+          "$CHATWIRE_INSTALL_DIR/chatwire" setup --client codex --yes --no-link --json
+          grep -q chatwire "$HOME/.codex/config.toml"
+      - name: Refuse a tampered download on macOS or Linux
+        if: runner.os != 'Windows'
+        shell: bash
+        env:
+          CHATWIRE_BASE_URL: http://127.0.0.1:8931
+          CHATWIRE_INSTALL_DIR: ${{ runner.temp }}/tampered
+        run: |
+          sed -i.bak 's/^[0-9a-f]/0/' dist/checksums.txt
+          if sh dist/install.sh; then echo "a tampered download was installed"; exit 1; fi
+          test ! -e "$CHATWIRE_INSTALL_DIR/chatwire"
+          mv dist/checksums.txt.bak dist/checksums.txt
+      - name: Install on Windows
+        if: runner.os == 'Windows'
+        shell: pwsh
+        env:
+          CHATWIRE_BASE_URL: http://127.0.0.1:8931
+        run: |
+          ./dist/install.ps1
+          $exe = Join-Path $env:LOCALAPPDATA 'Programs\chatwire\chatwire.exe'
+          & $exe version
+          if ($LASTEXITCODE -ne 0) { exit 1 }
+          $env:USERPROFILE = Join-Path $env:RUNNER_TEMP 'home'
+          $env:HOME = $env:USERPROFILE
+          New-Item -ItemType Directory -Force (Join-Path $env:USERPROFILE '.codex') | Out-Null
+          & $exe setup --client codex --yes --no-link --json
+          if (-not (Select-String -Quiet -Path (Join-Path $env:USERPROFILE '.codex\config.toml') -Pattern chatwire)) { exit 1 }

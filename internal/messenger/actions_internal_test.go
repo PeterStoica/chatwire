@@ -12,8 +12,10 @@ import (
 	"testing"
 	"time"
 
+	"fmt"
 	"github.com/PeterStoica/chatwire/internal/appstate"
 	"github.com/PeterStoica/chatwire/internal/client"
+	"github.com/PeterStoica/chatwire/internal/history"
 	"github.com/PeterStoica/chatwire/internal/linkflow"
 	"github.com/PeterStoica/chatwire/internal/message"
 	"github.com/PeterStoica/chatwire/internal/node"
@@ -201,6 +203,20 @@ func TestOnlyOwnRecentMessagesChange(t *testing.T) {
 	} {
 		if _, _, err := m.own(ctx, tt.id, tt.window); !errors.Is(err, tt.wantErr) {
 			t.Errorf("own(%s, %s) error = %v, want %v", tt.id, tt.window, err, tt.wantErr)
+		}
+	}
+	for _, tt := range []struct {
+		id   string
+		want string
+	}{
+		{id: "fresh", want: "hi"},
+		{id: "bobs"},
+		{id: "gone"},
+		{id: "missing"},
+	} {
+		sent, ok := m.sentMessage(ctx, bob, tt.id)
+		if ok != (tt.want != "") || sent.GetConversation() != tt.want {
+			t.Errorf("sentMessage(%s) = %v, %v; only our own undeleted messages are sent again", tt.id, sent, ok)
 		}
 	}
 	if _, key, err := m.target(ctx, "theirs"); err != nil || key.GetParticipant() != bob.String() || key.GetFromMe() || key.GetRemoteJid() != family.String() || key.GetId() != "theirs" {
@@ -439,5 +455,94 @@ func TestTheChatOfAMessageAndMentionAddresses(t *testing.T) {
 	withDevice := node.JID{User: bob.User, Server: bob.Server, Device: 3}
 	if got := addresses([]node.JID{withDevice, myLID}); !slices.Equal(got, []string{bob.String(), myLID.String()}) {
 		t.Fatalf("addresses() = %v", got)
+	}
+}
+
+func TestTheHoldAfterA463SparesChatsWeHave(t *testing.T) {
+	t.Parallel()
+	now := time.Unix(1790100000, 0)
+	m, ctx := messenger(t, now, pairing.Account{JID: me, LID: myLID})
+	if err := m.store.Apply(ctx, store.Changes{Messages: []store.Message{{ID: "b1", Chat: bob, Author: bob, Time: now.Add(-time.Hour), Message: &wire.Message{Conversation: new("hey")}}}}); err != nil {
+		t.Fatal(err)
+	}
+	m.limited = now.Add(restrictedFor)
+	stranger := node.JID{User: "40788888888", Server: node.ServerUser}
+	for _, tt := range []struct {
+		name    string
+		to      node.JID
+		wantErr error
+	}{
+		{name: "a new contact", to: stranger, wantErr: ErrRestricted},
+		{name: "a chat we have", to: bob},
+		{name: "a group", to: family},
+		{name: "ourselves", to: me},
+	} {
+		if err := m.pace(ctx, tt.to); !errors.Is(err, tt.wantErr) {
+			t.Errorf("%s: pace() = %v, want %v", tt.name, err, tt.wantErr)
+		}
+	}
+	m.link.Now = func() time.Time { return now.Add(restrictedFor) }
+	if err := m.pace(ctx, stranger); err != nil {
+		t.Fatalf("a day later: %v", err)
+	}
+}
+
+func TestEncryptedEditsChangeTheOriginalInPlace(t *testing.T) {
+	t.Parallel()
+	now := time.Unix(1790000000, 0)
+	m, ctx := messenger(t, now, pairing.Account{JID: me, LID: myLID})
+	secret := bytes.Repeat([]byte{7}, message.SecretSize)
+	original := &wire.Message{Conversation: new("see you at 7"), MessageContextInfo: &wire.MessageContextInfo{MessageSecret: secret}}
+	m.received(client.Received{ID: "3EB0ORIG", Chat: bob, Author: bob, Time: now, Message: original})
+	sealed, err := message.SealEdit(rand.Reader, message.Addon{Secret: secret, ID: "3EB0ORIG", Original: bobLID, Sender: bobLID}, &wire.Message{Conversation: new("see you at 8")})
+	if err != nil {
+		t.Fatal(err)
+	}
+	m.received(client.Received{ID: "3EB0EDIT", Chat: bobLID, Author: bobLID, Time: now.Add(time.Minute), Message: sealed})
+	forged, err := message.SealEdit(rand.Reader, message.Addon{Secret: secret, ID: "3EB0ORIG", Original: bobLID, Sender: bobLID}, &wire.Message{Conversation: new("forged")})
+	if err != nil {
+		t.Fatal(err)
+	}
+	m.received(client.Received{ID: "3EB0FORGED", Chat: bob, Author: node.JID{User: "40799999999", Server: node.ServerUser}, Time: now.Add(2 * time.Minute), Message: forged})
+	all, err := m.store.Messages(ctx, store.Query{Chat: bob, Limit: 10})
+	if err != nil || len(all) != 1 {
+		t.Fatalf("the edits were stored as messages: %d rows, %v", len(all), err)
+	}
+	if got := store.Text(all[0].Message); got != "see you at 8" || all[0].Edited.IsZero() {
+		t.Fatalf("after the encrypted edit: %q, edited %v", got, all[0].Edited)
+	}
+}
+
+func TestAskingThePhoneForOlderMessages(t *testing.T) {
+	t.Parallel()
+	now := time.Unix(1790000000, 0)
+	m, ctx := messenger(t, now, pairing.Account{JID: me, LID: myLID})
+	for i, text := range []string{"third", "fourth"} {
+		m.received(client.Received{ID: fmt.Sprint("3EB0N", i), Chat: bob, Author: bob, Time: now.Add(time.Duration(i) * time.Minute), Message: &wire.Message{Conversation: new(text)}})
+	}
+	var asked *wire.Message_PeerDataOperationRequestMessage_HistorySyncOnDemandRequest
+	n, err := m.older(ctx, bob, func(_ context.Context, request *wire.Message) error {
+		asked = request.GetProtocolMessage().GetPeerDataOperationRequestMessage().GetHistorySyncOnDemandRequest()
+		go m.history(history.Chunk{Type: wire.HistorySync_ON_DEMAND, Messages: []history.Message{
+			{ID: "3EB0O1", Chat: bob, Author: bob, Time: now.Add(-2 * time.Hour), Message: &wire.Message{Conversation: new("first")}},
+			{ID: "3EB0O2", Chat: bob, Author: me, FromMe: true, Time: now.Add(-time.Hour), Message: &wire.Message{Conversation: new("second")}},
+		}})
+		return nil
+	})
+	if err != nil || n != 2 {
+		t.Fatalf("older() = %d, %v; want the 2 messages the phone sent", n, err)
+	}
+	if asked.GetChatJid() != bob.String() || asked.GetOldestMsgId() != "3EB0N0" || asked.GetOldestMsgFromMe() || asked.GetOldestMsgTimestampMs() != now.UnixMilli() || asked.GetOnDemandMsgCount() != olderCount {
+		t.Fatalf("asked the phone for %v", asked)
+	}
+	all, err := m.store.Messages(ctx, store.Query{Chat: bob, Limit: 10})
+	if err != nil || len(all) != 4 || store.Text(all[0].Message) != "first" {
+		t.Fatalf("the chat now holds %d messages, %v", len(all), err)
+	}
+	start := time.Now()
+	short, cancel := context.WithTimeout(ctx, 50*time.Millisecond)
+	defer cancel()
+	if n, err := m.older(short, bob, func(context.Context, *wire.Message) error { return nil }); n != 0 || err != nil || time.Since(start) > time.Second {
+		t.Fatalf("a phone that never answers: %d, %v after %s", n, err, time.Since(start))
 	}
 }

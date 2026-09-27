@@ -80,8 +80,9 @@ type SignedPreKey struct {
 }
 
 type DeviceProps struct {
-	OS      string
-	Version Version
+	OS           string
+	Version      Version
+	FullSyncDays uint32
 }
 
 type Registration struct {
@@ -305,12 +306,16 @@ func EncodeLogin(version Version, login Login) []byte {
 }
 
 func encodeDeviceProps(props DeviceProps) []byte {
-	history := appendVarint(nil, 3, historyQuotaMB)
+	var history []byte
+	if props.FullSyncDays > 0 {
+		history = appendVarint(history, 1, uint64(props.FullSyncDays))
+	}
+	history = appendVarint(history, 3, historyQuotaMB)
 	history = appendVarint(history, 4, 1)
 	out := appendString(nil, 1, props.OS)
 	out = appendBytes(out, 2, encodeVersion(props.Version))
 	out = appendVarint(out, 3, 0)
-	out = appendVarint(out, 4, 0)
+	out = appendVarint(out, 4, uint64(min(props.FullSyncDays, 1)))
 	return appendBytes(out, 5, history)
 }
 

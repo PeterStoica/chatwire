@@ -10,7 +10,6 @@ import (
 	"os"
 	"os/exec"
 	"path/filepath"
-	"regexp"
 	"runtime"
 	"strings"
 )
@@ -274,7 +273,25 @@ type member struct {
 	value jsontext.Value
 }
 
-var commentPattern = regexp.MustCompile(`(?m)^\s*//|/\*`)
+func hasComments(raw []byte) bool {
+	inString, escaped := false, false
+	for i, c := range raw {
+		switch {
+		case inString && escaped:
+			escaped = false
+		case inString && c == '\\':
+			escaped = true
+		case inString && c == '"':
+			inString = false
+		case inString:
+		case c == '"':
+			inString = true
+		case c == '/' && i+1 < len(raw) && (raw[i+1] == '/' || raw[i+1] == '*'):
+			return true
+		}
+	}
+	return false
+}
 
 func editJSON(raw []byte, key string, entry any) ([]byte, Outcome, error) {
 	if len(bytes.TrimSpace(raw)) == 0 {
@@ -283,7 +300,7 @@ func editJSON(raw []byte, key string, entry any) ([]byte, Outcome, error) {
 		}
 		raw = []byte("{}")
 	}
-	if commentPattern.Match(raw) {
+	if hasComments(raw) {
 		return nil, Failed, ErrComments
 	}
 	top, err := members(raw)

@@ -9,8 +9,8 @@ import (
 	"google.golang.org/protobuf/proto"
 
 	"github.com/PeterStoica/chatwire/internal/appstate"
-	"github.com/PeterStoica/chatwire/internal/fakeappstate"
 	"github.com/PeterStoica/chatwire/internal/node"
+	"github.com/PeterStoica/chatwire/internal/testkit/fakeappstate"
 	"github.com/PeterStoica/chatwire/internal/wire"
 )
 
@@ -173,7 +173,7 @@ func TestSnapshotThenPatches(t *testing.T) {
 			t.Fatal(err)
 		}
 	}
-	state, mutations, err := appstate.State{}.ApplySnapshot(name, s.Snapshot(name), s.KeyFor)
+	state, mutations, _, err := appstate.State{}.ApplySnapshot(name, s.Snapshot(name), s.KeyFor)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -188,7 +188,7 @@ func TestSnapshotThenPatches(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	next, mutations, err := state.ApplyPatch(name, patch, s.KeyFor)
+	next, mutations, _, err := state.ApplyPatch(name, patch, s.KeyFor)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -199,7 +199,7 @@ func TestSnapshotThenPatches(t *testing.T) {
 	if state.Version != 3 || len(state.MACs) != 3 {
 		t.Fatal("applying a patch changed the state it was applied to")
 	}
-	fresh, _, err := appstate.State{}.ApplySnapshot(name, s.Snapshot(name), s.KeyFor)
+	fresh, _, _, err := appstate.State{}.ApplySnapshot(name, s.Snapshot(name), s.KeyFor)
 	if err != nil || fresh.Hash != next.Hash || fresh.Version != next.Version {
 		t.Fatalf("a fresh snapshot and snapshot plus patch disagree: %v", err)
 	}
@@ -214,7 +214,7 @@ func TestRefusingBadSnapshotsAndPatches(t *testing.T) {
 	}
 	snapshot := s.Snapshot(name)
 	none := func([]byte) (appstate.Keys, bool) { return appstate.Keys{}, false }
-	state, _, err := appstate.State{}.ApplySnapshot(name, snapshot, s.KeyFor)
+	state, _, _, err := appstate.State{}.ApplySnapshot(name, snapshot, s.KeyFor)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -228,51 +228,52 @@ func TestRefusingBadSnapshotsAndPatches(t *testing.T) {
 		want  error
 	}{
 		{name: "snapshot without its key", apply: func() (appstate.State, error) {
-			st, _, err := appstate.State{}.ApplySnapshot(name, snapshot, none)
+			st, _, _, err := appstate.State{}.ApplySnapshot(name, snapshot, none)
 			return st, err
 		}, want: appstate.ErrMissingKey},
 		{name: "snapshot of another collection", apply: func() (appstate.State, error) {
-			st, _, err := appstate.State{}.ApplySnapshot(appstate.RegularHigh, snapshot, s.KeyFor)
+			st, _, _, err := appstate.State{}.ApplySnapshot(appstate.RegularHigh, snapshot, s.KeyFor)
 			return st, err
 		}, want: appstate.ErrSnapshotMAC},
 		{name: "snapshot with a forged mac", apply: func() (appstate.State, error) {
 			forged := proto.CloneOf(snapshot)
 			forged.Mac[0] ^= 1
-			st, _, err := appstate.State{}.ApplySnapshot(name, forged, s.KeyFor)
+			st, _, _, err := appstate.State{}.ApplySnapshot(name, forged, s.KeyFor)
 			return st, err
 		}, want: appstate.ErrSnapshotMAC},
 		{name: "snapshot missing a record", apply: func() (appstate.State, error) {
 			short := proto.CloneOf(snapshot)
 			short.Records = nil
-			st, _, err := appstate.State{}.ApplySnapshot(name, short, s.KeyFor)
+			st, _, _, err := appstate.State{}.ApplySnapshot(name, short, s.KeyFor)
 			return st, err
 		}, want: appstate.ErrSnapshotMAC},
 		{name: "patch without its key", apply: func() (appstate.State, error) {
-			st, _, err := state.ApplyPatch(name, patch, none)
+			st, _, _, err := state.ApplyPatch(name, patch, none)
 			return st, err
 		}, want: appstate.ErrMissingKey},
 		{name: "patch with a forged patch mac", apply: func() (appstate.State, error) {
 			forged := proto.CloneOf(patch)
 			forged.PatchMac[0] ^= 1
-			st, _, err := state.ApplyPatch(name, forged, s.KeyFor)
+			st, _, _, err := state.ApplyPatch(name, forged, s.KeyFor)
 			return st, err
 		}, want: appstate.ErrPatchMAC},
 		{name: "patch on a state it does not follow", apply: func() (appstate.State, error) {
-			st, _, err := appstate.State{}.ApplyPatch(name, patch, s.KeyFor)
+			st, _, _, err := appstate.State{}.ApplyPatch(name, patch, s.KeyFor)
 			return st, err
 		}, want: appstate.ErrSnapshotMAC},
 		{name: "patch with a forged snapshot mac", apply: func() (appstate.State, error) {
 			forged := proto.CloneOf(patch)
 			forged.SnapshotMac[0] ^= 1
-			st, _, err := state.ApplyPatch(name, forged, s.KeyFor)
+			st, _, _, err := state.ApplyPatch(name, forged, s.KeyFor)
 			return st, err
 		}, want: appstate.ErrSnapshotMAC},
-		{name: "patch with a tampered record", apply: func() (appstate.State, error) {
+		{name: "patch with a tampered record mac", apply: func() (appstate.State, error) {
 			forged := proto.CloneOf(patch)
-			forged.Mutations[0].Record.Value.Blob[20] ^= 1
-			st, _, err := state.ApplyPatch(name, forged, s.KeyFor)
+			blob := forged.Mutations[0].Record.Value.Blob
+			blob[len(blob)-1] ^= 1
+			st, _, _, err := state.ApplyPatch(name, forged, s.KeyFor)
 			return st, err
-		}, want: appstate.ErrValueMAC},
+		}, want: appstate.ErrSnapshotMAC},
 	}
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
@@ -282,6 +283,12 @@ func TestRefusingBadSnapshotsAndPatches(t *testing.T) {
 			}
 		})
 	}
+	unreadable := proto.CloneOf(patch)
+	unreadable.Mutations[0].Record.Value.Blob[20] ^= 1
+	next, mutations, skipped, err := state.ApplyPatch(name, unreadable, s.KeyFor)
+	if err != nil || skipped != 1 || len(mutations) != 0 || next.Version != state.Version+1 {
+		t.Fatalf("a record that does not decrypt: v%d, %d mutations, %d skipped, %v; want it skipped and the patch applied", next.Version, len(mutations), skipped, err)
+	}
 	other := server(t)
 	if _, err := other.Patch(name, fakeappstate.Set(contact("X", "X"), "contact", "9@s.whatsapp.net")); err != nil {
 		t.Fatal(err)
@@ -290,7 +297,7 @@ func TestRefusingBadSnapshotsAndPatches(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	if st, _, err := (appstate.State{}).ApplyPatch(name, removal, other.KeyFor); err != nil || st.Version != 2 || len(st.MACs) != 0 {
+	if st, _, _, err := (appstate.State{}).ApplyPatch(name, removal, other.KeyFor); err != nil || st.Version != 2 || len(st.MACs) != 0 {
 		t.Fatalf("removing a record never seen is skipped, like the official client: v%d, %v", st.Version, err)
 	}
 }

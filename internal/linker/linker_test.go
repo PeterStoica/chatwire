@@ -11,11 +11,11 @@ import (
 
 	"go.uber.org/goleak"
 
-	"github.com/PeterStoica/chatwire/internal/fakeworld"
 	"github.com/PeterStoica/chatwire/internal/linker"
 	"github.com/PeterStoica/chatwire/internal/linkflow"
 	"github.com/PeterStoica/chatwire/internal/node"
 	"github.com/PeterStoica/chatwire/internal/pairing"
+	"github.com/PeterStoica/chatwire/internal/testkit/fakeworld"
 )
 
 func TestMain(m *testing.M) {
@@ -75,6 +75,34 @@ func TestPhoneNumberLinkingShowsACodeThenLinksOnceItIsTyped(t *testing.T) {
 		again, err := r.linker.Start(t.Context(), "40711111111")
 		if err != nil || again.Phase != linker.Linked || r.world.Dials() != 2 {
 			t.Fatalf("Start() after linking = %+v, %v with %d dials", again, err, r.world.Dials())
+		}
+	})
+}
+
+func TestAReplacedCodeIsMarkedNew(t *testing.T) {
+	synctest.Test(t, func(t *testing.T) {
+		r := newRig(t)
+		w := r.world
+		w.Script(func(c *fakeworld.Conn) {
+			w.OfferPairing(c)
+			for {
+				w.AnswerHello(c)
+			}
+		})
+		first, err := r.linker.Start(t.Context(), "40700000000")
+		if err != nil {
+			t.Fatal(err)
+		}
+		next, err := r.linker.Await(t.Context(), func(s linker.Status) bool { return s.Code != first.Code })
+		if err != nil {
+			t.Fatal(err)
+		}
+		if first.Renewed || !next.Renewed || next.Phase != linker.ShowingCode {
+			t.Fatalf("first code %+v, then %+v; only the replacement is new", first, next)
+		}
+		final, err := r.linker.Await(t.Context(), linkedOrOver)
+		if err != nil || final.Phase != linker.Expired || !errors.Is(final.Err, linkflow.ErrCodeExpired) {
+			t.Fatalf("final = %+v, %v", final, err)
 		}
 	})
 }

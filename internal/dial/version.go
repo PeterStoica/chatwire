@@ -7,6 +7,8 @@ import (
 	"net/http"
 	"regexp"
 	"strconv"
+	"sync"
+	"time"
 
 	"github.com/PeterStoica/chatwire/internal/signon"
 )
@@ -52,4 +54,51 @@ func fetchRevision(ctx context.Context, client *http.Client, page string) (uint3
 		return 0, err
 	}
 	return uint32(revision), nil
+}
+
+type Versions struct {
+	client  *http.Client
+	page    string
+	timeout time.Duration
+	mu      sync.Mutex
+	current signon.Version
+	next    time.Time
+}
+
+const (
+	versionFresh = 24 * time.Hour
+	versionRetry = time.Hour
+)
+
+func NewVersions(client *http.Client, page string, timeout time.Duration) *Versions {
+	return &Versions{client: client, page: page, timeout: timeout}
+}
+
+func (v *Versions) Current() signon.Version {
+	v.mu.Lock()
+	defer v.mu.Unlock()
+	if !time.Now().Before(v.next) {
+		v.fetchLocked()
+	}
+	return v.current
+}
+
+func (v *Versions) Refresh() {
+	v.mu.Lock()
+	defer v.mu.Unlock()
+	v.fetchLocked()
+}
+
+func (v *Versions) fetchLocked() {
+	ctx, cancel := context.WithTimeout(context.Background(), v.timeout)
+	defer cancel()
+	revision, err := fetchRevision(ctx, v.client, v.page)
+	switch {
+	case err == nil:
+		v.current, v.next = signon.Version{Primary: 2, Secondary: 3000, Tertiary: revision}, time.Now().Add(versionFresh)
+	case v.current.Tertiary == 0:
+		v.current, v.next = signon.Version{Primary: 2, Secondary: 3000, Tertiary: fallbackRevision}, time.Now().Add(versionRetry)
+	default:
+		v.next = time.Now().Add(versionRetry)
+	}
 }

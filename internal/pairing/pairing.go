@@ -19,7 +19,20 @@ import (
 
 type ClientType string
 
-const ClientOtherWeb ClientType = "9"
+const (
+	ClientChrome   ClientType = "1"
+	ClientOtherWeb ClientType = "9"
+)
+
+func ChromeOn(goos string) string {
+	switch goos {
+	case "darwin":
+		return "Chrome (Mac OS)"
+	case "windows":
+		return "Chrome (Windows)"
+	}
+	return "Chrome (Linux)"
+}
 
 const (
 	qrPrefix      = "https://wa.me/settings/linked_devices#"

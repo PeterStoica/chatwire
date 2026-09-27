@@ -1,8 +1,10 @@
 package message
 
 import (
+	"slices"
 	"strconv"
 	"strings"
+	"time"
 
 	"google.golang.org/protobuf/proto"
 
@@ -153,6 +155,39 @@ func Outgoing(id string, to node.JID, m *wire.Message, parts []Part, deviceIdent
 	return out
 }
 
+func KnownAs(stanza node.Node, other node.JID) node.Node {
+	to, _ := stanza.Attr("to").JID()
+	var peer, recipient []node.Attr
+	switch {
+	case to.Server == node.ServerUser && other.Server == node.ServerLID:
+		peer = []node.Attr{{Key: "peer_recipient_lid", Value: node.Address(other.WithoutDevice())}}
+	case to.Server == node.ServerLID && other.Server == node.ServerUser:
+		peer = []node.Attr{{Key: "peer_recipient_pn", Value: node.Address(other.WithoutDevice())}}
+		recipient = []node.Attr{{Key: "recipient_pn", Value: node.Address(other.WithoutDevice())}}
+	default:
+		return stanza
+	}
+	at := slices.IndexFunc(stanza.Attrs, func(a node.Attr) bool { return a.Key == attrType }) + 1
+	stanza.Attrs = slices.Concat(stanza.Attrs[:at], peer, stanza.Attrs[at:], recipient)
+	return stanza
+}
+
+func Resend(r RetryRequest, m *wire.Message, part Part, deviceIdentity []byte, at time.Time) node.Node {
+	attrs := []node.Attr{{Key: "id", Value: node.Text(r.ID)}, {Key: attrType, Value: node.Text(TypeOf(m))}, {Key: "t", Value: node.Text(strconv.FormatInt(at.Unix(), 10))}}
+	attrs = append(attrs, r.echo...)
+	if !r.Group() {
+		attrs = append(attrs, node.Attr{Key: "device_fanout", Value: node.Text("false")})
+	}
+	enc := encNode(part.Ciphertext, m)
+	enc.Attrs = append(enc.Attrs, node.Attr{Key: "count", Value: node.Text(strconv.Itoa(r.Count))})
+	out := node.Node{Tag: tagMessage, Attrs: attrs, Children: []node.Node{enc}}
+	if part.Ciphertext.Type == signal.TypePreKeyMessage && deviceIdentity != nil {
+		out.Children = append(out.Children, node.Node{Tag: tagIdentity, Bytes: deviceIdentity})
+	}
+	out.Children = append(out.Children, meta(m)...)
+	return out
+}
+
 func encNode(c signal.Ciphertext, m *wire.Message) node.Node {
 	kind := "msg"
 	if c.Type == signal.TypePreKeyMessage {
@@ -172,8 +207,11 @@ func withMediaType(attrs []node.Attr, m *wire.Message) []node.Attr {
 	return attrs
 }
 
-func OutgoingGroup(id string, group node.JID, m *wire.Message, addressingMode string, parts []Part, senderKeyMessage, deviceIdentity []byte) node.Node {
+func OutgoingGroup(id string, group node.JID, m *wire.Message, addressingMode, phash string, parts []Part, senderKeyMessage, deviceIdentity []byte) node.Node {
 	attrs := header(id, group, m)
+	if phash != "" {
+		attrs = slices.Insert(attrs, 2, node.Attr{Key: "phash", Value: node.Text(phash)})
+	}
 	if addressingMode != "" {
 		attrs = append(attrs, node.Attr{Key: "addressing_mode", Value: node.Text(addressingMode)})
 	}

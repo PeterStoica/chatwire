@@ -2,9 +2,7 @@ package message
 
 import (
 	"cmp"
-	"crypto/aes"
 	"crypto/cipher"
-	"crypto/hkdf"
 	"crypto/sha256"
 	"errors"
 	"fmt"
@@ -38,6 +36,9 @@ type Ballot struct {
 }
 
 func PollOf(m *wire.Message) *wire.Message_PollCreationMessage {
+	if wrapped := m.GetPollCreationMessageV4().GetMessage(); wrapped != nil {
+		return PollOf(wrapped)
+	}
 	return cmp.Or(m.GetPollCreationMessage(), m.GetPollCreationMessageV2(), m.GetPollCreationMessageV3(), m.GetPollCreationMessageV5(), m.GetPollCreationMessageV6())
 }
 
@@ -47,19 +48,7 @@ func OptionHash(name string) []byte {
 }
 
 func (b Ballot) sealer() (cipher.AEAD, error) {
-	if len(b.Secret) != SecretSize {
-		return nil, fmt.Errorf("%w: %d bytes", ErrSecret, len(b.Secret))
-	}
-	info := b.PollID + b.Creator.WithoutDevice().String() + b.Voter.WithoutDevice().String() + pollVoteUseCase
-	key, err := hkdf.Key(sha256.New, b.Secret, nil, info, 32)
-	if err != nil {
-		return nil, fmt.Errorf("message: vote key: %w", err)
-	}
-	block, err := aes.NewCipher(key)
-	if err != nil {
-		return nil, fmt.Errorf("message: vote key: %w", err)
-	}
-	return cipher.NewGCM(block)
+	return addonCipher(b.Secret, b.PollID, b.Creator, b.Voter, pollVoteUseCase)
 }
 
 func (b Ballot) additionalData() []byte {
@@ -157,13 +146,25 @@ func NewPoll(question string, options []string, multiple bool) *wire.Message {
 
 var ErrPoll = errors.New("message: not a valid poll")
 
+type PollProblem struct {
+	Reason string
+}
+
+func (p PollProblem) Error() string {
+	return fmt.Sprintf("%v: %s", ErrPoll, p.Reason)
+}
+
+func (p PollProblem) Is(target error) bool {
+	return target == ErrPoll
+}
+
 func CheckPoll(question string, options []string) (string, []string, error) {
 	question = strings.TrimSpace(question)
 	if question == "" || jsLength(question) > MaxPollQuestion {
-		return "", nil, fmt.Errorf("%w: the question must be 1 to %d characters", ErrPoll, MaxPollQuestion)
+		return "", nil, PollProblem{Reason: fmt.Sprintf("the question must be 1 to %d characters", MaxPollQuestion)}
 	}
 	if len(options) < MinPollOptions || len(options) > MaxPollOptions {
-		return "", nil, fmt.Errorf("%w: give %d to %d options, not %d", ErrPoll, MinPollOptions, MaxPollOptions, len(options))
+		return "", nil, PollProblem{Reason: fmt.Sprintf("give %d to %d options, not %d", MinPollOptions, MaxPollOptions, len(options))}
 	}
 	seen := make(map[string]bool, len(options))
 	out := make([]string, 0, len(options))
@@ -172,9 +173,9 @@ func CheckPoll(question string, options []string) (string, []string, error) {
 		key := strings.ToLower(o)
 		switch {
 		case o == "" || jsLength(o) > MaxPollOption:
-			return "", nil, fmt.Errorf("%w: each option must be 1 to %d characters (%q)", ErrPoll, MaxPollOption, o)
+			return "", nil, PollProblem{Reason: fmt.Sprintf("each option must be 1 to %d characters (%q)", MaxPollOption, o)}
 		case seen[key]:
-			return "", nil, fmt.Errorf("%w: %q is given twice", ErrPoll, o)
+			return "", nil, PollProblem{Reason: fmt.Sprintf("%q is given twice", o)}
 		}
 		seen[key] = true
 		out = append(out, o)

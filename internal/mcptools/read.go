@@ -5,6 +5,7 @@ import (
 	"context"
 	"errors"
 	"fmt"
+	"slices"
 	"strings"
 	"time"
 
@@ -18,13 +19,12 @@ import (
 )
 
 type ReadInput struct {
-	Chat     string `json:"chat,omitempty" jsonschema:"only this chat: a contact or group name, a mobile number with country code, me, or status for contacts' status updates; leave empty for all chats"`
-	From     string `json:"from,omitempty" jsonschema:"only messages sent by this person: a contact name, a mobile number with country code, or me"`
-	Query    string `json:"query,omitempty" jsonschema:"only messages containing all these words; case and accents do not matter"`
-	Limit    int    `json:"limit,omitempty" jsonschema:"how many messages to return, newest last (default 20, at most 200)"`
-	Before   string `json:"before,omitempty" jsonschema:"to page back: the id of the oldest message already shown, as the earlier result suggests; a time (RFC 3339) also works"`
-	Unread   bool   `json:"unread,omitempty" jsonschema:"only the unread messages, from every chat that has some (or only chat), in the order the phone lists the chats; answers what did I miss in one call"`
-	MarkRead bool   `json:"mark_read,omitempty" jsonschema:"also mark the returned messages as read on the user's phone, which shows the senders blue ticks; only when the user asks for it"`
+	Chat   string `json:"chat,omitempty" jsonschema:"only this chat: a contact or group name, a mobile number with country code, me, or status for contacts' status updates; leave empty for all chats"`
+	From   string `json:"from,omitempty" jsonschema:"only messages sent by this person: a contact name, a mobile number with country code, or me"`
+	Query  string `json:"query,omitempty" jsonschema:"only messages containing all these words; case and accents do not matter"`
+	Limit  int    `json:"limit,omitempty" jsonschema:"how many messages to return, newest last (default 20, at most 200)"`
+	Before string `json:"before,omitempty" jsonschema:"to page back: the id of the oldest message already shown, as the earlier result suggests; a time (RFC 3339) also works. In one chat, when this computer has nothing older, the phone is asked for more (a few seconds)"`
+	Unread bool   `json:"unread,omitempty" jsonschema:"only the unread messages, from every chat that has some (or only chat), in the order the phone lists the chats; answers what did I miss in one call"`
 }
 
 type ReceivedMessage struct {
@@ -78,7 +78,7 @@ func listGroups(s Sender) mcp.ToolHandlerFor[GroupsInput, GroupsReport] {
 	return func(ctx context.Context, _ *mcp.CallToolRequest, in GroupsInput) (*mcp.CallToolResult, GroupsReport, error) {
 		refuse := func(state, detail string) (*mcp.CallToolResult, GroupsReport, error) {
 			report := GroupsReport{State: state, Groups: []ListedGroup{}, Detail: detail}
-			return nil, report, nil
+			return reply(report)
 		}
 		if _, linked := s.Self(); !linked {
 			return refuse(stateNotLinked, notLinked)
@@ -95,16 +95,19 @@ func listGroups(s Sender) mcp.ToolHandlerFor[GroupsInput, GroupsReport] {
 				return refuse("unknown_group", fmt.Sprintf("The user is in no group called %q. Call list_whatsapp_groups without group to see them all.", want))
 			}
 		}
+		report := GroupsReport{State: "ok", Groups: make([]ListedGroup, len(listed)), Detail: fmt.Sprintf("%d group(s).", len(listed))}
+		if strings.TrimSpace(in.Group) == "" {
+			for i, g := range listed {
+				report.Groups[i] = ListedGroup{ID: g.JID.String(), Name: g.Subject, Participants: len(g.Participants)}
+			}
+			return nil, report, nil
+		}
 		dir, err := loadDirectory(listCtx, s)
 		if err != nil {
 			return refuse(stateFailed, fmt.Sprintf("Could not look up contacts: %v", err))
 		}
-		report := GroupsReport{State: "ok", Groups: make([]ListedGroup, len(listed)), Detail: fmt.Sprintf("%d group(s).", len(listed))}
 		for i, g := range listed {
-			report.Groups[i] = ListedGroup{ID: g.JID.String(), Name: g.Subject, Participants: len(g.Participants)}
-			if in.Group != "" {
-				report.Groups[i] = describeGroup(dir, g)
-			}
+			report.Groups[i] = describeGroup(dir, g)
 		}
 		return nil, report, nil
 	}
@@ -128,7 +131,7 @@ func matchGroups(all []groups.Group, name string) []groups.Group {
 }
 
 func describeGroup(dir directory, g groups.Group) ListedGroup {
-	listed := ListedGroup{ID: g.JID.String(), Name: g.Subject, Participants: len(g.Participants), Description: strings.TrimSpace(g.Description)}
+	listed := ListedGroup{ID: g.JID.String(), Name: clean(g.Subject), Participants: len(g.Participants), Description: visible(strings.TrimSpace(g.Description))}
 	for _, p := range g.Participants {
 		who := p.JID
 		if who.Server == "" {
@@ -143,7 +146,7 @@ func read(s Sender) mcp.ToolHandlerFor[ReadInput, ReadReport] {
 	return func(ctx context.Context, _ *mcp.CallToolRequest, in ReadInput) (*mcp.CallToolResult, ReadReport, error) {
 		refuse := func(state, detail string) (*mcp.CallToolResult, ReadReport, error) {
 			report := ReadReport{State: state, Messages: []ReceivedMessage{}, Detail: detail}
-			return nil, report, nil
+			return reply(report)
 		}
 		if _, linked := s.Self(); !linked {
 			return refuse(stateNotLinked, notLinked)
@@ -163,20 +166,49 @@ func read(s Sender) mcp.ToolHandlerFor[ReadInput, ReadReport] {
 		if err != nil {
 			return refuse(stateFailed, fmt.Sprintf("Could not read messages: %v", err))
 		}
+		fromPhone := -1
+		if pagingOneChat(in, q) && len(found) < q.Limit {
+			fromPhone, found = olderFromPhone(ctx, s, q, found)
+		}
 		messages := make([]ReceivedMessage, 0, len(found))
 		for _, m := range found {
 			messages = append(messages, describeMessage(dir, m))
 		}
 		report := ReadReport{State: "ok", Messages: messages, Detail: readDetail(in, q, messages)}
-		if in.MarkRead && len(found) > 0 {
-			if err := s.MarkRead(ctx, found); err != nil {
-				report.Detail += fmt.Sprintf(" Could not mark them as read: %v.", err)
-			} else {
-				report.Detail += " Marked as read."
-			}
+		switch {
+		case fromPhone > 0:
+			report.Detail += fmt.Sprintf(" %d older message(s) were fetched from the phone.", fromPhone)
+		case fromPhone == 0:
+			report.Detail += " The phone was asked for older messages but sent none; it may be offline or keep nothing older for this chat."
 		}
 		return nil, report, nil
 	}
+}
+
+const (
+	phoneRounds = 8
+	phoneBudget = 40 * time.Second
+)
+
+func olderFromPhone(ctx context.Context, s Sender, q store.Query, found []store.Message) (int, []store.Message) {
+	ctx, cancel := context.WithTimeout(ctx, phoneBudget)
+	defer cancel()
+	fetched := 0
+	for round := 0; len(found) < q.Limit && round < phoneRounds; round++ {
+		n, err := s.Older(ctx, q.Chat)
+		if err != nil || n == 0 {
+			break
+		}
+		fetched += n
+		if more, err := s.Messages(ctx, q); err == nil {
+			found = more
+		}
+	}
+	return fetched, found
+}
+
+func pagingOneChat(in ReadInput, q store.Query) bool {
+	return !in.Unread && q.Chat.Server != "" && strings.TrimSpace(in.Before) != "" && strings.TrimSpace(in.Query) == "" && len(q.From) == 0 && !q.Chat.IsStatus()
 }
 
 func fetch(ctx context.Context, s Sender, dir directory, q store.Query, unreadOnly bool) ([]store.Message, error) {
@@ -186,7 +218,17 @@ func fetch(ctx context.Context, s Sender, dir directory, q store.Query, unreadOn
 	return s.Messages(ctx, q)
 }
 
+const kindViewOnce = "view_once"
+
 func readDetail(in ReadInput, q store.Query, messages []ReceivedMessage) string {
+	detail := countDetail(in, q, messages)
+	if slices.ContainsFunc(messages, func(m ReceivedMessage) bool { return m.Kind == kindViewOnce }) {
+		detail += " View-once messages open only on the phone."
+	}
+	return detail
+}
+
+func countDetail(in ReadInput, q store.Query, messages []ReceivedMessage) string {
 	switch {
 	case in.Unread && len(messages) == 0:
 		return "No unread messages."
@@ -200,6 +242,8 @@ func readDetail(in ReadInput, q store.Query, messages []ReceivedMessage) string 
 		return "No messages from this chat have reached this computer. Linking brings only the phone's recent history, so an older chat can be empty here."
 	case len(messages) == 0:
 		return "No messages yet. History from the phone arrives in the first minutes after linking."
+	case len(messages) < q.Limit && q.Chat.Server != "" && !q.Chat.IsStatus() && strings.TrimSpace(in.Before) == "" && strings.TrimSpace(in.Query) == "" && len(q.From) == 0:
+		return fmt.Sprintf("%d message(s): all this computer has for this chat. The phone may keep older ones: call again with before=%s to fetch them.", len(messages), messages[0].ID)
 	case len(messages) == q.Limit:
 		return fmt.Sprintf("%d message(s). There may be older ones: call again with before=%s.", len(messages), messages[0].ID)
 	}
@@ -234,16 +278,16 @@ func readQuery(ctx context.Context, s Sender, dir *directory, in ReadInput) (sto
 		return q, &refusal{state: "invalid_unread", detail: "unread cannot be combined with query, before or from."}
 	}
 	if from := strings.TrimSpace(in.From); from != "" {
-		who, refused := resolve(ctx, s, dir, from)
+		who, refused := resolve(ctx, s, dir, from, "sender")
 		switch {
 		case refused != nil:
-			return q, &refusal{state: strings.Replace(refused.state, "recipient", "sender", 1), detail: refused.detail}
+			return q, refused
 		case who.Server == node.ServerGroup || who.Server == node.ServerBroadcast:
 			return q, &refusal{state: "invalid_sender", detail: "from must be a person, not a group; use chat for the group."}
 		case dir.canonical(who) == dir.self:
 			q.Mine = true
 		default:
-			q.From = dir.forms(who)
+			q.From = []node.JID{who}
 		}
 	}
 	switch strings.ToLower(strings.TrimSpace(in.Chat)) {
@@ -251,9 +295,9 @@ func readQuery(ctx context.Context, s Sender, dir *directory, in ReadInput) (sto
 	case "status", "statuses", "status updates":
 		q.Chat = node.StatusBroadcast()
 	default:
-		chat, refused := resolve(ctx, s, dir, in.Chat)
+		chat, refused := resolve(ctx, s, dir, in.Chat, "chat")
 		if refused != nil {
-			return q, &refusal{state: strings.Replace(refused.state, "recipient", "chat", 1), detail: refused.detail}
+			return q, refused
 		}
 		q.Chat = chat
 	}
@@ -292,7 +336,7 @@ func listChats(s Sender) mcp.ToolHandlerFor[ChatsInput, ChatsReport] {
 	return func(ctx context.Context, _ *mcp.CallToolRequest, in ChatsInput) (*mcp.CallToolResult, ChatsReport, error) {
 		refuse := func(state, detail string) (*mcp.CallToolResult, ChatsReport, error) {
 			report := ChatsReport{State: state, Chats: []ListedChat{}, Detail: detail}
-			return nil, report, nil
+			return reply(report)
 		}
 		if _, linked := s.Self(); !linked {
 			return refuse(stateNotLinked, notLinked)
@@ -337,6 +381,8 @@ func describeMessage(dir directory, m store.Message) ReceivedMessage {
 	switch {
 	case m.Revoked:
 		out.Kind, body = "deleted", ""
+	case message.IsViewOnceStub(m.Message):
+		out.Kind = kindViewOnce
 	case hasMedia:
 		out.Kind, out.Media, body = string(ref.Type), true, ref.Caption
 	case isShared:
@@ -355,10 +401,10 @@ func describeMessage(dir directory, m store.Message) ReceivedMessage {
 		}
 		out.Edited = !m.Edited.IsZero()
 		if q, ok := message.QuoteOf(inner); ok {
-			out.ReplyTo, out.Quote = q.ID, fmt.Sprintf("%s: %q", dir.who(q.Author), clip(quoted(q.Message), maxQuoted))
+			out.ReplyTo, out.Quote = q.ID, fmt.Sprintf("%s: %q", dir.who(q.Author), clip(visible(quoted(q.Message)), maxQuoted))
 		}
 	}
-	out.Text = body
+	out.Text = visible(body)
 	for _, r := range m.Reactions {
 		out.Reactions = append(out.Reactions, r.Emoji+" "+dir.who(r.By))
 	}

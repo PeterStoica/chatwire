@@ -13,6 +13,7 @@ import (
 	"google.golang.org/protobuf/proto"
 
 	"github.com/PeterStoica/chatwire/internal/node"
+	"github.com/PeterStoica/chatwire/internal/privacy"
 	"github.com/PeterStoica/chatwire/internal/wire"
 )
 
@@ -47,7 +48,11 @@ func (s *Store) Messages(ctx context.Context, q Query) ([]Message, error) {
 	if len(q.From) > 0 {
 		marks := make([]string, 0, len(q.From))
 		for _, j := range q.From {
-			marks, args = append(marks, "?"), append(args, j.WithoutDevice().String())
+			author, err := s.canonical(ctx, j.WithoutDevice())
+			if err != nil {
+				return nil, err
+			}
+			marks, args = append(marks, "?"), append(args, author.String())
 		}
 		where = append(where, `m.author IN (`+strings.Join(marks, ", ")+`)`)
 	}
@@ -69,6 +74,61 @@ func (s *Store) Messages(ctx context.Context, q Query) ([]Message, error) {
 
 func (s *Store) Message(ctx context.Context, id string) (Message, bool, error) {
 	found, err := s.messages(ctx, `SELECT m.chat, m.id, m.author, m.from_me, m.t, m.push_name, m.raw, m.edited, m.revoked, m.status FROM messages m WHERE m.id = ? ORDER BY m.key DESC LIMIT 1`, id)
+	if err != nil || len(found) == 0 {
+		return Message{}, false, err
+	}
+	return found[0], true, nil
+}
+
+func (s *Store) Timer(ctx context.Context, chat node.JID) (Timer, error) {
+	chat, err := s.canonical(ctx, chat.WithoutDevice())
+	if err != nil {
+		return Timer{}, err
+	}
+	t := Timer{Chat: chat}
+	var set int64
+	err = s.db.QueryRowContext(ctx, `SELECT expiration, expiration_set FROM chats WHERE jid = ?`, chat.String()).Scan(&t.Seconds, &set)
+	switch {
+	case errors.Is(err, sql.ErrNoRows):
+		return t, nil
+	case err != nil:
+		return t, fmt.Errorf("store: disappearing timer of %s: %w", chat, err)
+	}
+	if set > 0 {
+		t.Set = time.Unix(set, 0)
+	}
+	return t, nil
+}
+
+func (s *Store) Token(ctx context.Context, contact node.JID) (privacy.Token, error) {
+	contact, err := s.canonical(ctx, contact.WithoutDevice())
+	if err != nil {
+		return privacy.Token{}, err
+	}
+	t := privacy.Token{Contact: contact}
+	var given, ours int64
+	err = s.db.QueryRowContext(ctx, `SELECT theirs, given, ours FROM tokens WHERE jid = ?`, contact.String()).Scan(&t.Theirs, &given, &ours)
+	switch {
+	case errors.Is(err, sql.ErrNoRows):
+		return t, nil
+	case err != nil:
+		return t, fmt.Errorf("store: token of %s: %w", contact, err)
+	}
+	if given > 0 {
+		t.Given = time.Unix(given, 0)
+	}
+	if ours > 0 {
+		t.Ours = time.Unix(ours, 0)
+	}
+	return t, nil
+}
+
+func (s *Store) Oldest(ctx context.Context, chat node.JID) (Message, bool, error) {
+	chat, err := s.canonical(ctx, chat)
+	if err != nil {
+		return Message{}, false, err
+	}
+	found, err := s.messages(ctx, `SELECT m.chat, m.id, m.author, m.from_me, m.t, m.push_name, m.raw, m.edited, m.revoked, m.status FROM messages m WHERE m.chat = ? ORDER BY m.key LIMIT 1`, chat.String())
 	if err != nil || len(found) == 0 {
 		return Message{}, false, err
 	}

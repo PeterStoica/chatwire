@@ -5,11 +5,14 @@ import (
 	"errors"
 	"fmt"
 	"net/http"
+	"os"
+	"slices"
 	"sync"
 	"time"
 
 	"github.com/PeterStoica/chatwire/internal/client"
 	"github.com/PeterStoica/chatwire/internal/groups"
+	"github.com/PeterStoica/chatwire/internal/limits"
 	"github.com/PeterStoica/chatwire/internal/linkflow"
 	"github.com/PeterStoica/chatwire/internal/media"
 	"github.com/PeterStoica/chatwire/internal/mediaretry"
@@ -35,7 +38,21 @@ var (
 	ErrDeleted        = errors.New("messenger: that message was deleted")
 	ErrTooFast        = errors.New("messenger: sending too fast")
 	ErrNewChats       = errors.New("messenger: too many new chats started")
+	ErrRestricted     = errors.New("messenger: WhatsApp is limiting messages to new contacts")
 )
+
+const (
+	restrictedFor = 24 * time.Hour
+	groupsFresh   = 5 * time.Minute
+	olderWait     = 15 * time.Second
+	reconnectWait = 30 * time.Second
+	olderCount    = 50
+)
+
+type cachedGroup struct {
+	group groups.Group
+	at    time.Time
+}
 
 type Messenger struct {
 	link    linkflow.Config
@@ -43,17 +60,30 @@ type Messenger struct {
 	persist func(client.State) error
 	store   *store.Store
 
-	mu       sync.Mutex
-	state    *client.State
-	client   *client.Client
-	ready    chan struct{}
-	failed   chan struct{}
-	lastErr  error
-	storeErr error
-	cancel   context.CancelFunc
-	running  chan struct{}
-	gone     func(error)
-	synced   HistorySync
+	mu        sync.Mutex
+	state     *client.State
+	client    *client.Client
+	retired   chan struct{}
+	ready     chan struct{}
+	failed    chan struct{}
+	lastErr   error
+	storeErr  error
+	cancel    context.CancelFunc
+	running   chan struct{}
+	gone      func(error)
+	synced    HistorySync
+	limited   time.Time
+	timelock  limits.Timelock
+	allowance limits.Cap
+	listed    []groups.Group
+	listedAt  time.Time
+	known     map[node.JID]cachedGroup
+	failures  int
+	retryAt   time.Time
+	outdated  func()
+	saving    sync.Mutex
+	current   int
+	onDemand  chan struct{}
 }
 
 type HistorySync struct {
@@ -62,7 +92,7 @@ type HistorySync struct {
 }
 
 func New(link linkflow.Config, httpClient *http.Client, persist func(client.State) error, messages *store.Store) *Messenger {
-	return &Messenger{link: link, http: httpClient, persist: persist, store: messages, ready: make(chan struct{}), failed: make(chan struct{})}
+	return &Messenger{link: link, http: httpClient, persist: persist, store: messages, ready: make(chan struct{}), failed: make(chan struct{}), known: map[node.JID]cachedGroup{}, onDemand: make(chan struct{})}
 }
 
 func (m *Messenger) Start(parent context.Context, state client.State) {
@@ -79,51 +109,75 @@ func (m *Messenger) Start(parent context.Context, state client.State) {
 }
 
 func (m *Messenger) keepConnected(ctx context.Context) {
-	wait := firstRetry
+	r := newRetries()
 	for ctx.Err() == nil {
 		m.mu.Lock()
 		state := *m.state
 		m.mu.Unlock()
 		lids, _ := m.store.LIDs(ctx)
-		c, err := client.Connect(ctx, client.Config{LIDs: lids, Link: m.link, HTTP: m.http, Persist: m.save, Receive: m.received, History: m.history, Receipt: m.receipt, AppState: m}, state)
-		if errors.Is(err, linkflow.ErrLoggedOut) {
-			m.loggedOut(err)
-			return
-		}
-		if err != nil {
+		start := m.link.Now()
+		c, err := client.Connect(ctx, client.Config{LIDs: lids, Link: m.link, HTTP: m.http, Persist: m.saver(), Receive: m.received, History: m.history, Receipt: m.receipt, Sent: m.sentMessage, Seen: m.seen, TokenOf: m.tokenOf, Tokens: m.tokens, Changed: m.groupChanged, Limits: m.limitsChanged, Problem: problem, AppState: m}, state)
+		if err == nil {
+			err = m.online(ctx, c)
+		} else {
 			m.mu.Lock()
 			m.lastErr = err
 			close(m.failed)
 			m.failed = make(chan struct{})
 			m.mu.Unlock()
-			select {
-			case <-ctx.Done():
-				return
-			case <-time.After(wait):
-			}
-			wait = min(2*wait, maxRetry)
-			continue
 		}
-		wait = firstRetry
-		m.mu.Lock()
-		m.client, m.lastErr = c, nil
-		close(m.ready)
-		m.mu.Unlock()
-		_, _ = m.Groups(ctx)
-		select {
-		case <-ctx.Done():
-			_ = c.Close()
-		case <-c.Done():
-			m.setErr(c.Err())
+		if ctx.Err() != nil {
+			return
 		}
-		m.mu.Lock()
-		m.client, m.ready = nil, make(chan struct{})
-		m.mu.Unlock()
-		if err := c.Err(); errors.Is(err, linkflow.ErrLoggedOut) {
+		if errors.Is(err, linkflow.ErrLoggedOut) {
 			m.loggedOut(err)
 			return
 		}
+		delay, refresh := r.next(err, m.link.Now().Sub(start))
+		m.mu.Lock()
+		m.failures, m.retryAt = r.failures, m.link.Now().Add(delay)
+		outdated := m.outdated
+		m.mu.Unlock()
+		if refresh && outdated != nil {
+			outdated()
+		}
+		if delay == 0 {
+			continue
+		}
+		select {
+		case <-ctx.Done():
+			return
+		case <-time.After(delay):
+		}
 	}
+}
+
+func (m *Messenger) online(ctx context.Context, c *client.Client) error {
+	retired := make(chan struct{})
+	m.mu.Lock()
+	m.client, m.lastErr, m.failures, m.retryAt = c, nil, 0, time.Time{}
+	m.retired = retired
+	m.listed, m.known = nil, map[node.JID]cachedGroup{}
+	close(m.ready)
+	m.mu.Unlock()
+	defer close(retired)
+	_, _ = m.Groups(ctx)
+	select {
+	case <-ctx.Done():
+		_ = c.Close()
+	case <-c.Done():
+		m.setErr(c.Err())
+	}
+	m.mu.Lock()
+	m.client, m.ready = nil, make(chan struct{})
+	m.mu.Unlock()
+	return c.Err()
+}
+
+func (m *Messenger) WhenOutdated(refresh func()) {
+	m.mu.Lock()
+	defer m.mu.Unlock()
+	m.outdated = refresh
 }
 
 func (m *Messenger) WhenLoggedOut(fn func(error)) {
@@ -133,8 +187,11 @@ func (m *Messenger) WhenLoggedOut(fn func(error)) {
 }
 
 func (m *Messenger) loggedOut(err error) {
+	m.saving.Lock()
+	defer m.saving.Unlock()
 	m.mu.Lock()
 	m.state, m.lastErr = nil, err
+	m.current++
 	gone := m.gone
 	m.mu.Unlock()
 	if gone != nil {
@@ -142,11 +199,23 @@ func (m *Messenger) loggedOut(err error) {
 	}
 }
 
-func (m *Messenger) save(state client.State) error {
+func (m *Messenger) saver() func(client.State) error {
 	m.mu.Lock()
-	m.state = &state
+	m.current++
+	mine := m.current
 	m.mu.Unlock()
-	return m.persist(state)
+	return func(state client.State) error {
+		m.saving.Lock()
+		defer m.saving.Unlock()
+		m.mu.Lock()
+		if mine != m.current || m.state == nil {
+			m.mu.Unlock()
+			return nil
+		}
+		m.state = &state
+		m.mu.Unlock()
+		return m.persist(state)
+	}
 }
 
 func (m *Messenger) keep(ctx context.Context, write func(context.Context) error) {
@@ -221,15 +290,29 @@ type Connection struct {
 	Err       error
 	StoreErr  error
 	History   HistorySync
+	Failures  int
+	Retry     time.Time
+	Timelock  limits.Timelock
+	Allowance limits.Cap
 }
 
 func (m *Messenger) Connection() Connection {
 	m.mu.Lock()
 	defer m.mu.Unlock()
-	return Connection{Linked: m.state != nil, Connected: m.client != nil, Err: m.lastErr, StoreErr: m.storeErr, History: m.synced}
+	return Connection{
+		Linked: m.state != nil, Connected: m.client != nil, Err: m.lastErr, StoreErr: m.storeErr, History: m.synced,
+		Failures: m.failures, Retry: m.retryAt, Timelock: m.timelock, Allowance: m.allowance,
+	}
 }
 
 func (m *Messenger) Groups(ctx context.Context) ([]groups.Group, error) {
+	now := m.link.Now()
+	m.mu.Lock()
+	cached, at := m.listed, m.listedAt
+	m.mu.Unlock()
+	if cached != nil && now.Sub(at) < groupsFresh {
+		return slices.Clone(cached), nil
+	}
 	c, err := m.connected(ctx)
 	if err != nil {
 		return nil, err
@@ -238,12 +321,32 @@ func (m *Messenger) Groups(ctx context.Context) ([]groups.Group, error) {
 	if err != nil {
 		return nil, err
 	}
+	m.mu.Lock()
+	m.listed, m.listedAt = listed, now
+	for _, g := range listed {
+		m.known[g.JID] = cachedGroup{group: g, at: now}
+	}
+	m.mu.Unlock()
 	chats := make([]store.Chat, 0, len(listed))
 	for _, g := range listed {
 		chats = append(chats, store.Chat{JID: g.JID, Name: g.Subject})
 	}
-	m.keep(ctx, func(ctx context.Context) error { return m.store.Apply(ctx, store.Changes{Chats: chats}) })
+	pairs := pairsIn(listed...)
+	c.Learn(pairs)
+	m.keep(ctx, func(ctx context.Context) error { return m.store.Apply(ctx, store.Changes{Chats: chats, LIDs: pairs}) })
 	return listed, nil
+}
+
+func pairsIn(listed ...groups.Group) map[node.JID]node.JID {
+	pairs := map[node.JID]node.JID{}
+	for _, g := range listed {
+		for _, p := range g.Participants {
+			if lid, phone, ok := p.Pair(); ok {
+				pairs[lid] = phone
+			}
+		}
+	}
+	return pairs
 }
 
 func (m *Messenger) Media(ctx context.Context, id string) (media.Reference, []byte, error) {
@@ -262,9 +365,11 @@ func (m *Messenger) Media(ctx context.Context, id string) (media.Reference, []by
 	if err != nil {
 		return ref, nil, err
 	}
-	data, err := c.Download(ctx, ref)
-	if !errors.Is(err, client.ErrGone) {
-		return ref, data, err
+	if ref.DirectPath != "" {
+		data, err := c.Download(ctx, ref)
+		if !errors.Is(err, client.ErrGone) {
+			return ref, data, err
+		}
 	}
 	path, err := c.RetryMedia(ctx, ref, found.ID, mediaretry.Target{Chat: found.Chat, FromMe: found.FromMe, Participant: found.Author})
 	if err != nil {
@@ -275,7 +380,7 @@ func (m *Messenger) Media(ctx context.Context, id string) (media.Reference, []by
 		return m.store.Apply(ctx, store.Changes{Messages: []store.Message{found}})
 	})
 	ref.DirectPath = path
-	data, err = c.Download(ctx, ref)
+	data, err := c.Download(ctx, ref)
 	return ref, data, err
 }
 
@@ -303,4 +408,8 @@ func (m *Messenger) Close() {
 		cancel()
 		<-running
 	}
+}
+
+func problem(err error) {
+	_, _ = fmt.Fprintf(os.Stderr, "%s %v\n", time.Now().Format(time.DateTime), err)
 }

@@ -10,6 +10,7 @@ import (
 	"github.com/PeterStoica/chatwire/internal/message"
 	"github.com/PeterStoica/chatwire/internal/node"
 	"github.com/PeterStoica/chatwire/internal/pairing"
+	"github.com/PeterStoica/chatwire/internal/privacy"
 	"github.com/PeterStoica/chatwire/internal/store"
 	"github.com/PeterStoica/chatwire/internal/wire"
 )
@@ -23,12 +24,23 @@ func (m *Messenger) dispatch(ctx context.Context, r client.Received) {
 		m.keep(ctx, func(ctx context.Context) error { return m.store.Apply(ctx, store.Changes{LIDs: r.Pairs}) })
 	}
 	inner := media.Unwrap(r.Message)
+	if timer, ok := timerOf(r, inner); ok {
+		m.keep(ctx, func(ctx context.Context) error {
+			return m.store.Apply(ctx, store.Changes{Timers: []store.Timer{timer}})
+		})
+	}
 	switch p := inner.GetProtocolMessage(); {
+	case p.GetType() == wire.Message_ProtocolMessage_EPHEMERAL_SETTING:
+		return
 	case p.GetKey() != nil && p.GetType() == wire.Message_ProtocolMessage_MESSAGE_EDIT:
 		m.keep(ctx, func(ctx context.Context) error { return m.edit(ctx, r, p) })
 		return
 	case p.GetKey() != nil && p.Type != nil && p.GetType() == wire.Message_ProtocolMessage_REVOKE:
 		m.keep(ctx, func(ctx context.Context) error { return m.revoke(ctx, r, p) })
+		return
+	}
+	if enc := message.EncryptedEdit(inner); enc != nil {
+		m.keep(ctx, func(ctx context.Context) error { return m.secretEdit(ctx, r, enc) })
 		return
 	}
 	if update := inner.GetPollUpdateMessage(); update != nil {
@@ -53,11 +65,36 @@ func (m *Messenger) dispatch(ctx context.Context, r client.Received) {
 	m.keep(ctx, func(ctx context.Context) error { return m.store.Apply(ctx, changes) })
 }
 
+func timerOf(r client.Received, inner *wire.Message) (store.Timer, bool) {
+	if p := inner.GetProtocolMessage(); p.GetType() == wire.Message_ProtocolMessage_EPHEMERAL_SETTING {
+		set := r.Time
+		if at := p.GetEphemeralSettingTimestamp(); at > 0 {
+			set = time.Unix(at, 0)
+		}
+		return store.Timer{Chat: r.Chat, Seconds: p.GetEphemeralExpiration(), Set: set}, true
+	}
+	context := message.ContextOf(inner)
+	if context.GetExpiration() == 0 || context.GetEphemeralSettingTimestamp() <= 0 || context.GetIsForwarded() {
+		return store.Timer{}, false
+	}
+	return store.Timer{Chat: r.Chat, Seconds: context.GetExpiration(), Set: time.Unix(context.GetEphemeralSettingTimestamp(), 0)}, true
+}
+
 func (m *Messenger) history(chunk history.Chunk) {
 	m.progress(chunk.Type, chunk.Progress)
 	chats := make([]store.Chat, 0, len(chunk.Chats))
+	var (
+		tokens []privacy.Token
+		timers []store.Timer
+	)
 	for _, c := range chunk.Chats {
 		chats = append(chats, store.Chat{JID: c.JID, Name: c.Name, LastMessage: c.LastMessage})
+		if !c.Token.Given.IsZero() || !c.Token.Ours.IsZero() {
+			tokens = append(tokens, c.Token)
+		}
+		if c.Timer.Seconds > 0 || !c.Timer.Set.IsZero() {
+			timers = append(timers, store.Timer{Chat: c.JID, Seconds: c.Timer.Seconds, Set: c.Timer.Set})
+		}
 	}
 	messages := make([]store.Message, 0, len(chunk.Messages))
 	var (
@@ -90,8 +127,14 @@ func (m *Messenger) history(chunk history.Chunk) {
 	for _, c := range chunk.Chats {
 		unread[c.JID] = int(c.Unread)
 	}
-	changes := store.Changes{Chats: chats, Messages: messages, Names: names, LIDs: chunk.LIDs, Reactions: reactions, Votes: votes, Unread: unread}
+	changes := store.Changes{Chats: chats, Messages: messages, Names: names, LIDs: chunk.LIDs, Reactions: reactions, Votes: votes, Unread: unread, Tokens: tokens, Timers: timers}
 	m.keep(context.Background(), func(ctx context.Context) error { return m.store.Apply(ctx, changes) })
+	if chunk.Type == wire.HistorySync_ON_DEMAND {
+		m.mu.Lock()
+		close(m.onDemand)
+		m.onDemand = make(chan struct{})
+		m.mu.Unlock()
+	}
 }
 
 func (m *Messenger) progress(kind wire.HistorySync_HistorySyncType, percent uint32) {
@@ -117,6 +160,35 @@ func (m *Messenger) edit(ctx context.Context, r client.Received, p *wire.Message
 		return nil
 	}
 	return m.store.Apply(ctx, store.Changes{Edits: []store.Edit{{Chat: r.Chat, ID: original.ID, Message: merged, Time: sentAt(p.GetTimestampMs(), r.Time)}}})
+}
+
+func (m *Messenger) secretEdit(ctx context.Context, r client.Received, enc *wire.Message_SecretEncryptedMessage) error {
+	original, ok, err := m.store.MessageIn(ctx, r.Chat, enc.GetTargetMessageKey().GetId())
+	if err != nil || !ok {
+		return err
+	}
+	if same, err := m.sameSender(ctx, original.Author, r.Author); err != nil || !same {
+		return err
+	}
+	authors, err := m.addresses(ctx, original.Author)
+	if err != nil {
+		return err
+	}
+	secret := original.Message.GetMessageContextInfo().GetMessageSecret()
+	for _, from := range authors {
+		for _, by := range authors {
+			edited, err := message.OpenEdit(message.Addon{Secret: secret, ID: original.ID, Original: from, Sender: by}, enc)
+			if err != nil {
+				continue
+			}
+			merged, ok := message.ApplyEdit(original.Message, edited)
+			if !ok {
+				return nil
+			}
+			return m.store.Apply(ctx, store.Changes{Edits: []store.Edit{{Chat: r.Chat, ID: original.ID, Message: merged, Time: r.Time}}})
+		}
+	}
+	return nil
 }
 
 func (m *Messenger) revoke(ctx context.Context, r client.Received, p *wire.Message_ProtocolMessage) error {
@@ -180,25 +252,36 @@ func (m *Messenger) addresses(ctx context.Context, j node.JID) ([]node.JID, erro
 	if account.Owns(j) {
 		return []node.JID{account.JID.WithoutDevice(), account.LID.WithoutDevice()}, nil
 	}
-	lids, err := m.store.LIDs(ctx)
-	if err != nil {
-		return nil, err
+	return m.store.Forms(ctx, j)
+}
+
+func (m *Messenger) sentMessage(ctx context.Context, chat node.JID, id string) (*wire.Message, bool) {
+	found, ok, err := m.store.MessageIn(ctx, chat, id)
+	if err != nil || !ok || !found.FromMe || found.Revoked {
+		return nil, false
 	}
-	out := []node.JID{j}
-	for lid, pn := range lids {
-		switch j {
-		case lid:
-			out = append(out, pn)
-		case pn:
-			out = append(out, lid)
-		}
-	}
-	return out, nil
+	return found.Message, true
+}
+
+func (m *Messenger) tokenOf(ctx context.Context, contact node.JID) privacy.Token {
+	token, _ := m.store.Token(ctx, contact)
+	return token
+}
+
+func (m *Messenger) tokens(tokens []privacy.Token) {
+	m.keep(context.Background(), func(ctx context.Context) error { return m.store.Apply(ctx, store.Changes{Tokens: tokens}) })
+}
+
+func (m *Messenger) seen(ctx context.Context, chat node.JID, id string) bool {
+	_, ok, err := m.store.MessageIn(ctx, chat, id)
+	return err == nil && ok
 }
 
 func (m *Messenger) receipt(r message.Receipt) {
 	var changes store.Changes
 	switch {
+	case r.Ack == message.AckRetry:
+		return
 	case r.Self && (r.Ack == message.AckRead || r.Ack == message.AckPlayed):
 		changes.Seen = []node.JID{r.From.WithoutDevice()}
 	case r.Self || r.From.Server == node.ServerGroup || r.From.Server == node.ServerBroadcast:
@@ -227,9 +310,10 @@ func (m *Messenger) sameSender(ctx context.Context, a, b node.JID) (bool, error)
 	if a == b {
 		return true, nil
 	}
-	lids, err := m.store.LIDs(ctx)
+	ca, err := m.store.Canonical(ctx, a)
 	if err != nil {
 		return false, err
 	}
-	return lids[a] == b || lids[b] == a, nil
+	cb, err := m.store.Canonical(ctx, b)
+	return err == nil && ca == cb, err
 }

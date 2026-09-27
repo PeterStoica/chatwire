@@ -10,6 +10,9 @@ import (
 	"github.com/PeterStoica/chatwire/internal/message"
 	"github.com/PeterStoica/chatwire/internal/node"
 	"github.com/PeterStoica/chatwire/internal/prekeys"
+	"github.com/PeterStoica/chatwire/internal/signal"
+	"github.com/PeterStoica/chatwire/internal/wire"
+	"time"
 )
 
 func TestRetryReceipts(t *testing.T) {
@@ -90,5 +93,87 @@ func TestRetryReceipts(t *testing.T) {
 	}
 	if _, err := message.RetryReceipt(isMe, own, retry); !errors.Is(err, message.ErrRetry) {
 		t.Fatalf("a retry to our own device without a recipient: %v", err)
+	}
+}
+
+func asIncoming(receipt node.Node) node.Node {
+	out := receipt
+	out.Attrs = append([]node.Attr(nil), receipt.Attrs...)
+	for i, a := range out.Attrs {
+		if a.Key == "to" {
+			out.Attrs[i].Key = "from"
+		}
+	}
+	return out
+}
+
+func TestRetryRequestsFromOthersParseAndResend(t *testing.T) {
+	identity, err := device.New(rand.Reader)
+	if err != nil {
+		t.Fatal(err)
+	}
+	fresh, _, err := prekeys.Generate(rand.Reader, 7, 1)
+	if err != nil {
+		t.Fatal(err)
+	}
+	retry := message.Retry{Count: 2, Registration: identity.Registration(device.Props()), PreKey: fresh[0], DeviceIdentity: []byte("adv")}
+	for _, tt := range []struct {
+		name       string
+		in         node.Node
+		device     node.JID
+		fanout     bool
+		wantEchoed string
+	}{
+		{"a contact", incoming(bobDev, nil, enc("msg")), bobDev, true, "to=40722222222:3@s.whatsapp.net"},
+		{"a group member", incoming(group, []node.Attr{{Key: "participant", Value: node.Address(bobDev)}}, enc("skmsg")), bobDev, false,
+			"to=120363000000000000@g.us participant=40722222222:3@s.whatsapp.net"},
+		{"our other device", incoming(ownDev, []node.Attr{{Key: "recipient", Value: node.Address(bob)}}, enc("msg")), ownDev, true,
+			"to=40711111111:2@s.whatsapp.net recipient=40722222222@s.whatsapp.net"},
+	} {
+		t.Run(tt.name, func(t *testing.T) {
+			in, err := message.ParseIncoming(isMe, tt.in)
+			if err != nil {
+				t.Fatal(err)
+			}
+			theirs, err := message.RetryReceipt(isMe, in, retry)
+			if err != nil {
+				t.Fatal(err)
+			}
+			req, err := message.ParseRetryRequest(asIncoming(theirs))
+			if err != nil || req.ID != "3EB0AA" || req.Count != 2 || req.Device() != tt.device || req.Keys == nil {
+				t.Fatalf("ParseRetryRequest = %+v, %v", req, err)
+			}
+			bundle, err := prekeys.RetryBundle(req.Device(), req.Registration, *req.Keys)
+			if err != nil || bundle.Keys.RegistrationID != retry.Registration.RegistrationID || bundle.Keys.PreKey == nil || bundle.Keys.PreKey.ID != 7 ||
+				bundle.Keys.Identity != retry.Registration.Identity || string(bundle.DeviceIdentity) != "adv" {
+				t.Fatalf("RetryBundle = %+v, %v", bundle, err)
+			}
+			photo := &wire.Message{ImageMessage: &wire.Message_ImageMessage{Caption: new("sea")}}
+			out := message.Resend(req, photo, message.Part{Device: req.Device(), Ciphertext: signal.Ciphertext{Type: signal.TypePreKeyMessage, Bytes: []byte{9}}}, []byte("mine"), time.Unix(1790000100, 0))
+			fanout := " device_fanout=false"
+			if !tt.fanout {
+				fanout = ""
+			}
+			if want := "message id=3EB0AA type=media t=1790000100 " + tt.wantEchoed + fanout; render(out) != want {
+				t.Fatalf("resend\n got %s\nwant %s", render(out), want)
+			}
+			encNode, _ := out.Child("enc")
+			if render(encNode) != "enc v=2 type=pkmsg mediatype=image count=2" {
+				t.Fatalf("enc = %s", render(encNode))
+			}
+			if identity, ok := out.Child("device-identity"); !ok || string(identity.Bytes) != "mine" {
+				t.Fatalf("a prekey resend carries no device identity: %s", out)
+			}
+		})
+	}
+	for _, bad := range []node.Node{
+		{Tag: "receipt", Attrs: []node.Attr{{Key: "id", Value: node.Text("1")}, {Key: "from", Value: node.Address(bob)}, {Key: "type", Value: node.Text("read")}}},
+		{Tag: "receipt", Attrs: []node.Attr{{Key: "id", Value: node.Text("1")}, {Key: "from", Value: node.Address(bob)}, {Key: "type", Value: node.Text("retry")}}},
+		{Tag: "receipt", Attrs: []node.Attr{{Key: "id", Value: node.Text("1")}, {Key: "from", Value: node.Address(group)}, {Key: "type", Value: node.Text("retry")}},
+			Children: []node.Node{{Tag: "retry", Attrs: []node.Attr{{Key: "count", Value: node.Text("1")}}}, {Tag: "registration"}}},
+	} {
+		if _, err := message.ParseRetryRequest(bad); !errors.Is(err, message.ErrIncoming) {
+			t.Fatalf("ParseRetryRequest(%s) = %v", bad, err)
+		}
 	}
 }

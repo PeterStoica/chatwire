@@ -2,6 +2,7 @@ package messenger
 
 import (
 	"context"
+	"errors"
 	"path/filepath"
 	"testing"
 	"time"
@@ -204,5 +205,26 @@ func TestReceiptsMoveTicksAndUnreadCounts(t *testing.T) {
 	}
 	if err := m.Connection().StoreErr; err != nil {
 		t.Fatal(err)
+	}
+}
+
+func TestOnlyTheCurrentConnectionSavesTheLink(t *testing.T) {
+	t.Parallel()
+	var saved []client.State
+	m := New(linkflow.Config{Now: time.Now}, nil, func(s client.State) error {
+		saved = append(saved, s)
+		return nil
+	}, nil)
+	m.state = &client.State{}
+	old, current := m.saver(), m.saver()
+	if err := old(client.State{NextPreKeyID: 1}); err != nil || len(saved) != 0 {
+		t.Fatalf("a previous connection saved over the current one: %v, %d saves", err, len(saved))
+	}
+	if err := current(client.State{NextPreKeyID: 2}); err != nil || len(saved) != 1 || saved[0].NextPreKeyID != 2 {
+		t.Fatalf("the current connection did not save: %v, %+v", err, saved)
+	}
+	m.loggedOut(errors.New("unlinked"))
+	if err := current(client.State{NextPreKeyID: 3}); err != nil || len(saved) != 1 {
+		t.Fatalf("a save after logging out brought the link back: %v, %d saves", err, len(saved))
 	}
 }

@@ -17,6 +17,7 @@ const (
 	AckInactive
 	AckGone
 	AckPeer
+	AckRetry
 )
 
 type Receipt struct {
@@ -47,6 +48,8 @@ func ackOf(kind string) (Ack, bool, bool) {
 		return AckGone, false, true
 	case "peer_msg":
 		return AckPeer, false, true
+	case "retry":
+		return AckRetry, false, true
 	default:
 		return AckDelivered, false, false
 	}
@@ -87,6 +90,59 @@ func ParseReceipt(n node.Node) (Receipt, error) {
 	}
 	if !view {
 		r.IDs = append(r.IDs, id)
+	}
+	return r, nil
+}
+
+type RetryRequest struct {
+	ID           string
+	From         node.JID
+	Participant  node.JID
+	Recipient    node.JID
+	Count        int
+	Registration []byte
+	Keys         *node.Node
+	echo         []node.Attr
+}
+
+func (r RetryRequest) Group() bool {
+	return r.From.Server == node.ServerGroup || r.From.Server == node.ServerBroadcast
+}
+
+func (r RetryRequest) Device() node.JID {
+	if r.Group() {
+		return r.Participant
+	}
+	return r.From
+}
+
+func ParseRetryRequest(n node.Node) (RetryRequest, error) {
+	id, _ := n.Attr("id").Text()
+	from, ok := n.Attr("from").JID()
+	kind, _ := n.Attr(attrType).Text()
+	retry, hasRetry := n.Child("retry")
+	registration, hasRegistration := n.Child("registration")
+	if n.Tag != tagReceipt || kind != "retry" || id == "" || !ok || !hasRetry || !hasRegistration {
+		return RetryRequest{}, fmt.Errorf("%w: not a retry request: %s", ErrIncoming, n)
+	}
+	count, err := strconv.Atoi(text(retry, "count"))
+	if err != nil || count < 1 {
+		return RetryRequest{}, fmt.Errorf("%w: retry count %q", ErrIncoming, text(retry, "count"))
+	}
+	r := RetryRequest{ID: id, From: from, Count: count, Registration: registration.Bytes}
+	r.Participant, _ = n.Attr(attrParticipant).JID()
+	r.Recipient, _ = n.Attr("recipient").JID()
+	if r.Group() && r.Participant.Server == "" {
+		return RetryRequest{}, fmt.Errorf("%w: group retry request without a participant", ErrIncoming)
+	}
+	if keys, ok := n.Child("keys"); ok {
+		r.Keys = &keys
+	}
+	r.echo = []node.Attr{{Key: "to", Value: n.Attr("from")}}
+	for _, key := range []string{attrParticipant, "recipient", "edit"} {
+		if v := n.Attr(key); !v.IsZero() {
+			r.echo = append(r.echo, node.Attr{Key: key, Value: v})
+		}
 	}
 	return r, nil
 }

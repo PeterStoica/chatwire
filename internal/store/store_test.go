@@ -15,7 +15,9 @@ import (
 
 	"modernc.org/sqlite"
 
+	"bytes"
 	"github.com/PeterStoica/chatwire/internal/node"
+	"github.com/PeterStoica/chatwire/internal/privacy"
 	"github.com/PeterStoica/chatwire/internal/store"
 	"github.com/PeterStoica/chatwire/internal/wire"
 )
@@ -930,5 +932,105 @@ func TestOneChatPerPersonWhateverTheirID(t *testing.T) {
 	}
 	if chats, err := s.Chats(ctx(t), 10); err != nil || len(chats) != 1 || chats[0].Unread != 0 {
 		t.Fatalf("chats after live traffic = %+v, %v", chats, err)
+	}
+}
+
+func TestPrivacyTokensKeepTheNewestAndFollowThePrivateID(t *testing.T) {
+	s := open(t)
+	bob := node.JID{User: "40722222222", Server: node.ServerUser}
+	bobLID := node.JID{User: "99001", Server: node.ServerLID}
+	at := func(sec int64) time.Time { return time.Unix(sec, 0) }
+	apply := func(tokens ...privacy.Token) {
+		t.Helper()
+		if err := s.Apply(ctx(t), store.Changes{Tokens: tokens}); err != nil {
+			t.Fatal(err)
+		}
+	}
+	check := func(who node.JID, theirs []byte, given, ours time.Time) {
+		t.Helper()
+		got, err := s.Token(ctx(t), who)
+		if err != nil || !bytes.Equal(got.Theirs, theirs) || !got.Given.Equal(given) || !got.Ours.Equal(ours) {
+			t.Fatalf("Token(%s) = %+v, %v; want %v given %v, ours %v", who, got, err, theirs, given, ours)
+		}
+	}
+	check(bob, nil, time.Time{}, time.Time{})
+
+	apply(privacy.Token{Contact: bob, Theirs: []byte{2}, Given: at(2000)})
+	apply(privacy.Token{Contact: bob, Theirs: []byte{1}, Given: at(1000)})
+	apply(privacy.Token{Contact: bob, Ours: at(5000)})
+	apply(privacy.Token{Contact: bob, Ours: at(4000)})
+	check(bob, []byte{2}, at(2000), at(5000))
+
+	apply(privacy.Token{Contact: bobLID, Theirs: []byte{3}, Given: at(3000), Ours: at(6000)})
+	check(bobLID, []byte{3}, at(3000), at(6000))
+	if err := s.Apply(ctx(t), store.Changes{LIDs: map[node.JID]node.JID{bobLID: bob}}); err != nil {
+		t.Fatal(err)
+	}
+	check(bob, []byte{3}, at(3000), at(6000))
+	check(bobLID, []byte{3}, at(3000), at(6000))
+}
+
+func TestLearningAPairRewritesOldAuthorsOnce(t *testing.T) {
+	s := open(t)
+	bob := node.JID{User: "40722222222", Server: node.ServerUser}
+	bobLID := node.JID{User: "99001", Server: node.ServerLID}
+	family := node.JID{User: "120363000000000031", Server: node.ServerGroup}
+	at := time.Unix(1790000000, 0)
+	if err := s.Apply(ctx(t), store.Changes{Messages: []store.Message{
+		{ID: "G1", Chat: family, Author: bobLID, Time: at, Message: &wire.Message{Conversation: new("from the private id")}},
+	}}); err != nil {
+		t.Fatal(err)
+	}
+	for range 2 {
+		if err := s.Apply(ctx(t), store.Changes{LIDs: map[node.JID]node.JID{bobLID: bob}}); err != nil {
+			t.Fatal(err)
+		}
+	}
+	got, ok, err := s.MessageIn(ctx(t), family, "G1")
+	if err != nil || !ok || got.Author != bob {
+		t.Fatalf("after learning the pair the author is %v (%v, %v)", got.Author, ok, err)
+	}
+	for _, j := range []node.JID{bob, bobLID, {User: bob.User, Device: 3, Server: bob.Server}} {
+		forms, err := s.Forms(ctx(t), j)
+		if err != nil || len(forms) != 2 || !slices.Contains(forms, bob) || !slices.Contains(forms, bobLID) {
+			t.Fatalf("Forms(%v) = %v, %v", j, forms, err)
+		}
+	}
+	if c, err := s.Canonical(ctx(t), bobLID); err != nil || c != bob {
+		t.Fatalf("Canonical(%v) = %v, %v", bobLID, c, err)
+	}
+	stranger := node.JID{User: "40799999999", Server: node.ServerUser}
+	if forms, err := s.Forms(ctx(t), stranger); err != nil || len(forms) != 1 || forms[0] != stranger {
+		t.Fatalf("Forms of someone without a pair = %v, %v", forms, err)
+	}
+}
+
+func TestDisappearingTimersKeepTheNewestSetting(t *testing.T) {
+	s := open(t)
+	lid := node.JID{User: "98765", Server: node.ServerLID}
+	week, day := uint32(7*24*3600), uint32(24*3600)
+	steps := []struct {
+		timer store.Timer
+		want  uint32
+	}{
+		{timer: store.Timer{Chat: bob, Seconds: week, Set: time.Unix(2000, 0)}, want: week},
+		{timer: store.Timer{Chat: bob, Seconds: day, Set: time.Unix(1000, 0)}, want: week},
+		{timer: store.Timer{Chat: lid, Seconds: day, Set: time.Unix(3000, 0)}, want: day},
+		{timer: store.Timer{Chat: bob, Seconds: 0, Set: time.Unix(4000, 0)}, want: 0},
+	}
+	if err := s.Apply(ctx(t), store.Changes{LIDs: map[node.JID]node.JID{lid: bob}}); err != nil {
+		t.Fatal(err)
+	}
+	for i, step := range steps {
+		if err := s.Apply(ctx(t), store.Changes{Timers: []store.Timer{step.timer}}); err != nil {
+			t.Fatal(err)
+		}
+		got, err := s.Timer(ctx(t), lid)
+		if err != nil || got.Seconds != step.want || got.Chat != bob {
+			t.Fatalf("step %d: Timer() = %+v, %v; want %d seconds on %v", i, got, err, step.want, bob)
+		}
+	}
+	if none, err := s.Timer(ctx(t), carol); err != nil || none.Seconds != 0 || !none.Set.IsZero() {
+		t.Fatalf("a chat never seen = %+v, %v", none, err)
 	}
 }

@@ -5,16 +5,23 @@ import (
 	"encoding/hex"
 	"errors"
 	"fmt"
+	"time"
 
 	"google.golang.org/protobuf/proto"
 
 	"github.com/PeterStoica/chatwire/internal/appstate"
+	"github.com/PeterStoica/chatwire/internal/limits"
 	"github.com/PeterStoica/chatwire/internal/media"
+	"github.com/PeterStoica/chatwire/internal/message"
 	"github.com/PeterStoica/chatwire/internal/node"
+	"github.com/PeterStoica/chatwire/internal/privacy"
 	"github.com/PeterStoica/chatwire/internal/wire"
 )
 
-const maxSyncRounds = 8
+const (
+	maxSyncRounds = 8
+	askKeyEvery   = 10 * time.Minute
+)
 
 type AppStateStore interface {
 	SyncState(ctx context.Context, collection string) (appstate.State, error)
@@ -81,8 +88,30 @@ func (c *Client) queueAppStateSync(names []string) {
 
 func (c *Client) notified(n node.Node) {
 	kind, _ := n.Attr("type").Text()
-	if kind == "mediaretry" {
+	switch kind {
+	case "mediaretry":
 		c.retried(n)
+		return
+	case "privacy_token":
+		if tokens, err := privacy.Received(c.mine, n); err == nil && len(tokens) > 0 && c.cfg.Tokens != nil {
+			c.cfg.Tokens(tokens)
+		}
+		return
+	case "encrypt":
+		c.encryptNotice(n)
+		return
+	case "devices":
+		c.devicesNotice(n)
+		return
+	case "w:gp2":
+		if group, ok := n.Attr("from").JID(); ok && group.Server == node.ServerGroup && c.cfg.Changed != nil {
+			c.cfg.Changed(group)
+		}
+		return
+	case "mex":
+		if notice, err := limits.Parse(n, c.cfg.Link.Now()); err == nil && c.cfg.Limits != nil {
+			c.cfg.Limits(notice)
+		}
 		return
 	}
 	if kind != "server_sync" {
@@ -146,7 +175,11 @@ func (c *Client) settle(ctx context.Context, r appstate.Response, st appstate.St
 		return false, nil
 	}
 	next, mutations, err := c.applySync(ctx, r, st)
+	var missing appstate.MissingKey
 	switch {
+	case errors.As(err, &missing):
+		c.askForKey(ctx, missing.ID)
+		return false, nil
 	case errors.Is(err, appstate.ErrMissingKey):
 		return false, nil
 	case errors.Is(err, appstate.ErrSnapshotMAC), errors.Is(err, appstate.ErrPatchMAC), errors.Is(err, appstate.ErrValueMAC), errors.Is(err, appstate.ErrIndexMAC):
@@ -170,10 +203,11 @@ func (c *Client) applySync(ctx context.Context, r appstate.Response, st appstate
 		if err := c.downloadBlob(ctx, r.Snapshot, &snapshot); err != nil {
 			return st, nil, err
 		}
-		next, mutations, err := st.ApplySnapshot(r.Name, &snapshot, c.syncKey)
+		next, mutations, skipped, err := st.ApplySnapshot(r.Name, &snapshot, c.syncKey)
 		if err != nil {
 			return st, nil, err
 		}
+		c.unreadable(r.Name, skipped)
 		st, all = next, mutations
 	}
 	for _, patch := range r.Patches {
@@ -184,13 +218,20 @@ func (c *Client) applySync(ctx context.Context, r appstate.Response, st appstate
 			}
 			patch.Mutations = mutations.GetMutations()
 		}
-		next, mutations, err := st.ApplyPatch(r.Name, patch, c.syncKey)
+		next, mutations, skipped, err := st.ApplyPatch(r.Name, patch, c.syncKey)
 		if err != nil {
 			return st, nil, err
 		}
+		c.unreadable(r.Name, skipped)
 		st, all = next, append(all, mutations...)
 	}
 	return st, all, nil
+}
+
+func (c *Client) unreadable(collection string, skipped int) {
+	if skipped > 0 && c.cfg.Problem != nil {
+		c.cfg.Problem(fmt.Errorf("client: app state %s: skipped %d records that could not be read", collection, skipped))
+	}
 }
 
 func (c *Client) downloadBlob(ctx context.Context, ref *wire.ExternalBlobReference, into proto.Message) error {
@@ -205,4 +246,25 @@ func (c *Client) downloadBlob(ctx context.Context, ref *wire.ExternalBlobReferen
 		return fmt.Errorf("client: app state blob: %w", err)
 	}
 	return nil
+}
+
+func (c *Client) askForKey(ctx context.Context, id []byte) {
+	if len(id) == 0 {
+		return
+	}
+	now := c.cfg.Link.Now()
+	name := hex.EncodeToString(id)
+	c.mu.Lock()
+	last, asked := c.askedKeys[name]
+	if asked && now.Sub(last) < askKeyEvery {
+		c.mu.Unlock()
+		return
+	}
+	c.askedKeys[name] = now
+	c.mu.Unlock()
+	if _, err := c.SendPeer(ctx, message.KeyRequest([][]byte{id})); err != nil {
+		c.mu.Lock()
+		delete(c.askedKeys, name)
+		c.mu.Unlock()
+	}
 }

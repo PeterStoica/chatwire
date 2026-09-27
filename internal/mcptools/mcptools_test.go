@@ -10,6 +10,7 @@ import (
 	"fmt"
 	"image"
 	"image/color"
+	"image/jpeg"
 	"image/png"
 	"net/http"
 	"net/http/httptest"
@@ -32,14 +33,6 @@ import (
 
 	"github.com/PeterStoica/chatwire/internal/appstate"
 	"github.com/PeterStoica/chatwire/internal/client"
-	"github.com/PeterStoica/chatwire/internal/fakeappstate"
-	"github.com/PeterStoica/chatwire/internal/fakecdn"
-	"github.com/PeterStoica/chatwire/internal/fakedevice"
-	"github.com/PeterStoica/chatwire/internal/fakegroups"
-	"github.com/PeterStoica/chatwire/internal/fakekeys"
-	"github.com/PeterStoica/chatwire/internal/fakerelay"
-	"github.com/PeterStoica/chatwire/internal/fakeusync"
-	"github.com/PeterStoica/chatwire/internal/fakeworld"
 	"github.com/PeterStoica/chatwire/internal/groups"
 	"github.com/PeterStoica/chatwire/internal/linker"
 	"github.com/PeterStoica/chatwire/internal/linkflow"
@@ -51,6 +44,15 @@ import (
 	"github.com/PeterStoica/chatwire/internal/node"
 	"github.com/PeterStoica/chatwire/internal/signal"
 	"github.com/PeterStoica/chatwire/internal/store"
+	"github.com/PeterStoica/chatwire/internal/testkit/fakeappstate"
+	"github.com/PeterStoica/chatwire/internal/testkit/fakecdn"
+	"github.com/PeterStoica/chatwire/internal/testkit/fakedevice"
+	"github.com/PeterStoica/chatwire/internal/testkit/fakegroups"
+	"github.com/PeterStoica/chatwire/internal/testkit/fakekeys"
+	"github.com/PeterStoica/chatwire/internal/testkit/fakemedia"
+	"github.com/PeterStoica/chatwire/internal/testkit/fakerelay"
+	"github.com/PeterStoica/chatwire/internal/testkit/fakeusync"
+	"github.com/PeterStoica/chatwire/internal/testkit/fakeworld"
 	"github.com/PeterStoica/chatwire/internal/wire"
 )
 
@@ -171,10 +173,14 @@ func TestLinkingByPhoneNumberFromClaudesSide(t *testing.T) {
 			t.Fatal(err)
 		}
 		named := map[string]bool{}
+		writes := map[string]bool{"send_whatsapp_message": true, "send_whatsapp_file": true, "change_whatsapp_message": true, "manage_whatsapp_group": true, "link_whatsapp": true}
 		for _, tool := range tools.Tools {
 			named[tool.Name] = true
 			if !portableName.MatchString(tool.Name) || len(tool.Description) > 1024 {
 				t.Fatalf("%s: a name or description other platforms refuse", tool.Name)
+			}
+			if a := tool.Annotations; a == nil || a.Title == "" || a.ReadOnlyHint == writes[tool.Name] {
+				t.Fatalf("%s: annotations %+v; only reads may say they change nothing", tool.Name, a)
 			}
 			raw, err := json.Marshal(tool.InputSchema)
 			if err != nil {
@@ -262,6 +268,33 @@ func TestLinkingByQRFromClaudesSide(t *testing.T) {
 	})
 }
 
+func TestReadOnlyLeavesOutEveryTool(t *testing.T) {
+	synctest.Test(t, func(t *testing.T) {
+		w, err := fakeworld.New(36)
+		if err != nil {
+			t.Fatal(err)
+		}
+		c, _ := connectWith(t, w, mcptools.Options{ReadOnly: true})
+		if !strings.HasSuffix(c.session.InitializeResult().Instructions, mcptools.ReadOnlyNote) {
+			t.Fatal("the instructions do not say it is read-only")
+		}
+		tools, err := c.session.ListTools(t.Context(), nil)
+		if err != nil {
+			t.Fatal(err)
+		}
+		var names []string
+		for _, tool := range tools.Tools {
+			if !tool.Annotations.ReadOnlyHint && tool.Name != "link_whatsapp" {
+				t.Fatalf("read-only mode offers %s", tool.Name)
+			}
+			names = append(names, tool.Name)
+		}
+		if !slices.Contains(names, "read_whatsapp_messages") || slices.Contains(names, "send_whatsapp_message") {
+			t.Fatalf("tools = %v", names)
+		}
+	})
+}
+
 func TestWaitingGivesUpAfterTheRequestedTime(t *testing.T) {
 	synctest.Test(t, func(t *testing.T) {
 		w, err := fakeworld.New(33)
@@ -279,8 +312,35 @@ func TestWaitingGivesUpAfterTheRequestedTime(t *testing.T) {
 			t.Fatalf("after %s: %+v", time.Since(start), report)
 		}
 		start = time.Now()
-		if report, _ := c.call("whatsapp_status", map[string]any{"wait_seconds": 999}); time.Since(start) != 120*time.Second || report.State != "waiting_for_code" {
+		if report, _ := c.call("whatsapp_status", map[string]any{"wait_seconds": 999}); time.Since(start) != 50*time.Second || report.State != "waiting_for_code" {
 			t.Fatalf("an oversized wait lasted %s: %+v", time.Since(start), report)
+		}
+	})
+}
+
+func TestWaitingEndsWhenTheCodeIsReplaced(t *testing.T) {
+	synctest.Test(t, func(t *testing.T) {
+		w, err := fakeworld.New(35)
+		if err != nil {
+			t.Fatal(err)
+		}
+		w.Script(func(fc *fakeworld.Conn) {
+			w.OfferPairing(fc)
+			for {
+				w.AnswerHello(fc)
+			}
+		})
+		c, _ := connect(t, w)
+		first, _ := c.call("link_whatsapp", map[string]any{"phone_number": "+40 700 000 000"})
+		start := time.Now()
+		report := first
+		for range 5 {
+			if report, _ = c.call("whatsapp_status", map[string]any{"wait_seconds": 50}); report.Code != first.Code {
+				break
+			}
+		}
+		if time.Since(start) != 195*time.Second || report.Code == first.Code || !strings.Contains(report.Detail, "NEW linking code: "+report.Code) {
+			t.Fatalf("after %s: %+v", time.Since(start), report)
 		}
 	})
 }
@@ -381,6 +441,19 @@ func TestSendingFromClaudeAfterLinking(t *testing.T) {
 		in, m, err := ourPhone.Receive(copies[0])
 		if err != nil || in.Chat != account || in.ID != sent.ID || m.GetDeviceSentMessage().GetDestinationJid() != account.String() || m.GetDeviceSentMessage().GetMessage().GetConversation() != "note to self" {
 			t.Fatalf("our phone read %v in %v: %v", m, in.Chat, err)
+		}
+		synctest.Sleep(5 * time.Second)
+		again, _ := callAs[mcptools.SendReport](c, "send_whatsapp_message", map[string]any{"to": "Me", "text": "note to self"})
+		if again.State != "sent" || again.ID != sent.ID || !strings.Contains(again.Detail, "already sent 5s ago") {
+			t.Fatalf("a repeated call = %+v, want the first send's result", again)
+		}
+		synctest.Sleep(30 * time.Second)
+		later, _ := callAs[mcptools.SendReport](c, "send_whatsapp_message", map[string]any{"to": "Me", "text": "note to self"})
+		mu.Lock()
+		copies = delivered[account]
+		mu.Unlock()
+		if later.State != "sent" || later.ID == sent.ID || len(copies) != 2 {
+			t.Fatalf("the same text half a minute later = %+v with %d copies, want a second message", later, len(copies))
 		}
 	})
 }
@@ -611,6 +684,10 @@ func TestGroupsFromClaude(t *testing.T) {
 		}
 		created := groups.Group{JID: node.JID{User: "120363000000000013", Server: node.ServerGroup}, Subject: "Book Club", Created: time.Unix(1700000000, 0), Participants: members}
 		groupsServer.Add(created)
+		inbox <- node.Node{Tag: "notification", Attrs: []node.Attr{
+			{Key: "from", Value: node.Address(created.JID)}, {Key: "type", Value: node.Text("w:gp2")}, {Key: "id", Value: node.Text("G1")}, {Key: "t", Value: node.Text("1790000100")},
+		}, Children: []node.Node{{Tag: "add", Children: []node.Node{{Tag: "participant", Attrs: []node.Attr{{Key: "jid", Value: node.Address(account)}}}}}}}
+		synctest.Wait()
 		if joined, _ := callAs[mcptools.SendReport](c, "send_whatsapp_message", map[string]any{"to": "book club", "text": "hello club"}); joined.State != "sent" || joined.To != "Book Club" {
 			t.Fatalf("a group made after connecting = %+v", joined)
 		}
@@ -1118,9 +1195,10 @@ func TestSendingFilesFromClaude(t *testing.T) {
 			t.Fatalf("send photo = %+v", sent)
 		}
 		photo := receive(t).GetImageMessage()
-		if photo.GetCaption() != "the view" || photo.GetWidth() != 320 || photo.GetHeight() != 160 || photo.GetMimetype() != "image/png" || len(photo.GetJpegThumbnail()) == 0 ||
-			!bytes.Equal(download(t, &wire.Message{ImageMessage: photo}), picture.Bytes()) {
-			t.Fatalf("bob got %v", photo)
+		got, err := jpeg.Decode(bytes.NewReader(download(t, &wire.Message{ImageMessage: photo})))
+		if err != nil || got.Bounds().Dx() != 320 || got.Bounds().Dy() != 160 || photo.GetCaption() != "the view" || photo.GetWidth() != 320 || photo.GetHeight() != 160 ||
+			photo.GetMimetype() != "image/jpeg" || len(photo.GetJpegThumbnail()) == 0 {
+			t.Fatalf("bob got %v, a picture that decodes as %v: %v", photo, got, err)
 		}
 		reopened, result := callAs[mcptools.MediaReport](c, "get_whatsapp_media", map[string]any{"message_id": sent.ID})
 		if reopened.State != "ok" || reopened.Type != "image" || len(result.Content) != 2 {
@@ -1134,6 +1212,24 @@ func TestSendingFilesFromClaude(t *testing.T) {
 		doc := media.Unwrap(receive(t))
 		if doc.GetDocumentMessage().GetFileName() != "Q3 report.pdf" || doc.GetDocumentMessage().GetMimetype() != "application/pdf" || !bytes.Equal(download(t, doc), report) {
 			t.Fatalf("the family got %v", doc)
+		}
+
+		for name, data := range map[string][]byte{"hello.opus": fakemedia.VoiceNote(4), "clip.mp4": fakemedia.Video(12, 1280, 720)} {
+			if err := os.WriteFile(filepath.Join(home, name), data, 0o600); err != nil {
+				t.Fatal(err)
+			}
+		}
+		if sent, _ := callAs[mcptools.SendReport](c, "send_whatsapp_file", map[string]any{"to": "+40 722 222 222", "path": "~/hello.opus"}); sent.State != "sent" {
+			t.Fatalf("send voice note = %+v", sent)
+		}
+		if voice := receive(t).GetAudioMessage(); !voice.GetPtt() || voice.GetSeconds() != 4 || len(voice.GetWaveform()) != 64 || voice.GetMimetype() != "audio/ogg; codecs=opus" {
+			t.Fatalf("bob got the voice note as %v", voice)
+		}
+		if sent, _ := callAs[mcptools.SendReport](c, "send_whatsapp_file", map[string]any{"to": "+40 722 222 222", "path": "~/clip.mp4"}); sent.State != "sent" {
+			t.Fatalf("send video = %+v", sent)
+		}
+		if video := receive(t).GetVideoMessage(); video.GetSeconds() != 12 || video.GetWidth() != 1280 || video.GetHeight() != 720 {
+			t.Fatalf("bob got the video as %v", video)
 		}
 
 		for _, tt := range []struct {
@@ -1231,13 +1327,16 @@ func TestMessageLifecycleFromClaude(t *testing.T) {
 			FileSha256: sealed.FileSHA256[:], FileEncSha256: sealed.FileEncSHA256[:], Mimetype: new("image/png")}})
 		synctest.Wait()
 
-		read, result := callAs[mcptools.ReadReport](c, "read_whatsapp_messages", map[string]any{"chat": "bob", "mark_read": true})
+		read, result := callAs[mcptools.ReadReport](c, "read_whatsapp_messages", map[string]any{"chat": "bob"})
 		if len(read.Messages) != 4 {
 			t.Fatalf("read = %+v", read.Messages)
 		}
+		if marked, _ := callAs[mcptools.ChangeReport](c, "change_whatsapp_message", map[string]any{"message_id": typo, "mark_read": true}); marked.State != "done" || !strings.Contains(marked.Detail, "as read") {
+			t.Fatalf("mark_read = %+v", marked)
+		}
 		mine, edited, deleted := read.Messages[0], read.Messages[1], read.Messages[2]
 		if mine.Text != "hi Bob" || !slices.Equal(mine.Reactions, []string{"👍 Bob"}) || edited.Text != "hello" || !edited.Edited || mine.Edited ||
-			deleted.Text != "" || deleted.Kind != "deleted" || !strings.Contains(read.Detail, "Marked as read.") || !fromText[mcptools.ReadReport](t, result).Messages[1].Edited ||
+			deleted.Text != "" || deleted.Kind != "deleted" || !fromText[mcptools.ReadReport](t, result).Messages[1].Edited ||
 			!slices.Equal(fromText[mcptools.ReadReport](t, result).Messages[0].Reactions, []string{"👍 Bob"}) {
 			t.Fatalf("read = %+v\n%s", read, textOf(result))
 		}
@@ -1277,6 +1376,12 @@ func TestMessageLifecycleFromClaude(t *testing.T) {
 		mu.Unlock()
 		if asked != 1 {
 			t.Fatalf("the phone was asked %d times; the second open must use the saved path", asked)
+		}
+		pathless := from(&wire.Message{ImageMessage: &wire.Message_ImageMessage{MediaKey: mediaKey,
+			FileSha256: sealed.FileSHA256[:], FileEncSha256: sealed.FileEncSHA256[:], Mimetype: new("image/png")}})
+		synctest.Wait()
+		if fetched, _ := callAs[mcptools.MediaReport](c, "get_whatsapp_media", map[string]any{"message_id": pathless}); fetched.State != "ok" {
+			t.Fatalf("a photo that came without a download path = %+v", fetched)
 		}
 	})
 }
@@ -1328,8 +1433,8 @@ func TestRepliesFromClaude(t *testing.T) {
 		w.Type(linking.Code)
 		c.call("whatsapp_status", map[string]any{"wait_seconds": 60})
 		synctest.Wait()
-		if empty, _ := callAs[mcptools.ReadReport](c, "read_whatsapp_messages", map[string]any{"chat": "+40 722 222 222", "mark_read": true}); strings.Contains(empty.Detail, "Marked as read") {
-			t.Fatalf("nothing was marked read, yet: %+v", empty)
+		if unknown, _ := callAs[mcptools.ChangeReport](c, "change_whatsapp_message", map[string]any{"message_id": "3EB0NOPE", "mark_read": true}); unknown.State != "unknown_message" {
+			t.Fatalf("mark_read on an unknown message = %+v", unknown)
 		}
 		from := func(m *wire.Message) string {
 			t.Helper()
@@ -1471,9 +1576,13 @@ func TestUnreadAndTicksFromClaude(t *testing.T) {
 		if elsewhere, _ := callAs[mcptools.ReadReport](c, "read_whatsapp_messages", map[string]any{"unread": true, "chat": "me"}); len(elsewhere.Messages) != 0 || elsewhere.Detail != "No unread messages." {
 			t.Fatalf("unread in another chat = %+v", elsewhere)
 		}
-		read, _ := callAs[mcptools.ReadReport](c, "read_whatsapp_messages", map[string]any{"chat": "bob", "mark_read": true})
-		if len(read.Messages) != 3 || read.Messages[2].Status != "read" || read.Messages[2].Text != "yes!" || read.Messages[0].Status != "" || !strings.HasSuffix(read.Detail, "Marked as read.") {
+		read, _ := callAs[mcptools.ReadReport](c, "read_whatsapp_messages", map[string]any{"chat": "bob"})
+		if len(read.Messages) != 3 || read.Messages[2].Status != "read" || read.Messages[2].Text != "yes!" || read.Messages[0].Status != "" ||
+			!strings.Contains(read.Detail, "The phone may keep older ones: call again with before="+read.Messages[0].ID) {
 			t.Fatalf("after the read receipt: %+v", read)
+		}
+		if marked, _ := callAs[mcptools.ChangeReport](c, "change_whatsapp_message", map[string]any{"message_id": read.Messages[0].ID, "mark_read": true}); marked.State != "done" || !strings.Contains(marked.Detail, "as read") {
+			t.Fatalf("mark_read = %+v", marked)
 		}
 		if count, _ := unread(); count != 0 {
 			t.Fatalf("unread after marking read = %d", count)
@@ -1483,8 +1592,15 @@ func TestUnreadAndTicksFromClaude(t *testing.T) {
 		if count, _ := unread(); count != 1 {
 			t.Fatalf("unread after a new message = %d", count)
 		}
-		if missed, _ := callAs[mcptools.ReadReport](c, "read_whatsapp_messages", map[string]any{"unread": true, "chat": "bob", "mark_read": true}); len(missed.Messages) != 1 || missed.Messages[0].Text != "one more" || !strings.HasSuffix(missed.Detail, "Marked as read.") {
+		missed, _ = callAs[mcptools.ReadReport](c, "read_whatsapp_messages", map[string]any{"unread": true, "chat": "bob"})
+		if len(missed.Messages) != 1 || missed.Messages[0].Text != "one more" {
 			t.Fatalf("the one new message = %+v", missed)
+		}
+		if marked, _ := callAs[mcptools.ChangeReport](c, "change_whatsapp_message", map[string]any{"message_id": missed.Messages[0].ID, "mark_read": true}); marked.Detail != "Marked 1 message(s) in Bob (+40722222222) as read; the senders see blue ticks." {
+			t.Fatalf("mark_read = %+v", marked)
+		}
+		if again, _ := callAs[mcptools.ChangeReport](c, "change_whatsapp_message", map[string]any{"message_id": missed.Messages[0].ID, "mark_read": true}); again.State != "done" || !strings.HasPrefix(again.Detail, "Nothing in ") {
+			t.Fatalf("mark_read with nothing unread = %+v", again)
 		}
 		if count, _ := unread(); count != 0 {
 			t.Fatalf("unread after reading the new message = %d", count)
@@ -2098,4 +2214,124 @@ func unportable(schema any) string {
 		}
 	}
 	return ""
+}
+
+func TestStatusMentionsANewerChatwire(t *testing.T) {
+	synctest.Test(t, func(t *testing.T) {
+		w, err := fakeworld.New(91)
+		if err != nil {
+			t.Fatal(err)
+		}
+		newer := true
+		c, _ := connectWith(t, w, mcptools.Options{Update: func() (string, bool) { return "v9.9.9", newer }})
+		report, _ := c.call("whatsapp_status", nil)
+		if report.Update != "v9.9.9" || !strings.Contains(report.Detail, "chatwire update") {
+			t.Fatalf("with a newer release out: %+v", report)
+		}
+		newer = false
+		if report, _ := c.call("whatsapp_status", nil); report.Update != "" || strings.Contains(report.Detail, "chatwire update") {
+			t.Fatalf("when up to date: %+v", report)
+		}
+	})
+}
+
+func TestManagingAGroupFromClaude(t *testing.T) {
+	synctest.Test(t, func(t *testing.T) {
+		w, err := fakeworld.New(37)
+		if err != nil {
+			t.Fatal(err)
+		}
+		account := node.JID{User: w.Phone.JID.User, Server: w.Phone.JID.Server}
+		bob := node.JID{User: "40722222222", Server: node.ServerUser}
+		carol := node.JID{User: "40733333333", Server: node.ServerUser}
+		shy := node.JID{User: "40744444444", Server: node.ServerUser}
+		family := groups.Group{JID: node.JID{User: "120363000000000011", Server: node.ServerGroup}, Subject: "Family", Created: time.Unix(1700000000, 0),
+			Participants: []groups.Participant{{JID: account, Admin: true}, {JID: bob}}, Description: "Sunday lunch", DescriptionID: "D1"}
+		work := groups.Group{JID: node.JID{User: "120363000000000012", Server: node.ServerGroup}, Subject: "Work", Created: time.Unix(1700000000, 0),
+			Participants: []groups.Participant{{JID: account}, {JID: bob, Admin: true}}}
+		groupsServer := fakegroups.New(family, work)
+		groupsServer.Actor, groupsServer.InviteOnly = account, map[node.JID]bool{shy: true}
+		w.Script(w.CodePairing(), w.Login(fakeworld.Success()), w.Serve(&fakeworld.Server{
+			Keys: fakekeys.New(), Devices: fakeusync.New(), PushName: "Me", Inbox: make(chan node.Node), Groups: groupsServer,
+		}))
+		c, _ := connect(t, w)
+		linking, _ := c.call("link_whatsapp", map[string]any{"phone_number": "+40 700 000 000"})
+		w.Type(linking.Code)
+		c.call("whatsapp_status", map[string]any{"wait_seconds": 60})
+		synctest.Wait()
+		manage := func(args map[string]any) mcptools.GroupReport {
+			t.Helper()
+			report, _ := callAs[mcptools.GroupReport](c, "manage_whatsapp_group", args)
+			return report
+		}
+		if r := manage(map[string]any{"group": "family", "action": "rename", "text": "Family 2026"}); r.State != "done" {
+			t.Fatalf("rename: %+v", r)
+		}
+		if r := manage(map[string]any{"group": "family 2026", "action": "describe", "text": "Lunch at 1"}); r.State != "done" {
+			t.Fatalf("describe: %+v", r)
+		}
+		r := manage(map[string]any{"group": "family 2026", "action": "add", "people": []string{"+40 733 333 333", "+40744444444", "+40722222222"}})
+		if r.State != "partly_done" || len(r.Changed) != 1 || len(r.Failed) != 2 || !strings.Contains(r.Failed[0].Reason, "invite") || r.Failed[1].Reason != "already in the group" {
+			t.Fatalf("add: %+v", r)
+		}
+		if r := manage(map[string]any{"group": "family 2026", "action": "make_admin", "people": []string{"+40733333333"}}); r.State != "done" {
+			t.Fatalf("make_admin: %+v", r)
+		}
+		if r := manage(map[string]any{"group": "family 2026", "action": "remove", "people": []string{"+40722222222"}}); r.State != "done" {
+			t.Fatalf("remove: %+v", r)
+		}
+		after, _ := groupsServer.Group(family.JID)
+		if after.Subject != "Family 2026" || after.Description != "Lunch at 1" || len(after.Participants) != 2 || after.Participants[1].JID != carol || !after.Participants[1].Admin {
+			t.Fatalf("the group after the changes: %+v", after)
+		}
+		if r := manage(map[string]any{"group": "work", "action": "rename", "text": "Mine now"}); r.State != "not_admin" {
+			t.Fatalf("renaming a group we do not run: %+v", r)
+		}
+		if r := manage(map[string]any{"group": "family 2026", "action": "rename", "text": strings.Repeat("x", 101)}); r.State != "invalid" {
+			t.Fatalf("a name that is too long: %+v", r)
+		}
+		if r := manage(map[string]any{"group": "family 2026", "action": "dance"}); r.State != "unknown_action" {
+			t.Fatalf("an unknown action: %+v", r)
+		}
+		if r := manage(map[string]any{"group": "work", "action": "leave"}); r.State != "done" {
+			t.Fatalf("leave: %+v", r)
+		}
+		if left, _ := groupsServer.Group(work.JID); len(left.Participants) != 1 {
+			t.Fatalf("still in work after leaving: %+v", left.Participants)
+		}
+	})
+}
+
+func TestCheckingNumbersFromClaude(t *testing.T) {
+	synctest.Test(t, func(t *testing.T) {
+		w, err := fakeworld.New(38)
+		if err != nil {
+			t.Fatal(err)
+		}
+		bob := node.JID{User: "40722222222", Server: node.ServerUser}
+		devices := fakeusync.New()
+		devices.Set(bob, fakeusync.Device{ID: 0})
+		devices.Profile(bob, node.JID{User: "99001", Server: node.ServerLID}, "At the gym")
+		w.Script(w.CodePairing(), w.Login(fakeworld.Success()), w.Serve(&fakeworld.Server{Keys: fakekeys.New(), Devices: devices, PushName: "Me", Inbox: make(chan node.Node)}))
+		c, _ := connect(t, w)
+		linking, _ := c.call("link_whatsapp", map[string]any{"phone_number": "+40 700 000 000"})
+		w.Type(linking.Code)
+		c.call("whatsapp_status", map[string]any{"wait_seconds": 60})
+		synctest.Wait()
+		report, result := callAs[mcptools.LookUpReport](c, "check_whatsapp_numbers", map[string]any{"numbers": []string{"+40 722 222 222", "+40799999999"}})
+		if report.State != "ok" || len(report.Numbers) != 2 || !report.Numbers[0].OnWhatsApp || report.Numbers[0].About != "At the gym" ||
+			report.Numbers[1].OnWhatsApp || report.Numbers[1].Number != "+40799999999" || !strings.Contains(textOf(result), "1 of 2 on WhatsApp") {
+			t.Fatalf("lookup = %+v\n%s", report, textOf(result))
+		}
+		many := make([]string, 11)
+		for i := range many {
+			many[i] = fmt.Sprintf("+4072000000%d", i)
+		}
+		if r, _ := callAs[mcptools.LookUpReport](c, "check_whatsapp_numbers", map[string]any{"numbers": many}); r.State != "too_many" {
+			t.Fatalf("eleven numbers: %+v", r)
+		}
+		if r, _ := callAs[mcptools.LookUpReport](c, "check_whatsapp_numbers", map[string]any{"numbers": []string{"bob"}}); r.State != "invalid_number" {
+			t.Fatalf("a name instead of a number: %+v", r)
+		}
+	})
 }

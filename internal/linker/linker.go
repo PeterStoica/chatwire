@@ -52,6 +52,7 @@ type Status struct {
 	Phase   Phase
 	Phone   pairing.Phone
 	Code    string
+	Renewed bool
 	QR      string
 	Account pairing.Account
 	Err     error
@@ -150,6 +151,7 @@ func (l *Linker) show(ctx context.Context, status Status) {
 	l.mu.Lock()
 	defer l.mu.Unlock()
 	if ctx.Err() == nil {
+		status.Renewed = status.Code != "" && l.status.Phase == ShowingCode && l.status.Code != status.Code
 		l.setLocked(status)
 	}
 }
@@ -157,7 +159,7 @@ func (l *Linker) show(ctx context.Context, status Status) {
 func (l *Linker) finish(phone pairing.Phone, linked linkflow.Linked, err error) {
 	status := Status{Phase: Linked, Phone: phone, Account: linked.Account}
 	switch {
-	case errors.Is(err, linkflow.ErrQRExpired), errors.Is(err, linkflow.ErrEnded):
+	case errors.Is(err, linkflow.ErrQRExpired), errors.Is(err, linkflow.ErrCodeExpired), errors.Is(err, linkflow.ErrEnded):
 		status = Status{Phase: Expired, Phone: phone, Err: err}
 	case err != nil:
 		status = Status{Phase: Failed, Phone: phone, Err: err}

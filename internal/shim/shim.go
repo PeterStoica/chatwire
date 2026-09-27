@@ -6,6 +6,7 @@ import (
 	"fmt"
 	"io"
 	"net"
+	"net/url"
 	"os"
 	"path/filepath"
 	"time"
@@ -27,6 +28,7 @@ type Launcher struct {
 	Build      string
 	Executable string
 	DaemonArgs []string
+	Settings   url.Values
 }
 
 func (l Launcher) Connect(ctx context.Context) (net.Conn, error) {
@@ -70,7 +72,7 @@ func (l Launcher) greet(ctx context.Context, path string) (net.Conn, error) {
 	if err != nil {
 		return nil, fmt.Errorf("shim: dial: %w", err)
 	}
-	if err := daemon.Hello(conn, l.Build); err != nil {
+	if err := daemon.Hello(conn, l.Build, l.Settings); err != nil {
 		_ = conn.Close()
 		return nil, err
 	}
@@ -119,4 +121,25 @@ func Pipe(ctx context.Context, conn net.Conn, in io.Reader, out io.Writer) error
 		<-done
 	}
 	return conn.Close()
+}
+
+func WhileParentLives(ctx context.Context, parent func() int, every time.Duration) (context.Context, context.CancelFunc) {
+	ctx, cancel := context.WithCancel(ctx)
+	first := parent()
+	go func() {
+		ticker := time.NewTicker(every)
+		defer ticker.Stop()
+		for {
+			select {
+			case <-ctx.Done():
+				return
+			case <-ticker.C:
+				if parent() != first {
+					cancel()
+					return
+				}
+			}
+		}
+	}()
+	return ctx, cancel
 }

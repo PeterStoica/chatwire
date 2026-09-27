@@ -1,10 +1,12 @@
 package daemon_test
 
 import (
+	"bufio"
 	"context"
 	"errors"
 	"io"
 	"net"
+	"net/url"
 	"os"
 	"path/filepath"
 	"runtime"
@@ -28,7 +30,7 @@ func socket(t *testing.T) string {
 	return filepath.Join(dir, "run", "daemon.sock")
 }
 
-func echo(_ context.Context, conn io.ReadWriteCloser) {
+func echo(_ context.Context, conn io.ReadWriteCloser, _ url.Values) {
 	_, _ = io.Copy(conn, conn)
 }
 
@@ -65,7 +67,7 @@ func TestSessionsStartAfterTheHello(t *testing.T) {
 		t.Fatalf("socket dir: %v, %v", dir.Mode(), err)
 	}
 	conn := dial(t, path)
-	if err := daemon.Hello(conn, "build-a"); err != nil {
+	if err := daemon.Hello(conn, "build-a", nil); err != nil {
 		t.Fatal(err)
 	}
 	if _, err := io.WriteString(conn, "ping\n"); err != nil {
@@ -81,7 +83,7 @@ func TestAnotherBuildRestartsTheDaemon(t *testing.T) {
 	t.Parallel()
 	path := socket(t)
 	done := serve(t, path, "build-a", time.Minute)
-	if err := daemon.Hello(dial(t, path), "build-b"); !errors.Is(err, daemon.ErrRestart) {
+	if err := daemon.Hello(dial(t, path), "build-b", nil); !errors.Is(err, daemon.ErrRestart) {
 		t.Fatalf("Hello() = %v, want ErrRestart", err)
 	}
 	select {
@@ -111,7 +113,7 @@ func TestBadHellosGetNoSession(t *testing.T) {
 		}
 	}
 	conn := dial(t, path)
-	if err := daemon.Hello(conn, "build-a"); err != nil {
+	if err := daemon.Hello(conn, "build-a", nil); err != nil {
 		t.Fatalf("the daemon stopped serving after bad hellos: %v", err)
 	}
 }
@@ -125,7 +127,7 @@ func TestHelloRefusesStrangeReplies(t *testing.T) {
 			_, _ = io.WriteString(server, reply)
 			_ = server.Close()
 		}()
-		if err := daemon.Hello(client, "build-a"); !errors.Is(err, daemon.ErrHello) {
+		if err := daemon.Hello(client, "build-a", nil); !errors.Is(err, daemon.ErrHello) {
 			t.Errorf("reply %.20q: Hello() = %v, want ErrHello", reply, err)
 		}
 		_ = client.Close()
@@ -167,7 +169,7 @@ func TestTheDaemonLingersAfterItsLastSession(t *testing.T) {
 	start := time.Now()
 	done := serve(t, path, "build-a", linger)
 	conn := dial(t, path)
-	if err := daemon.Hello(conn, "build-a"); err != nil {
+	if err := daemon.Hello(conn, "build-a", nil); err != nil {
 		t.Fatal(err)
 	}
 	time.Sleep(2 * linger)
@@ -195,17 +197,41 @@ func TestHelloLinesUpToTheLimit(t *testing.T) {
 		build string
 		ok    bool
 	}{
-		{name: "the longest line", build: strings.Repeat("b", 255-len("chatwire ")), ok: true},
-		{name: "one byte more", build: strings.Repeat("b", 256-len("chatwire ")), ok: false},
+		{name: "the longest line", build: strings.Repeat("b", 8192-len("chatwire  ")), ok: true},
+		{name: "one byte more", build: strings.Repeat("b", 8193-len("chatwire  ")), ok: false},
 	} {
 		t.Run(tt.name, func(t *testing.T) {
 			t.Parallel()
 			path := socket(t)
 			serve(t, path, tt.build, time.Minute)
-			if err := daemon.Hello(dial(t, path), tt.build); (err == nil) != tt.ok {
+			if err := daemon.Hello(dial(t, path), tt.build, nil); (err == nil) != tt.ok {
 				t.Fatalf("Hello() = %v, want ok %v", err, tt.ok)
 			}
 		})
+	}
+}
+
+func TestEachSessionGetsTheSettingsItsAppSent(t *testing.T) {
+	t.Parallel()
+	path := socket(t)
+	listener, err := daemon.Listen(t.Context(), path)
+	if err != nil {
+		t.Fatal(err)
+	}
+	go func() {
+		_ = daemon.New(listener, "build-a", time.Minute, func(_ context.Context, conn io.ReadWriteCloser, settings url.Values) {
+			_, _ = io.WriteString(conn, settings.Get("files")+"|"+settings.Get("read_only")+"\n")
+		}).Serve(t.Context())
+	}()
+	for _, want := range []url.Values{{"files": {"/a b:/c&d"}, "read_only": {"1"}}, nil} {
+		conn := dial(t, path)
+		if err := daemon.Hello(conn, "build-a", want); err != nil {
+			t.Fatal(err)
+		}
+		got, err := bufio.NewReader(conn).ReadString('\n')
+		if err != nil || got != want.Get("files")+"|"+want.Get("read_only")+"\n" {
+			t.Fatalf("session saw %q, %v; want %v", got, err, want)
+		}
 	}
 }
 

@@ -22,7 +22,7 @@ func (m *Messenger) SendText(ctx context.Context, to node.JID, text string, ment
 	if len(mentions) > 0 {
 		msg = &wire.Message{ExtendedTextMessage: &wire.Message_ExtendedTextMessage{Text: new(text), ContextInfo: &wire.ContextInfo{MentionedJid: addresses(mentions)}}}
 	}
-	return m.send(ctx, to, func(*client.Client) (*wire.Message, error) { return msg, nil })
+	return m.sendMessage(ctx, to, msg)
 }
 
 func (m *Messenger) SendPoll(ctx context.Context, to node.JID, question string, options []string, multiple bool) (string, error) {
@@ -30,13 +30,8 @@ func (m *Messenger) SendPoll(ctx context.Context, to node.JID, question string, 
 	if err != nil {
 		return "", err
 	}
-	secret := make([]byte, message.SecretSize)
-	if _, err := io.ReadFull(m.link.Random, secret); err != nil {
-		return "", fmt.Errorf("messenger: poll secret: %w", err)
-	}
 	poll := message.NewPoll(question, options, multiple)
-	poll.MessageContextInfo = &wire.MessageContextInfo{MessageSecret: secret}
-	return m.send(ctx, to, func(*client.Client) (*wire.Message, error) { return poll, nil })
+	return m.sendMessage(ctx, to, poll)
 }
 
 func addresses(jids []node.JID) []string {
@@ -64,12 +59,20 @@ func (m *Messenger) Reply(ctx context.Context, to node.JID, text, quotedID strin
 	if len(mentions) > 0 {
 		reply.ExtendedTextMessage.ContextInfo.MentionedJid = addresses(mentions)
 	}
-	id, err := m.send(ctx, to, func(*client.Client) (*wire.Message, error) { return reply, nil })
+	id, err := m.sendMessage(ctx, to, reply)
 	return id, to, err
 }
 
 func (m *Messenger) SendFile(ctx context.Context, to node.JID, f File) (string, error) {
 	return m.send(ctx, to, func(c *client.Client) (*wire.Message, error) { return fileMessage(ctx, c, f, m.link.Now()) })
+}
+
+func (m *Messenger) sendMessage(ctx context.Context, to node.JID, msg *wire.Message) (string, error) {
+	return m.send(ctx, to, func(*client.Client) (*wire.Message, error) { return msg, nil })
+}
+
+func captioned(document *wire.Message) *wire.Message {
+	return &wire.Message{DocumentWithCaptionMessage: &wire.Message_FutureProofMessage{Message: document}}
 }
 
 func (m *Messenger) send(ctx context.Context, to node.JID, build func(*client.Client) (*wire.Message, error)) (string, error) {
@@ -92,29 +95,100 @@ func (m *Messenger) send(ctx context.Context, to node.JID, build func(*client.Cl
 	if err != nil {
 		return "", err
 	}
-	var id string
-	if group != nil {
-		id, err = c.SendGroup(ctx, *group, msg)
-	} else {
-		id, err = c.Send(ctx, to, msg)
+	seconds, set := m.timerFor(ctx, to, group)
+	msg = message.Disappearing(msg, seconds, set)
+	if message.NeedsSecret(msg) {
+		secret := make([]byte, message.SecretSize)
+		if _, err := io.ReadFull(m.link.Random, secret); err != nil {
+			return "", fmt.Errorf("messenger: message secret: %w", err)
+		}
+		msg = message.WithSecret(msg, secret)
+	}
+	deliver := func(c *client.Client, id string) (string, error) {
+		if group != nil {
+			return c.SendGroupWithID(ctx, *group, id, msg)
+		}
+		return c.SendWithID(ctx, to, id, msg)
+	}
+	id, err := deliver(c, "")
+	if id != "" && errors.Is(err, client.ErrClosed) {
+		if next, ok := m.replacement(ctx, c); ok {
+			if _, again := deliver(next, id); again != nil {
+				err = fmt.Errorf("%w; sending it again after reconnecting: %w", err, again)
+			} else {
+				err = nil
+			}
+		}
 	}
 	if err == nil {
 		m.sent(ctx, to, id, msg)
 	}
+	if rejected := (client.Rejection{}); errors.As(err, &rejected) && rejected.Code == client.CodeRestricted {
+		m.mu.Lock()
+		m.limited = m.link.Now().Add(restrictedFor)
+		m.mu.Unlock()
+	}
 	return id, err
 }
 
+func (m *Messenger) timerFor(ctx context.Context, to node.JID, group *groups.Group) (uint32, time.Time) {
+	if group != nil {
+		return group.Disappearing, time.Time{}
+	}
+	t, err := m.store.Timer(ctx, to)
+	if err != nil {
+		return 0, time.Time{}
+	}
+	return t.Seconds, t.Set
+}
+
+func (m *Messenger) replacement(ctx context.Context, old *client.Client) (*client.Client, bool) {
+	ctx, cancel := context.WithTimeout(ctx, reconnectWait)
+	defer cancel()
+	m.mu.Lock()
+	current, retired := m.client, m.retired
+	m.mu.Unlock()
+	if current == old {
+		select {
+		case <-retired:
+		case <-ctx.Done():
+			return nil, false
+		}
+	}
+	next, err := m.connected(ctx)
+	return next, err == nil && next != old
+}
+
 func (m *Messenger) group(ctx context.Context, c *client.Client, jid node.JID) (groups.Group, error) {
-	listed, err := c.Groups(ctx)
+	now := m.link.Now()
+	m.mu.Lock()
+	cached, ok := m.known[jid]
+	m.mu.Unlock()
+	if ok && now.Sub(cached.at) < groupsFresh {
+		return cached.group, nil
+	}
+	g, found, err := c.Group(ctx, jid)
 	if err != nil {
 		return groups.Group{}, err
 	}
-	for _, g := range listed {
-		if g.JID == jid {
-			return g, nil
-		}
+	if !found {
+		return groups.Group{}, fmt.Errorf("%w: %s", ErrNotMember, jid)
 	}
-	return groups.Group{}, fmt.Errorf("%w: %s", ErrNotMember, jid)
+	m.mu.Lock()
+	m.known[jid] = cachedGroup{group: g, at: now}
+	m.mu.Unlock()
+	if pairs := pairsIn(g); len(pairs) > 0 {
+		c.Learn(pairs)
+		m.keep(ctx, func(ctx context.Context) error { return m.store.Apply(ctx, store.Changes{LIDs: pairs}) })
+	}
+	return g, nil
+}
+
+func (m *Messenger) groupChanged(group node.JID) {
+	m.mu.Lock()
+	defer m.mu.Unlock()
+	delete(m.known, group)
+	m.listed = nil
 }
 
 func (m *Messenger) MarkRead(ctx context.Context, messages []store.Message) error {
@@ -159,8 +233,12 @@ type File struct {
 }
 
 func fileMessage(ctx context.Context, c *client.Client, f File, now time.Time) (*wire.Message, error) {
-	mimetype := media.Sniff(f.Name, f.Data)
-	kind := media.KindOf(mimetype)
+	mimetype, data, kind := media.Prepare(media.Sniff(f.Name, f.Data), f.Data)
+	f.Data = data
+	recording, opus := media.OggOpus(f.Data)
+	if kind == media.Voice && !opus {
+		mimetype, kind = "audio/ogg", media.Audio
+	}
 	up, err := c.Upload(ctx, kind, f.Data)
 	if err != nil {
 		return nil, err
@@ -181,15 +259,32 @@ func fileMessage(ctx context.Context, c *client.Client, f File, now time.Time) (
 		}
 		return &wire.Message{ImageMessage: image}, nil
 	case media.Video:
-		return &wire.Message{VideoMessage: &wire.Message_VideoMessage{
+		video := &wire.Message_VideoMessage{
 			Url: new(up.URL), DirectPath: new(up.DirectPath), MediaKey: up.MediaKey, Mimetype: new(mimetype),
 			FileEncSha256: up.FileEncSHA256, FileSha256: up.FileSHA256, FileLength: new(up.FileLength), MediaKeyTimestamp: new(stamp), Caption: caption,
-		}}, nil
+		}
+		if movie, ok := media.MP4(f.Data); ok {
+			video.Seconds = new(movie.Seconds)
+			if movie.Width > 0 && movie.Height > 0 {
+				video.Width, video.Height = new(movie.Width), new(movie.Height)
+			}
+		}
+		return &wire.Message{VideoMessage: video}, nil
 	case media.Voice, media.Audio:
-		return &wire.Message{AudioMessage: &wire.Message_AudioMessage{
+		audio := &wire.Message_AudioMessage{
 			Url: new(up.URL), DirectPath: new(up.DirectPath), MediaKey: up.MediaKey, Mimetype: new(mimetype),
 			FileEncSha256: up.FileEncSHA256, FileSha256: up.FileSHA256, FileLength: new(up.FileLength), MediaKeyTimestamp: new(stamp), Ptt: new(kind == media.Voice),
-		}}, nil
+		}
+		switch movie, isMP4 := media.MP4(f.Data); {
+		case opus:
+			audio.Seconds = new(recording.Seconds)
+			if kind == media.Voice {
+				audio.Waveform = recording.Waveform
+			}
+		case isMP4:
+			audio.Seconds = new(movie.Seconds)
+		}
+		return &wire.Message{AudioMessage: audio}, nil
 	default:
 		document := &wire.Message{DocumentMessage: &wire.Message_DocumentMessage{
 			Url: new(up.URL), DirectPath: new(up.DirectPath), MediaKey: up.MediaKey, Mimetype: new(mimetype),
@@ -197,7 +292,7 @@ func fileMessage(ctx context.Context, c *client.Client, f File, now time.Time) (
 			FileName: new(f.Name), Title: new(f.Name), Caption: caption,
 		}}
 		if caption != nil {
-			return &wire.Message{DocumentWithCaptionMessage: &wire.Message_FutureProofMessage{Message: document}}, nil
+			return captioned(document), nil
 		}
 		return document, nil
 	}
@@ -210,8 +305,23 @@ func (m *Messenger) pace(ctx context.Context, to node.JID) error {
 		return err
 	case p.LastMinute >= MaxPerMinute:
 		return fmt.Errorf("%w: %d messages in the last minute", ErrTooFast, p.LastMinute)
-	case !p.Known && to.Server != node.ServerGroup && !m.Mine(to) && p.NewChats >= MaxNewChats:
+	case to.Server == node.ServerGroup || m.Mine(to):
+		return nil
+	}
+	if err := m.limitedFor(ctx, to); err != nil {
+		return err
+	}
+	switch {
+	case p.Known:
+		return nil
+	case p.NewChats >= MaxNewChats:
 		return fmt.Errorf("%w: %d new chats in the last 24 hours", ErrNewChats, p.NewChats)
+	}
+	m.mu.Lock()
+	limited := m.limited
+	m.mu.Unlock()
+	if now := m.link.Now(); now.Before(limited) {
+		return fmt.Errorf("%w until %s", ErrRestricted, limited.Format(time.RFC3339))
 	}
 	return nil
 }

@@ -8,6 +8,7 @@ import (
 	"net/http"
 	"net/http/httptest"
 	"path/filepath"
+	"slices"
 	"sync/atomic"
 	"testing"
 	"testing/synctest"
@@ -17,20 +18,23 @@ import (
 
 	"github.com/PeterStoica/chatwire/internal/client"
 	"github.com/PeterStoica/chatwire/internal/device"
-	"github.com/PeterStoica/chatwire/internal/fakedevice"
-	"github.com/PeterStoica/chatwire/internal/fakegroups"
-	"github.com/PeterStoica/chatwire/internal/fakekeys"
-	"github.com/PeterStoica/chatwire/internal/fakerelay"
-	"github.com/PeterStoica/chatwire/internal/fakeusync"
-	"github.com/PeterStoica/chatwire/internal/fakeworld"
 	"github.com/PeterStoica/chatwire/internal/groups"
 	"github.com/PeterStoica/chatwire/internal/linkflow"
 	"github.com/PeterStoica/chatwire/internal/media"
+	"github.com/PeterStoica/chatwire/internal/message"
 	"github.com/PeterStoica/chatwire/internal/messenger"
 	"github.com/PeterStoica/chatwire/internal/node"
 	"github.com/PeterStoica/chatwire/internal/pairing"
 	"github.com/PeterStoica/chatwire/internal/store"
+	"github.com/PeterStoica/chatwire/internal/testkit/fakedevice"
+	"github.com/PeterStoica/chatwire/internal/testkit/fakegroups"
+	"github.com/PeterStoica/chatwire/internal/testkit/fakekeys"
+	"github.com/PeterStoica/chatwire/internal/testkit/fakephone"
+	"github.com/PeterStoica/chatwire/internal/testkit/fakerelay"
+	"github.com/PeterStoica/chatwire/internal/testkit/fakeusync"
+	"github.com/PeterStoica/chatwire/internal/testkit/fakeworld"
 	"github.com/PeterStoica/chatwire/internal/wire"
+	"sync"
 )
 
 func TestMain(m *testing.M) {
@@ -144,6 +148,181 @@ func TestReconnectsAfterWhatsAppDropsTheStream(t *testing.T) {
 	})
 }
 
+type dropped struct {
+	mu  sync.Mutex
+	ids []string
+}
+
+func (d *dropped) sent() []string {
+	d.mu.Lock()
+	defer d.mu.Unlock()
+	return slices.Clone(d.ids)
+}
+
+func dropMessages(r *rig, drops int, cut bool) *dropped {
+	d := &dropped{}
+	r.server.Drop = func(n node.Node) bool {
+		if n.Tag != "message" {
+			return false
+		}
+		id, _ := n.Attr("id").Text()
+		d.mu.Lock()
+		d.ids = append(d.ids, id)
+		count := len(d.ids)
+		d.mu.Unlock()
+		if count > drops {
+			return false
+		}
+		if cut {
+			r.server.Inbox <- node.Node{Tag: "stream:error", Attrs: []node.Attr{{Key: "code", Value: node.Text("503")}}}
+		}
+		return true
+	}
+	return d
+}
+
+func TestAMessageCutOffByADropIsSentAgainUnderTheSameID(t *testing.T) {
+	synctest.Test(t, func(t *testing.T) {
+		r := newRig(t)
+		d := dropMessages(r, 1, true)
+		r.world.Script(r.world.Serve(r.server), r.world.Serve(r.server))
+		r.m.Start(t.Context(), r.state)
+		id, err := r.m.SendText(t.Context(), r.bob, "through the drop")
+		if err != nil {
+			t.Fatal(err)
+		}
+		if ids := d.sent(); len(ids) != 2 || ids[0] != id || ids[1] != id || r.delivers.Load() != 1 || r.world.Dials() != 2 {
+			t.Fatalf("sent ids %v for %q, delivered %d, dialled %d", ids, id, r.delivers.Load(), r.world.Dials())
+		}
+		if recent := r.recent(t); len(recent) != 1 || recent[0].ID != id {
+			t.Fatalf("recent = %+v", recent)
+		}
+	})
+}
+
+func TestAMessageLostTwiceIsReportedUnconfirmed(t *testing.T) {
+	synctest.Test(t, func(t *testing.T) {
+		r := newRig(t)
+		d := dropMessages(r, 2, true)
+		r.world.Script(r.world.Serve(r.server), r.world.Serve(r.server), r.world.Serve(r.server))
+		r.m.Start(t.Context(), r.state)
+		_, err := r.m.SendText(t.Context(), r.bob, "lost")
+		if ids := d.sent(); !errors.Is(err, client.ErrUnconfirmed) || len(ids) != 2 || ids[0] != ids[1] {
+			t.Fatalf("SendText() = %v after sending ids %v, want %v", err, ids, client.ErrUnconfirmed)
+		}
+		if recent := r.recent(t); len(recent) != 0 {
+			t.Fatalf("stored %+v as sent", recent)
+		}
+	})
+}
+
+func TestASlowAckOnALiveConnectionIsNotSentAgain(t *testing.T) {
+	synctest.Test(t, func(t *testing.T) {
+		r := newRig(t)
+		d := dropMessages(r, 1, false)
+		r.world.Script(r.world.Serve(r.server))
+		r.m.Start(t.Context(), r.state)
+		_, err := r.m.SendText(t.Context(), r.bob, "slow")
+		if ids := d.sent(); !errors.Is(err, client.ErrUnconfirmed) || errors.Is(err, client.ErrClosed) || len(ids) != 1 || r.world.Dials() != 1 {
+			t.Fatalf("SendText() = %v after sending ids %v on %d connections", err, ids, r.world.Dials())
+		}
+	})
+}
+
+func limitNotice(op, payload string) node.Node {
+	return fakephone.Notification("m1", "mex", node.Node{Tag: "update", Attrs: []node.Attr{{Key: "op_name", Value: node.Text(op)}}, Bytes: []byte(payload)})
+}
+
+func TestWhatsAppLimitsHoldMessagesToPeopleWhoNeverWrote(t *testing.T) {
+	synctest.Test(t, func(t *testing.T) {
+		r := newRig(t)
+		r.world.Script(r.world.Serve(r.server))
+		r.m.Start(t.Context(), r.state)
+		ends := time.Now().Add(time.Hour).Unix()
+		deliver := func(n node.Node) {
+			r.server.Inbox <- n
+			synctest.Wait()
+		}
+		deliver(limitNotice("NotificationUserReachoutTimelockUpdate", fmt.Sprintf(`{"data":{"xwa2_notify_account_reachout_timelock":{"is_active":true,"time_enforcement_ends":"%d","enforcement_type":"BULK_MESSAGING"}}}`, ends)))
+		var locked messenger.Timelocked
+		if _, err := r.m.SendText(t.Context(), r.bob, "hi"); !errors.As(err, &locked) || locked.Until.Unix() != ends || locked.Kind != "BULK_MESSAGING" {
+			t.Fatalf("SendText() while timelocked = %v", err)
+		}
+		if c := r.m.Connection(); !c.Timelock.On(time.Now()) {
+			t.Fatalf("status does not show the timelock: %+v", c.Timelock)
+		}
+		deliver(limitNotice("NotificationUserReachoutTimelockUpdate", `{"data":{"xwa2_notify_account_reachout_timelock":{"is_active":false}}}`))
+		r.send(t, "after the timelock")
+
+		capped := func(status string, sent int64) node.Node {
+			return limitNotice("MessageCappingInfoNotification", fmt.Sprintf(`{"data":{"xwa2_notify_new_chat_messages_capping_info_update":{"capping_status":%q,"used_quota":50,"total_quota":50,"cycle_end_timestamp":"%d","server_sent_timestamp":"%d"}}}`, status, ends, sent))
+		}
+		now := time.Now().Unix()
+		deliver(capped("CAPPED", now))
+		deliver(capped("NONE", now-60))
+		var full messenger.CapReached
+		if _, err := r.m.SendText(t.Context(), r.bob, "again"); !errors.As(err, &full) || full.Total != 50 {
+			t.Fatalf("SendText() with the allowance used up = %v", err)
+		}
+		deliver(node.Node{Tag: "notification", Attrs: []node.Attr{
+			{Key: "from", Value: node.Address(r.bob)}, {Key: "type", Value: node.Text("privacy_token")}, {Key: "id", Value: node.Text("PT1")},
+		}, Children: []node.Node{{Tag: "tokens", Children: []node.Node{{Tag: "token", Attrs: []node.Attr{
+			{Key: "jid", Value: node.Address(r.account)}, {Key: "t", Value: node.Text(fmt.Sprint(now))}, {Key: "type", Value: node.Text("trusted_contact")},
+		}, Bytes: []byte{7}}}}}})
+		r.send(t, "bob wrote to us, so this goes")
+		if delivered := r.delivers.Load(); delivered != 2 {
+			t.Fatalf("delivered %d messages, want the two allowed ones", delivered)
+		}
+	})
+}
+
+func TestMessagesFollowTheChatsDisappearingTimer(t *testing.T) {
+	synctest.Test(t, func(t *testing.T) {
+		r := newRig(t)
+		var (
+			mu    sync.Mutex
+			toBob []node.Node
+		)
+		r.server.Deliver = func(device node.JID, stanza node.Node) {
+			if device.User == r.bob.User {
+				mu.Lock()
+				toBob = append(toBob, stanza)
+				mu.Unlock()
+			}
+		}
+		r.world.Script(r.world.Serve(r.server))
+		r.m.Start(t.Context(), r.state)
+		r.send(t, "before")
+		week, set := uint32(604800), time.Now().Add(-time.Minute).Unix()
+		setting := &wire.Message{ProtocolMessage: &wire.Message_ProtocolMessage{
+			Type: wire.Message_ProtocolMessage_EPHEMERAL_SETTING.Enum(), EphemeralExpiration: new(week), EphemeralSettingTimestamp: new(set),
+		}}
+		out, err := r.bobPhone.Send(r.server.Keys, r.server.Devices, r.account, setting)
+		if err != nil {
+			t.Fatal(err)
+		}
+		r.server.Inbox <- fakerelay.Deliver(r.bob, "Bob", time.Now(), out)[r.world.Phone.JID]
+		synctest.Wait()
+		r.send(t, "after")
+		mu.Lock()
+		stanzas := slices.Clone(toBob)
+		mu.Unlock()
+		var last *wire.Message
+		for _, stanza := range stanzas {
+			if _, last, err = r.bobPhone.Receive(stanza); err != nil {
+				t.Fatal(err)
+			}
+		}
+		info := last.GetExtendedTextMessage().GetContextInfo()
+		if last.GetExtendedTextMessage().GetText() != "after" || info.GetExpiration() != week || info.GetEphemeralSettingTimestamp() != set {
+			t.Fatalf("bob got %v", last)
+		}
+		if recent := r.recent(t); len(recent) != 2 {
+			t.Fatalf("stored %d messages, want the two texts and not the timer setting", len(recent))
+		}
+	})
+}
+
 func TestRemembersWhatArrives(t *testing.T) {
 	synctest.Test(t, func(t *testing.T) {
 		r := newRig(t)
@@ -182,15 +361,15 @@ func TestRetriesBackOffUpToAMinute(t *testing.T) {
 		}
 		r.world.Script(append(scripts, r.world.Serve(r.server))...)
 		r.m.Start(t.Context(), r.state)
-		synctest.Sleep(3 * time.Minute)
+		synctest.Sleep(4 * time.Minute)
 		r.send(t, "finally")
 		want := []time.Duration{time.Second, 2 * time.Second, 4 * time.Second, 8 * time.Second, 16 * time.Second, 32 * time.Second, time.Minute}
 		if len(attempts) != len(want)+1 {
 			t.Fatalf("%d refused attempts", len(attempts))
 		}
 		for i, gap := range want {
-			if got := attempts[i+1].Sub(attempts[i]); got != gap {
-				t.Fatalf("retry %d after %s, want %s", i+1, got, gap)
+			if got := attempts[i+1].Sub(attempts[i]); got < gap*8/10 || got > gap*12/10 {
+				t.Fatalf("retry %d after %s, want %s give or take a fifth", i+1, got, gap)
 			}
 		}
 	})
@@ -320,6 +499,137 @@ func TestMediaMineAndGroupsThroughTheMessenger(t *testing.T) {
 		}
 		if r.delivers.Load() != before+2 {
 			t.Fatalf("the group message went to %d devices, want Bob's phone and our own phone", r.delivers.Load()-before)
+		}
+	})
+}
+
+func TestARefusalFor463HoldsMessagesToNewContacts(t *testing.T) {
+	synctest.Test(t, func(t *testing.T) {
+		r := newRig(t)
+		w := r.world
+		w.Script(w.Serve(r.server))
+		r.server.Override = func(n node.Node) (node.Node, bool) {
+			if n.Tag != "message" {
+				return node.Node{}, false
+			}
+			return node.Node{Tag: "ack", Attrs: []node.Attr{{Key: "class", Value: node.Text("message")}, {Key: "id", Value: n.Attr("id")}, {Key: "error", Value: node.Text("463")}}}, true
+		}
+		r.m.Start(t.Context(), r.state)
+		var rejected client.Rejection
+		if _, err := r.m.SendText(t.Context(), r.bob, "hello"); !errors.As(err, &rejected) || rejected.Code != client.CodeRestricted || !errors.Is(err, client.ErrRejected) {
+			t.Fatalf("SendText() = %v, want a 463 rejection", err)
+		}
+		stranger := node.JID{User: "40733333333", Server: node.ServerUser}
+		if _, err := r.m.SendText(t.Context(), stranger, "hi"); !errors.Is(err, messenger.ErrRestricted) {
+			t.Fatalf("SendText() to a new contact after a 463 = %v, want it held", err)
+		}
+	})
+}
+
+func TestGroupSendsReuseWhatTheyKnowUntilTheGroupChanges(t *testing.T) {
+	synctest.Test(t, func(t *testing.T) {
+		r := newRig(t)
+		family := groups.Group{JID: node.JID{User: "120363000000000021", Server: node.ServerGroup}, Subject: "Family",
+			Participants: []groups.Participant{{JID: r.account}, {JID: r.bob}}}
+		known := fakegroups.New(family)
+		r.server.Groups = known
+		r.server.Members = func(node.JID) []node.JID { return []node.JID{r.bob, r.account} }
+		r.world.Script(r.world.Serve(r.server))
+		r.m.Start(t.Context(), r.state)
+		synctest.Wait()
+		for _, text := range []string{"one", "two", "three"} {
+			if _, err := r.m.SendText(t.Context(), family.JID, text); err != nil {
+				t.Fatal(err)
+			}
+		}
+		if lists, lookups := known.Queries(); lists != 1 || lookups != 0 {
+			t.Fatalf("three sends cost %d group lists and %d lookups, want the one list made on connecting", lists, lookups)
+		}
+		r.server.Inbox <- node.Node{Tag: "notification", Attrs: []node.Attr{
+			{Key: "from", Value: node.Address(family.JID)}, {Key: "type", Value: node.Text("w:gp2")}, {Key: "id", Value: node.Text("G1")},
+		}, Children: []node.Node{{Tag: "subject", Attrs: []node.Attr{{Key: "subject", Value: node.Text("Family!")}}}}}
+		synctest.Wait()
+		if _, err := r.m.SendText(t.Context(), family.JID, "four"); err != nil {
+			t.Fatal(err)
+		}
+		if lists, lookups := known.Queries(); lists != 1 || lookups != 1 {
+			t.Fatalf("after the group changed: %d lists and %d lookups, want one fresh lookup", lists, lookups)
+		}
+		time.Sleep(6 * time.Minute)
+		if _, err := r.m.SendText(t.Context(), family.JID, "five"); err != nil {
+			t.Fatal(err)
+		}
+		if _, lookups := known.Queries(); lookups != 2 {
+			t.Fatalf("an old copy was used: %d lookups", lookups)
+		}
+	})
+}
+
+func TestGroupMessagesFollowTheGroupsTimer(t *testing.T) {
+	synctest.Test(t, func(t *testing.T) {
+		r := newRig(t)
+		family := groups.Group{JID: node.JID{User: "120363000000000021", Server: node.ServerGroup}, Subject: "Family", Disappearing: 86400,
+			Participants: []groups.Participant{{JID: r.account}, {JID: r.bob}}}
+		r.server.Groups = fakegroups.New(family)
+		r.server.Members = func(node.JID) []node.JID { return []node.JID{r.bob, r.account} }
+		r.world.Script(r.world.Serve(r.server))
+		r.m.Start(t.Context(), r.state)
+		synctest.Wait()
+		if _, err := r.m.SendText(t.Context(), family.JID, "for a day"); err != nil {
+			t.Fatal(err)
+		}
+		stored := r.recent(t)
+		if len(stored) != 1 || stored[0].Message.GetExtendedTextMessage().GetContextInfo().GetExpiration() != 86400 || stored[0].Message.GetExtendedTextMessage().GetText() != "for a day" {
+			t.Fatalf("sent %+v", stored)
+		}
+	})
+}
+
+func TestSentMessagesCarryASecretForLaterEdits(t *testing.T) {
+	synctest.Test(t, func(t *testing.T) {
+		r := newRig(t)
+		var toBob []node.Node
+		var mu sync.Mutex
+		r.server.Deliver = func(device node.JID, stanza node.Node) {
+			mu.Lock()
+			defer mu.Unlock()
+			if device == r.bob {
+				toBob = append(toBob, stanza)
+			}
+		}
+		r.world.Script(r.world.Serve(r.server))
+		r.m.Start(t.Context(), r.state)
+		synctest.Wait()
+		r.send(t, "hello")
+		mu.Lock()
+		stanza := toBob[0]
+		mu.Unlock()
+		_, m, err := r.bobPhone.Receive(stanza)
+		if err != nil || m.GetConversation() != "hello" || len(m.GetMessageContextInfo().GetMessageSecret()) != message.SecretSize {
+			t.Fatalf("bob got %v: %v", m, err)
+		}
+		stored := r.recent(t)
+		if len(stored) != 1 || !bytes.Equal(stored[0].Message.GetMessageContextInfo().GetMessageSecret(), m.GetMessageContextInfo().GetMessageSecret()) {
+			t.Fatalf("the secret was not kept with our copy: %+v", stored)
+		}
+	})
+}
+
+func TestListingAPrivateIDGroupLearnsItsMembersNumbers(t *testing.T) {
+	synctest.Test(t, func(t *testing.T) {
+		r := newRig(t)
+		bobLID := node.JID{User: "99001", Server: node.ServerLID}
+		family := groups.Group{JID: node.JID{User: "120363000000000041", Server: node.ServerGroup}, Subject: "Family", AddressingMode: "lid",
+			Participants: []groups.Participant{{JID: bobLID, Phone: r.bob}}}
+		r.server.Groups = fakegroups.New(family)
+		r.world.Script(r.world.Serve(r.server))
+		r.m.Start(t.Context(), r.state)
+		synctest.Wait()
+		if _, err := r.m.Groups(t.Context()); err != nil {
+			t.Fatal(err)
+		}
+		if got, err := r.store.Canonical(t.Context(), bobLID); err != nil || got != r.bob {
+			t.Fatalf("bob's private id resolves to %v, %v", got, err)
 		}
 	})
 }

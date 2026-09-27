@@ -95,8 +95,30 @@ ALTER TABLE chats ADD COLUMN archived INTEGER NOT NULL DEFAULT 0;
 ALTER TABLE chats ADD COLUMN muted_until INTEGER NOT NULL DEFAULT 0;
 `
 
+const schemaV7 = `
+CREATE TABLE tokens (
+	jid TEXT PRIMARY KEY,
+	theirs BLOB NOT NULL DEFAULT x'',
+	given INTEGER NOT NULL DEFAULT 0,
+	ours INTEGER NOT NULL DEFAULT 0
+);
+`
+
+const schemaV8 = `
+CREATE INDEX IF NOT EXISTS lids_by_pn ON lids (pn);
+`
+
+const schemaV9 = `
+UPDATE messages SET author = (SELECT pn FROM lids WHERE lid = messages.author) WHERE author IN (SELECT lid FROM lids);
+`
+
+const schemaV10 = `
+ALTER TABLE chats ADD COLUMN expiration INTEGER NOT NULL DEFAULT 0;
+ALTER TABLE chats ADD COLUMN expiration_set INTEGER NOT NULL DEFAULT 0;
+`
+
 func migrations() []string {
-	return []string{schemaV1, schemaV2, schemaV3, schemaV4, schemaV5, foldLIDs}
+	return []string{schemaV1, schemaV2, schemaV3, schemaV4, schemaV5, foldLIDs, schemaV7, schemaV8, schemaV9, schemaV10}
 }
 
 func (s *Store) migrate(ctx context.Context) error {

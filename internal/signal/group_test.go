@@ -10,7 +10,7 @@ import (
 	"google.golang.org/protobuf/proto"
 
 	"github.com/PeterStoica/chatwire/internal/signal"
-	"github.com/PeterStoica/chatwire/internal/signal/signaltest"
+	"github.com/PeterStoica/chatwire/internal/testkit/signaltest"
 	"github.com/PeterStoica/chatwire/internal/wire"
 )
 

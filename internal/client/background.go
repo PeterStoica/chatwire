@@ -11,25 +11,39 @@ import (
 
 func (c *Client) work() {
 	for {
+		for _, job := range c.jobs.Take() {
+			if c.life.Err() != nil {
+				return
+			}
+			c.run(job)
+		}
 		select {
-		case job := <-c.jobs:
-			job(c.life)
+		case <-c.jobs.Ready():
 		case <-c.life.Done():
 			return
 		}
 	}
 }
 
+func (c *Client) run(job func(context.Context)) {
+	defer func() {
+		if r := recover(); r != nil {
+			c.problem("a background job", r)
+		}
+	}()
+	job(c.life)
+}
+
 func (c *Client) enqueue(job func(context.Context)) bool {
-	select {
-	case c.jobs <- job:
-		return true
-	case <-c.life.Done():
+	if c.life.Err() != nil {
 		return false
 	}
+	c.jobs.Push(job)
+	return true
 }
 
 func (c *Client) fromOurPhone(in message.Incoming, p *wire.Message_ProtocolMessage) bool {
+	c.resent(p)
 	if share := p.GetAppStateSyncKeyShare(); share != nil {
 		c.addSyncKeys(share)
 		c.queueAppStateSync(nil)

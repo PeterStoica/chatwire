@@ -6,9 +6,7 @@ import (
 	"database/sql"
 	"errors"
 	"fmt"
-	"maps"
 	"slices"
-	"strings"
 
 	"github.com/PeterStoica/chatwire/internal/node"
 )
@@ -55,6 +53,18 @@ INSERT INTO names (jid, contact, first, push)
 		push = CASE WHEN names.push = '' THEN excluded.push ELSE names.push END;
 DELETE FROM names WHERE jid IN (SELECT lid FROM lids);
 `
+
+const foldTokens = `
+INSERT INTO tokens (jid, theirs, given, ours)
+	SELECT l.pn, k.theirs, k.given, k.ours FROM tokens k JOIN lids l ON k.jid = l.lid WHERE true
+	ON CONFLICT (jid) DO UPDATE SET` + keepNewest + `;
+DELETE FROM tokens WHERE jid IN (SELECT lid FROM lids);
+`
+
+const keepNewest = `
+		theirs = CASE WHEN excluded.given > tokens.given THEN excluded.theirs ELSE tokens.theirs END,
+		given = max(tokens.given, excluded.given),
+		ours = max(tokens.ours, excluded.ours)`
 
 type querier interface {
 	QueryRowContext(ctx context.Context, query string, args ...any) *sql.Row
@@ -152,6 +162,14 @@ func (r *resolver) changes(ctx context.Context, c Changes) (Changes, error) {
 	for i := range c.Ticks {
 		one(&c.Ticks[i].Chat)
 	}
+	c.Tokens = cloned(c.Tokens)
+	for i := range c.Tokens {
+		one(&c.Tokens[i].Contact)
+	}
+	c.Timers = cloned(c.Timers)
+	for i := range c.Timers {
+		one(&c.Timers[i].Chat)
+	}
 	if err != nil {
 		return Changes{}, err
 	}
@@ -172,27 +190,58 @@ func cloned[T any](in []T) []T {
 }
 
 func learn(ctx context.Context, tx *sql.Tx, lids map[node.JID]node.JID) error {
-	if len(lids) == 0 {
+	changed := map[node.JID]node.JID{}
+	for lid, pn := range lids {
+		lid, pn = lid.WithoutDevice(), pn.WithoutDevice()
+		result, err := tx.ExecContext(ctx, `INSERT INTO lids (lid, pn) VALUES (?, ?) ON CONFLICT (lid) DO UPDATE SET pn = excluded.pn WHERE lids.pn != excluded.pn`, lid.String(), pn.String())
+		if err != nil {
+			return fmt.Errorf("store: lid %s: %w", lid, err)
+		}
+		if n, err := result.RowsAffected(); err == nil && n > 0 {
+			changed[lid] = pn
+		}
+	}
+	if len(changed) == 0 {
 		return nil
 	}
-	for _, lid := range sortedKeys(lids) {
-		pn := lids[lid]
-		if _, err := tx.ExecContext(ctx, `INSERT INTO lids (lid, pn) VALUES (?, ?) ON CONFLICT (lid) DO UPDATE SET pn = excluded.pn`, lid.WithoutDevice().String(), pn.WithoutDevice().String()); err != nil {
-			return fmt.Errorf("store: lid %s: %w", lid, err)
+	for lid, pn := range changed {
+		if _, err := tx.ExecContext(ctx, `UPDATE messages SET author = ? WHERE author = ?`, pn.String(), lid.String()); err != nil {
+			return fmt.Errorf("store: authors kept under %s: %w", lid, err)
 		}
 	}
 	if _, err := tx.ExecContext(ctx, foldLIDs); err != nil {
 		return fmt.Errorf("store: fold chats kept under a private id: %w", err)
 	}
+	if _, err := tx.ExecContext(ctx, foldTokens); err != nil {
+		return fmt.Errorf("store: fold tokens kept under a private id: %w", err)
+	}
 	return nil
-}
-
-func sortedKeys(m map[node.JID]node.JID) []node.JID {
-	return slices.SortedFunc(maps.Keys(m), func(a, b node.JID) int { return strings.Compare(a.String(), b.String()) })
 }
 
 func (s *Store) canonical(ctx context.Context, j node.JID) (node.JID, error) {
 	return newResolver(s.db).of(ctx, j)
+}
+
+func (s *Store) Canonical(ctx context.Context, j node.JID) (node.JID, error) {
+	return s.canonical(ctx, j.WithoutDevice())
+}
+
+func (s *Store) Forms(ctx context.Context, j node.JID) ([]node.JID, error) {
+	j = j.WithoutDevice()
+	out := []node.JID{j}
+	err := s.each(ctx, "lids", `SELECT lid, pn FROM lids WHERE lid = ?1 OR pn = ?1`, []any{j.String()}, func(rows *sql.Rows) error {
+		var lid, pn string
+		if err := rows.Scan(&lid, &pn); err != nil {
+			return err
+		}
+		for _, raw := range []string{lid, pn} {
+			if other, err := node.ParseJID(raw); err == nil && !slices.Contains(out, other) {
+				out = append(out, other)
+			}
+		}
+		return nil
+	})
+	return out, err
 }
 
 func (r *resolver) sync(ctx context.Context, c SyncChanges) (SyncChanges, error) {

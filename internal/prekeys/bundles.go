@@ -55,7 +55,8 @@ func ParseBundles(reply node.Node) ([]Bundle, map[node.JID]error, error) {
 		}
 		bundle, err := parseBundle(device, user)
 		if err != nil {
-			return nil, nil, err
+			failed[device] = err
+			continue
 		}
 		bundles = append(bundles, bundle)
 	}
@@ -97,4 +98,9 @@ func parseBundle(device node.JID, user node.Node) (Bundle, error) {
 		b.DeviceIdentity = identity.Bytes
 	}
 	return b, nil
+}
+
+func RetryBundle(device node.JID, registration []byte, keys node.Node) (Bundle, error) {
+	user := node.Node{Tag: "user", Children: append([]node.Node{{Tag: "registration", Bytes: registration}}, keys.Children...)}
+	return parseBundle(device, user)
 }

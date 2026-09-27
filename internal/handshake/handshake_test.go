@@ -13,9 +13,9 @@ import (
 
 	"github.com/PeterStoica/chatwire/internal/cert"
 	"github.com/PeterStoica/chatwire/internal/curve"
-	"github.com/PeterStoica/chatwire/internal/fakeserver"
 	"github.com/PeterStoica/chatwire/internal/frame"
 	"github.com/PeterStoica/chatwire/internal/handshake"
+	"github.com/PeterStoica/chatwire/internal/testkit/fakeserver"
 )
 
 const dictVersion = 3
