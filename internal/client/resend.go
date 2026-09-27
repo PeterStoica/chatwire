@@ -16,9 +16,10 @@ import (
 )
 
 const (
-	maxResends    = 5
-	recentSends   = 256
-	recreateAfter = time.Hour
+	maxResends        = 5
+	maxTrackedResends = 1024
+	recentSends       = 256
+	recreateAfter     = time.Hour
 )
 
 var ErrNotSentHere = errors.New("client: that message was not sent from here")
@@ -68,6 +69,9 @@ func (c *Client) resend(ctx context.Context, req message.RetryRequest) error {
 	device := req.Device()
 	c.mu.Lock()
 	key := c.addressLocked(device).String() + "/" + req.ID
+	if len(c.resends) >= maxTrackedResends {
+		clear(c.resends)
+	}
 	c.resends[key]++
 	tries := c.resends[key]
 	c.mu.Unlock()
