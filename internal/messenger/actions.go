@@ -74,7 +74,7 @@ func (m *Messenger) React(ctx context.Context, id, emoji string) (store.Message,
 		return t, err
 	}
 	reaction := &wire.Message{ReactionMessage: &wire.Message_ReactionMessage{Key: key, Text: new(emoji), SenderTimestampMs: new(m.link.Now().UnixMilli())}}
-	_, err = m.send(ctx, t.Chat, func(*client.Client) (*wire.Message, error) { return reaction, nil })
+	_, err = m.sendMessage(ctx, t.Chat, reaction)
 	return t, err
 }
 
@@ -95,14 +95,14 @@ func (m *Messenger) Edit(ctx context.Context, id, text string) (store.Message, e
 	case inner.GetVideoMessage() != nil:
 		edited = &wire.Message{VideoMessage: &wire.Message_VideoMessage{Caption: new(text)}}
 	case inner.GetDocumentMessage() != nil:
-		edited = &wire.Message{DocumentWithCaptionMessage: &wire.Message_FutureProofMessage{Message: &wire.Message{DocumentMessage: &wire.Message_DocumentMessage{Caption: new(text)}}}}
+		edited = captioned(&wire.Message{DocumentMessage: &wire.Message_DocumentMessage{Caption: new(text)}})
 	case inner.Conversation == nil:
 		return t, fmt.Errorf("%w: %s", ErrNotText, id)
 	}
 	edit := &wire.Message{ProtocolMessage: &wire.Message_ProtocolMessage{
 		Key: key, Type: wire.Message_ProtocolMessage_MESSAGE_EDIT.Enum(), EditedMessage: edited, TimestampMs: new(m.link.Now().UnixMilli()),
 	}}
-	_, err = m.send(ctx, t.Chat, func(*client.Client) (*wire.Message, error) { return edit, nil })
+	_, err = m.sendMessage(ctx, t.Chat, edit)
 	return t, err
 }
 
@@ -112,7 +112,7 @@ func (m *Messenger) Delete(ctx context.Context, id string) (store.Message, error
 		return t, err
 	}
 	revoke := &wire.Message{ProtocolMessage: &wire.Message_ProtocolMessage{Key: key, Type: wire.Message_ProtocolMessage_REVOKE.Enum()}}
-	_, err = m.send(ctx, t.Chat, func(*client.Client) (*wire.Message, error) { return revoke, nil })
+	_, err = m.sendMessage(ctx, t.Chat, revoke)
 	return t, err
 }
 
@@ -141,7 +141,7 @@ func (m *Messenger) Vote(ctx context.Context, id string, options []string) (stor
 		return t, nil, err
 	}
 	vote := &wire.Message{PollUpdateMessage: &wire.Message_PollUpdateMessage{PollCreationMessageKey: key, Vote: enc, SenderTimestampMs: new(m.link.Now().UnixMilli())}}
-	_, err = m.send(ctx, t.Chat, func(*client.Client) (*wire.Message, error) { return vote, nil })
+	_, err = m.sendMessage(ctx, t.Chat, vote)
 	return t, chosen, err
 }
 
@@ -231,7 +231,7 @@ func (m *Messenger) Forward(ctx context.Context, to node.JID, id string) (string
 			return nil, fmt.Errorf("%w: %s", ErrNoForward, id)
 		}
 		if forwarded.GetDocumentMessage().GetCaption() != "" {
-			forwarded = &wire.Message{DocumentWithCaptionMessage: &wire.Message_FutureProofMessage{Message: forwarded}}
+			forwarded = captioned(forwarded)
 		}
 		return forwarded, nil
 	})

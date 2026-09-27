@@ -22,7 +22,7 @@ func (m *Messenger) SendText(ctx context.Context, to node.JID, text string, ment
 	if len(mentions) > 0 {
 		msg = &wire.Message{ExtendedTextMessage: &wire.Message_ExtendedTextMessage{Text: new(text), ContextInfo: &wire.ContextInfo{MentionedJid: addresses(mentions)}}}
 	}
-	return m.send(ctx, to, func(*client.Client) (*wire.Message, error) { return msg, nil })
+	return m.sendMessage(ctx, to, msg)
 }
 
 func (m *Messenger) SendPoll(ctx context.Context, to node.JID, question string, options []string, multiple bool) (string, error) {
@@ -31,7 +31,7 @@ func (m *Messenger) SendPoll(ctx context.Context, to node.JID, question string, 
 		return "", err
 	}
 	poll := message.NewPoll(question, options, multiple)
-	return m.send(ctx, to, func(*client.Client) (*wire.Message, error) { return poll, nil })
+	return m.sendMessage(ctx, to, poll)
 }
 
 func addresses(jids []node.JID) []string {
@@ -59,12 +59,20 @@ func (m *Messenger) Reply(ctx context.Context, to node.JID, text, quotedID strin
 	if len(mentions) > 0 {
 		reply.ExtendedTextMessage.ContextInfo.MentionedJid = addresses(mentions)
 	}
-	id, err := m.send(ctx, to, func(*client.Client) (*wire.Message, error) { return reply, nil })
+	id, err := m.sendMessage(ctx, to, reply)
 	return id, to, err
 }
 
 func (m *Messenger) SendFile(ctx context.Context, to node.JID, f File) (string, error) {
 	return m.send(ctx, to, func(c *client.Client) (*wire.Message, error) { return fileMessage(ctx, c, f, m.link.Now()) })
+}
+
+func (m *Messenger) sendMessage(ctx context.Context, to node.JID, msg *wire.Message) (string, error) {
+	return m.send(ctx, to, func(*client.Client) (*wire.Message, error) { return msg, nil })
+}
+
+func captioned(document *wire.Message) *wire.Message {
+	return &wire.Message{DocumentWithCaptionMessage: &wire.Message_FutureProofMessage{Message: document}}
 }
 
 func (m *Messenger) send(ctx context.Context, to node.JID, build func(*client.Client) (*wire.Message, error)) (string, error) {
@@ -219,7 +227,7 @@ func fileMessage(ctx context.Context, c *client.Client, f File, now time.Time) (
 			FileName: new(f.Name), Title: new(f.Name), Caption: caption,
 		}}
 		if caption != nil {
-			return &wire.Message{DocumentWithCaptionMessage: &wire.Message_FutureProofMessage{Message: document}}, nil
+			return captioned(document), nil
 		}
 		return document, nil
 	}
