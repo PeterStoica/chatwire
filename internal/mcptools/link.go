@@ -196,7 +196,7 @@ func qrResult(data string, report Report) (*mcp.CallToolResult, Report, error) {
 	return withJSON(report, &mcp.ImageContent{MIMEType: "image/png", Data: code.PNG()}), report, nil
 }
 
-const RiskNote = "Chatwire is unofficial: WhatsApp's terms do not allow unofficial apps, so there is a small risk to your account. Your messages stay only on this computer."
+const RiskNote = "Chatwire is unofficial: WhatsApp's terms do not allow unofficial apps, so there is a small risk to your account. Chatwire keeps your messages on this computer, but the AI app you use it with sends what it reads to its model provider."
 
 const scanSteps = "On the phone, scan it from WhatsApp's Linked devices screen " +
 	"(iPhone: Settings > Linked Devices > Link a Device; Android: the three-dot menu > Linked devices > Link a device)."

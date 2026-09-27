@@ -195,13 +195,14 @@ func (c cli) setupCommand(args []string, in io.Reader) error {
 	all := setup.Clients(env)
 	flags := flag.NewFlagSet("setup", flag.ContinueOnError)
 	flags.SetOutput(c.out)
+	flags.Usage = usageOf(flags, c.out)
 	asJSON := flags.Bool("json", false, "print results as JSON")
 	yes := flags.Bool("yes", false, "do not ask before changing the apps' settings")
 	remove := flags.Bool("remove", false, "take Chatwire out of the apps instead")
 	only := flags.String("client", "", "only these apps, comma separated: "+strings.Join(idsOf(all), ", "))
 	noLink := flags.Bool("no-link", false, "do not link WhatsApp afterwards")
 	if err := flags.Parse(args); err != nil {
-		return err
+		return helped(err)
 	}
 	c.asJSON = c.asJSON || *asJSON
 	executable, _, err := self()
@@ -221,10 +222,21 @@ func (c cli) setupCommand(args []string, in io.Reader) error {
 		return nil
 	}
 	results := setup.Apply(c.ctx, env, chosen, executable, *remove)
-	c.print(map[string]any{"command": executable, "results": results}, resultText(results, *remove))
+	done := setupReport{Command: executable, Results: results}
 	if *remove || *noLink {
+		c.print(done, resultText(results, *remove))
 		return nil
 	}
+	if c.asJSON {
+		linking, err := c.linkState()
+		if err != nil {
+			return err
+		}
+		done.linkReport = &linking
+		c.print(done, "")
+		return nil
+	}
+	c.print(done, resultText(results, *remove))
 	wait := time.Duration(0)
 	if c.human {
 		wait = defaultLinkFor
@@ -232,13 +244,37 @@ func (c cli) setupCommand(args []string, in io.Reader) error {
 	return c.linkIfNeeded(wait)
 }
 
-func (c cli) linkIfNeeded(wait time.Duration) error {
+type setupReport struct {
+	Command string         `json:"command"`
+	Results []setup.Result `json:"results"`
+	*linkReport
+}
+
+func (c cli) current() (mcptools.Report, error) {
 	s, err := c.session()
 	if err != nil {
-		return err
+		return mcptools.Report{}, err
 	}
-	report, err := ask(c.ctx, s, "whatsapp_status", map[string]any{})
-	_ = s.Close()
+	defer s.Close()
+	return ask(c.ctx, s, "whatsapp_status", map[string]any{})
+}
+
+func (c cli) linkState() (linkReport, error) {
+	report, err := c.current()
+	if err != nil || report.State == "linked" {
+		return linkReport{Report: report}, err
+	}
+	s, err := c.session()
+	if err != nil {
+		return linkReport{}, err
+	}
+	defer s.Close()
+	report, err = ask(c.ctx, s, "link_whatsapp", map[string]any{})
+	return linkReport{Report: report, Say: say(report)}, err
+}
+
+func (c cli) linkIfNeeded(wait time.Duration) error {
+	report, err := c.current()
 	if err != nil {
 		return err
 	}

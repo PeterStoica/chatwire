@@ -1,7 +1,12 @@
 # Installing Chatwire for a user
 
 You are an AI agent and the user asked you to install Chatwire, an MCP server that lets AI apps use their WhatsApp.
-Finish it yourself without asking the user anything. Every command is safe to run twice.
+Every command is safe to run twice.
+
+Before changing anything, ask the user one question and wait for a yes. Say that you will add Chatwire to the app you
+are running in, so you can read and send their WhatsApp messages; that linking takes one QR scan with their phone; and
+that Chatwire is unofficial: WhatsApp's terms do not allow unofficial apps, so there is a small risk to their account,
+and what you read from their chats goes to your model provider. After a yes, do the rest yourself.
 
 ## 1. Install the binary
 
@@ -24,16 +29,16 @@ The installer checks the download against the release checksums and prints where
 use the full path it printed in the steps below. Developers with Go 1.27 can instead run
 `go install github.com/PeterStoica/chatwire/cmd/chatwire@latest`.
 
-## 2. Add Chatwire to the user's AI apps and show the WhatsApp QR code
+## 2. Add Chatwire to your own app and show the WhatsApp QR code
 
 ```sh
-chatwire setup --yes --json
+chatwire setup --yes --json --client ID
 ```
 
-This adds Chatwire to every AI app it finds (Claude Code, Claude Desktop, Codex, Gemini CLI, Cursor, VS Code, Windsurf,
-Cline, opencode, LM Studio), keeping everything else in their settings and backing up each file it changes once, next
-to it, with the suffix `.before-chatwire`. It then opens a page with a live QR code in the user's browser. To limit it
-to some apps: `--client claude-desktop,codex`.
+`ID` is the app you run in: `claude-code`, `claude-desktop`, `codex`, `gemini`, `cursor`, `vscode`, `windsurf`, `cline`,
+`opencode`, `lmstudio` or `zed`. Setup keeps everything else in that app's settings and backs up the file it changes
+once, next to it, with the suffix `.before-chatwire`. It prints one JSON object and opens a page with a live QR code in
+the user's browser. Chatwire can be added to other apps later, when the user asks, with the same command.
 
 ## 3. Tell the user
 
@@ -52,7 +57,7 @@ Repeat until `state` is `linked`; a few minutes is normal. The page renews the Q
 
 ## 5. Finish
 
-Tell the user to restart the apps that were set up (or open a new session) to get the WhatsApp tools.
+Tell the user to restart your app (or open a new session) to get the WhatsApp tools.
 
 ## If the user cannot scan a QR code on this computer
 

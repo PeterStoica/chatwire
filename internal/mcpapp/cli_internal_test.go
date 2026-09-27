@@ -6,6 +6,7 @@ import (
 	"testing"
 
 	"github.com/PeterStoica/chatwire/internal/mcptools"
+	"github.com/PeterStoica/chatwire/internal/setup"
 )
 
 func TestReportsReadAsCommands(t *testing.T) {
@@ -54,7 +55,7 @@ func TestTheUserIsToldHowToLinkAndTheRisk(t *testing.T) {
 	if out["state"] != page.State || out["page"] != page.Page || out["detail"] != page.Detail {
 		t.Fatalf("the report lost its fields: %s", raw)
 	}
-	for _, want := range []string{page.Page, "Link a device", "unofficial", "stay only on this computer"} {
+	for _, want := range []string{page.Page, "Link a device", "unofficial", "keeps your messages on this computer", "model provider"} {
 		if !strings.Contains(out["say"], want) {
 			t.Errorf("say leaves out %q: %s", want, out["say"])
 		}
@@ -66,5 +67,28 @@ func TestTheUserIsToldHowToLinkAndTheRisk(t *testing.T) {
 	linked := mcptools.Report{State: "linked", Detail: "WhatsApp is linked to +40700000000."}
 	if say(linked) != "" || linkText(linked) != linked.Detail {
 		t.Errorf("a linked report says %q", say(linked))
+	}
+}
+
+func TestSetupPrintsOneJSONObject(t *testing.T) {
+	t.Parallel()
+	done := setupReport{Command: "/bin/chatwire", Results: []setup.Result{{Client: "codex", Name: "Codex", Outcome: setup.Added}}}
+	raw, err := json.Marshal(done)
+	if err != nil {
+		t.Fatal(err)
+	}
+	var alone map[string]any
+	if err := json.Unmarshal(raw, &alone); err != nil || alone["state"] != nil || alone["results"] == nil {
+		t.Fatalf("setup without linking printed %s", raw)
+	}
+	page := mcptools.Report{State: "waiting_for_scan", Page: "http://127.0.0.1:1/abc/"}
+	done.linkReport = &linkReport{Report: page, Say: say(page)}
+	raw, err = json.Marshal(done)
+	if err != nil {
+		t.Fatal(err)
+	}
+	var both map[string]any
+	if err := json.Unmarshal(raw, &both); err != nil || both["state"] != page.State || both["page"] != page.Page || both["say"] == nil || both["results"] == nil {
+		t.Fatalf("setup with linking printed %s", raw)
 	}
 }

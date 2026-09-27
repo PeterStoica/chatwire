@@ -18,6 +18,7 @@ import (
 	"path/filepath"
 	"runtime"
 	"runtime/debug"
+	"slices"
 	"strconv"
 	"strings"
 	"sync"
@@ -72,7 +73,7 @@ func run(ctx context.Context, args []string, stdin io.Reader, stdout, stderr io.
 		_ = os.Remove(exe + ".old")
 	}
 	command := "stdio"
-	if len(args) > 0 && !strings.HasPrefix(args[0], "-") {
+	if len(args) > 0 && (!strings.HasPrefix(args[0], "-") || slices.Contains([]string{"-h", "-help", "--help"}, args[0])) {
 		command, args = args[0], args[1:]
 	}
 	if command == "stdio" && len(args) == 0 && terminal(stdin) {
@@ -88,15 +89,17 @@ func run(ctx context.Context, args []string, stdin io.Reader, stdout, stderr io.
 	case "update":
 		flags := flag.NewFlagSet(command, flag.ContinueOnError)
 		flags.SetOutput(stderr)
+		flags.Usage = usageOf(flags, stdout)
 		check := flags.Bool("check", false, "only say whether a newer version exists")
 		asJSON := flags.Bool("json", false, "print results as JSON")
 		if err := flags.Parse(args); err != nil {
-			return err
+			return helped(err)
 		}
 		return runUpdate(ctx, stdout, *check, *asJSON)
 	}
 	flags := flag.NewFlagSet(command, flag.ContinueOnError)
 	flags.SetOutput(stderr)
+	flags.Usage = usageOf(flags, stdout)
 	state := flags.String("state", defaultState(), "where the linked device is kept (owner-only file)")
 	linger := flags.Duration("linger", defaultLinger, "how long the shared background process stays up after the last window closes")
 	asJSON := flags.Bool("json", false, "print results as JSON")
@@ -106,7 +109,7 @@ func run(ctx context.Context, args []string, stdin io.Reader, stdout, stderr io.
 	rest := args
 	if command != "setup" {
 		if err := flags.Parse(args); err != nil {
-			return err
+			return helped(err)
 		}
 		rest = flags.Args()
 	}
@@ -126,6 +129,22 @@ func run(ctx context.Context, args []string, stdin io.Reader, stdout, stderr io.
 		return c.setupCommand(rest, stdin)
 	}
 	return fmt.Errorf("unknown command %q; run chatwire help", command)
+}
+
+func usageOf(flags *flag.FlagSet, out io.Writer) func() {
+	return func() {
+		_, _ = io.WriteString(out, usage)
+		_, _ = fmt.Fprintf(out, "\nOptions for %s:\n", flags.Name())
+		flags.SetOutput(out)
+		flags.PrintDefaults()
+	}
+}
+
+func helped(err error) error {
+	if errors.Is(err, flag.ErrHelp) {
+		return nil
+	}
+	return err
 }
 
 type seconds struct {
