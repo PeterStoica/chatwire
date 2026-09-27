@@ -2,17 +2,16 @@ name: release
 
 on:
   push:
-    branches: [master]
     tags: ["v*"]
 
 permissions:
-  contents: write
+  contents: read
 
 concurrency:
   group: release
 
 jobs:
-  release:
+  build:
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v7
@@ -21,23 +20,129 @@ jobs:
       - uses: actions/setup-go@v7
         with:
           go-version-file: go.mod
-      - name: Choose the version
-        id: version
-        run: sh scripts/release-version.sh "$GITHUB_SHA" >> "$GITHUB_OUTPUT"
-      - name: Test
-        if: steps.version.outputs.tag != ''
-        run: go test ./...
-      - name: Build
-        if: steps.version.outputs.tag != ''
-        env:
-          TAG: ${{ steps.version.outputs.tag }}
+      - name: Only plain versions tagged on main are released
         run: |
-          git rev-parse -q --verify "refs/tags/$TAG" >/dev/null || git tag "$TAG" "$GITHUB_SHA"
-          CHATWIRE_VERSION="$TAG" sh scripts/build-release.sh dist
-          ./dist/chatwire_linux_amd64 version | grep -q "$TAG"
+          if ! printf '%s' "$GITHUB_REF_NAME" | grep -Eq '^v[0-9]+\.[0-9]+\.[0-9]+$'; then
+            echo "::error::$GITHUB_REF_NAME is not a plain version like v1.2.3"
+            exit 1
+          fi
+          if ! git merge-base --is-ancestor "$GITHUB_SHA" origin/main; then
+            echo "::error::$GITHUB_REF_NAME is not on main"
+            exit 1
+          fi
+      - name: Test
+        run: go test ./...
+      - name: Build the release files
+        run: |
+          CHATWIRE_VERSION="$GITHUB_REF_NAME" sh scripts/build-release.sh dist
+          ./dist/chatwire_linux_amd64 version | grep -q "$GITHUB_REF_NAME"
+      - uses: actions/upload-artifact@v7
+        with:
+          name: dist
+          path: dist
+          if-no-files-found: error
+
+  installers:
+    needs: build
+    strategy:
+      fail-fast: false
+      matrix:
+        os: [ubuntu-latest, macos-latest, windows-latest]
+    runs-on: ${{ matrix.os }}
+    steps:
+      - uses: actions/checkout@v7
+      - uses: actions/download-artifact@v8
+        with:
+          name: dist
+          path: dist
+      - name: Serve them locally
+        shell: bash
+        run: |
+          cd dist
+          python3 -m http.server 8931 --bind 127.0.0.1 >/dev/null 2>&1 &
+          sleep 2
+      - name: Install on macOS or Linux
+        if: runner.os != 'Windows'
+        shell: bash
+        env:
+          CHATWIRE_BASE_URL: http://127.0.0.1:8931
+          CHATWIRE_INSTALL_DIR: ${{ runner.temp }}/bin
+        run: |
+          sh dist/install.sh
+          "$CHATWIRE_INSTALL_DIR/chatwire" version
+          "$CHATWIRE_INSTALL_DIR/chatwire" help | grep -q "chatwire setup"
+          export HOME="$RUNNER_TEMP/home" && mkdir -p "$HOME/.codex"
+          "$CHATWIRE_INSTALL_DIR/chatwire" setup --client codex --yes --no-link --json
+          grep -q chatwire "$HOME/.codex/config.toml"
+      - name: Refuse a tampered download on macOS or Linux
+        if: runner.os != 'Windows'
+        shell: bash
+        env:
+          CHATWIRE_BASE_URL: http://127.0.0.1:8931
+          CHATWIRE_INSTALL_DIR: ${{ runner.temp }}/tampered
+        run: |
+          sed -i.bak -E 's/^[0-9a-f]{64}/0000000000000000000000000000000000000000000000000000000000000000/' dist/checksums.txt
+          if sh dist/install.sh; then echo "a tampered download was installed"; exit 1; fi
+          test ! -e "$CHATWIRE_INSTALL_DIR/chatwire"
+          mv dist/checksums.txt.bak dist/checksums.txt
+      - name: Install with the single-file installer on macOS or Linux
+        if: runner.os != 'Windows'
+        shell: bash
+        env:
+          CHATWIRE_INSTALL_DIR: ${{ runner.temp }}/single
+        run: |
+          os=$(uname -s | tr '[:upper:]' '[:lower:]')
+          case "$(uname -m)" in x86_64 | amd64) arch=amd64 ;; *) arch=arm64 ;; esac
+          installer="dist/chatwire_installer_${os}_${arch}.sh"
+          sh "$installer" </dev/null | tee "$RUNNER_TEMP/single.txt"
+          grep -q "If you are an AI agent" "$RUNNER_TEMP/single.txt"
+          "$CHATWIRE_INSTALL_DIR/chatwire" version
+          cp "$installer" "$RUNNER_TEMP/damaged.sh"
+          printf 'AAAA' | dd of="$RUNNER_TEMP/damaged.sh" bs=1 seek=$(( $(wc -c <"$installer") / 2 )) conv=notrunc 2>/dev/null
+          if CHATWIRE_INSTALL_DIR="$RUNNER_TEMP/damaged" sh "$RUNNER_TEMP/damaged.sh" </dev/null; then echo "a damaged installer installed"; exit 1; fi
+          test ! -e "$RUNNER_TEMP/damaged/chatwire"
+      - name: Install on Windows
+        if: runner.os == 'Windows'
+        shell: pwsh
+        env:
+          CHATWIRE_BASE_URL: http://127.0.0.1:8931
+        run: |
+          ./dist/install.ps1
+          $exe = Join-Path $env:LOCALAPPDATA 'Programs\chatwire\chatwire.exe'
+          & $exe version
+          if ($LASTEXITCODE -ne 0) { exit 1 }
+          $env:USERPROFILE = Join-Path $env:RUNNER_TEMP 'home'
+          $env:HOME = $env:USERPROFILE
+          New-Item -ItemType Directory -Force (Join-Path $env:USERPROFILE '.codex') | Out-Null
+          & $exe setup --client codex --yes --no-link --json
+          if (-not (Select-String -Quiet -Path (Join-Path $env:USERPROFILE '.codex\config.toml') -Pattern chatwire)) { exit 1 }
+      - name: Refuse a tampered download on Windows
+        if: runner.os == 'Windows'
+        shell: pwsh
+        env:
+          CHATWIRE_BASE_URL: http://127.0.0.1:8931
+        run: |
+          $env:CHATWIRE_INSTALL_DIR = Join-Path $env:RUNNER_TEMP 'tampered'
+          Copy-Item dist/checksums.txt dist/checksums.txt.bak
+          (Get-Content dist/checksums.txt) -replace '^[0-9a-f]{64}', ('0' * 64) | Set-Content dist/checksums.txt
+          $refused = $false
+          try { ./dist/install.ps1 } catch { $refused = $true }
+          Move-Item -Force dist/checksums.txt.bak dist/checksums.txt
+          if (-not $refused) { Write-Error 'a tampered download was installed'; exit 1 }
+          if (Test-Path (Join-Path $env:CHATWIRE_INSTALL_DIR 'chatwire.exe')) { Write-Error 'a tampered file was left behind'; exit 1 }
+
+  publish:
+    needs: installers
+    runs-on: ubuntu-latest
+    permissions:
+      contents: write
+    steps:
+      - uses: actions/download-artifact@v8
+        with:
+          name: dist
+          path: dist
       - name: Publish
-        if: steps.version.outputs.tag != ''
         env:
           GH_TOKEN: ${{ github.token }}
-          TAG: ${{ steps.version.outputs.tag }}
-        run: gh release create "$TAG" dist/* --target "$GITHUB_SHA" --title "$TAG" --generate-notes
+          GH_REPO: ${{ github.repository }}
+        run: gh release create "$GITHUB_REF_NAME" dist/* --verify-tag --title "$GITHUB_REF_NAME" --generate-notes

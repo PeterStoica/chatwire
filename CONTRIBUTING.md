@@ -14,8 +14,8 @@ issue first so we can agree on the approach.
 ## Working on the code
 
 - You need Go 1.27 or newer: `go build ./cmd/chatwire` and `go test ./...`.
-- Pull requests go to the `develop` branch; a check fails any other pull request to `master`, which only takes
-  releases and publishes one on each merge. The maintainer reviews and approves every change.
+- Pull requests go to `main`, and the maintainer reviews and approves every change. A release is a version tag on
+  `main`: it is built, checked by installing it on Linux, macOS and Windows, and only then published.
 - Every pull request runs gofmt, go vet, the tests on Linux, macOS and Windows, the race detector, govulncheck and
   gitleaks. Before you push, run `gofmt -l .`, `go vet ./...` and `go test -race ./...`.
 - Tests describe what Chatwire does, not how, need no phone and pass without a network: `internal/testkit` has a
