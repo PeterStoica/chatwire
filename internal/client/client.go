@@ -490,6 +490,9 @@ func (c *Client) receive(ctx context.Context, n node.Node) {
 }
 
 func (c *Client) open(ctx context.Context, n node.Node, in message.Incoming) (node.Node, bool) {
+	if len(in.Encs) == 0 {
+		c.unavailable(n, in)
+	}
 	deferred, readable, unreadable := false, false, false
 	for _, enc := range pairwiseFirst(in.Encs) {
 		plaintext, err := c.decrypt(in, enc)

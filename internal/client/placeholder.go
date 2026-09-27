@@ -11,7 +11,18 @@ import (
 	"github.com/PeterStoica/chatwire/internal/wire"
 )
 
-const resendWait = 5 * time.Second
+const (
+	resendWait        = 5 * time.Second
+	placeholderMaxAge = 14 * 24 * time.Hour
+)
+
+func (c *Client) unavailable(n node.Node, in message.Incoming) {
+	child, ok := n.Child("unavailable")
+	if kind, _ := child.Attr("type").Text(); !ok || kind == "view_once" || c.cfg.Link.Now().Sub(in.Timestamp) > placeholderMaxAge {
+		return
+	}
+	c.expectResend(in)
+}
 
 func (c *Client) expectResend(in message.Incoming) {
 	if c.mine(in.Author) || in.ID == "" {

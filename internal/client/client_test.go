@@ -10,6 +10,7 @@ import (
 	"net/http"
 	"net/http/httptest"
 	"slices"
+	"strconv"
 	"strings"
 	"sync"
 	"testing"
@@ -2256,6 +2257,37 @@ func TestOurPhoneIsAskedForMessagesWeCouldNotRead(t *testing.T) {
 		got := <-r.received
 		if got.ID != "3EB0LOST" || got.Chat != r.bob || got.Author != r.bob || got.Message.GetConversation() != "the lost one" || !got.Time.Equal(time.Unix(1790000000, 0)) {
 			t.Fatalf("recovered %+v", got)
+		}
+	})
+}
+
+func TestOurPhoneIsAskedForMessagesSentOnlyToIt(t *testing.T) {
+	synctest.Test(t, func(t *testing.T) {
+		r := newRig(t)
+		r.connect()
+		withheld := func(id, kind string, at time.Time) node.Node {
+			unavailable := node.Node{Tag: "unavailable"}
+			if kind != "" {
+				unavailable.Attrs = []node.Attr{{Key: "type", Value: node.Text(kind)}}
+			}
+			return node.Node{Tag: "message", Attrs: []node.Attr{
+				{Key: "from", Value: node.Address(r.bob)}, {Key: "type", Value: node.Text("text")},
+				{Key: "id", Value: node.Text(id)}, {Key: "t", Value: node.Text(strconv.FormatInt(at.Unix(), 10))},
+			}, Children: []node.Node{unavailable}}
+		}
+		r.server.Inbox <- withheld("3EB0AD", "", time.Now())
+		r.server.Inbox <- withheld("3EB0ONCE", "view_once", time.Now())
+		r.server.Inbox <- withheld("3EB0OLD", "", time.Now().Add(-15*24*time.Hour))
+		time.Sleep(10 * time.Second)
+		synctest.Wait()
+		toPhone := r.deliveredTo(r.account)
+		if len(toPhone) != 1 {
+			t.Fatalf("%d requests to our phone, want one for the ad message only", len(toPhone))
+		}
+		_, request, err := r.ourPhone.Receive(toPhone[0])
+		wanted := request.GetProtocolMessage().GetPeerDataOperationRequestMessage().GetPlaceholderMessageResendRequest()
+		if err != nil || len(wanted) != 1 || wanted[0].GetMessageKey().GetId() != "3EB0AD" {
+			t.Fatalf("our phone got %v: %v", request, err)
 		}
 	})
 }
