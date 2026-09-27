@@ -15,6 +15,7 @@ import (
 	"os"
 	"os/signal"
 	"path/filepath"
+	"runtime/debug"
 	"strings"
 	"sync"
 	"time"
@@ -74,6 +75,9 @@ func run(ctx context.Context, args []string, stdin io.Reader, stdout, stderr io.
 	switch command {
 	case "help", "-h", "--help":
 		_, err := io.WriteString(stdout, usage)
+		return err
+	case "version", "--version":
+		_, err := fmt.Fprintln(stdout, "chatwire "+version())
 		return err
 	}
 	flags := flag.NewFlagSet(command, flag.ContinueOnError)
@@ -295,7 +299,7 @@ func open(ctx context.Context, path string) (*app, error) {
 }
 
 func (a *app) server() *mcp.Server {
-	return mcptools.NewServer(&mcp.Implementation{Name: "chatwire", Version: "0.0.0"}, a.l, a.m, mcptools.Options{MediaDir: a.media, LinkPage: a.linkPage})
+	return mcptools.NewServer(&mcp.Implementation{Name: "chatwire", Version: version()}, a.l, a.m, mcptools.Options{MediaDir: a.media, LinkPage: a.linkPage})
 }
 
 func (a *app) close() {
@@ -339,4 +343,12 @@ func save(path string, state client.State) error {
 		return fmt.Errorf("mcpapp: replace: %w", err)
 	}
 	return nil
+}
+
+func version() string {
+	info, ok := debug.ReadBuildInfo()
+	if !ok || info.Main.Version == "" || info.Main.Version == "(devel)" {
+		return "dev"
+	}
+	return info.Main.Version
 }

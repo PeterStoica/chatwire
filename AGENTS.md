@@ -5,13 +5,24 @@ Follow these steps in order. Every command is safe to run twice.
 
 ## 1. Install the binary
 
-If Go 1.27 or newer is installed (`go version`):
+No Go or other tools are needed; the release has a ready build for every system.
+
+macOS or Linux:
 
 ```sh
-go install github.com/PeterStoica/chatwire/cmd/chatwire@latest
+curl -fsSL https://github.com/PeterStoica/chatwire/releases/latest/download/install.sh | sh
 ```
 
-The binary lands in `$(go env GOPATH)/bin`. Use that full path below if it is not on the PATH.
+Windows (PowerShell):
+
+```powershell
+irm https://github.com/PeterStoica/chatwire/releases/latest/download/install.ps1 | iex
+```
+
+The installer checks the download against the release checksums and prints where it put `chatwire`
+(`~/.local/bin` on macOS and Linux, `%LOCALAPPDATA%\Programs\chatwire` on Windows). If that folder is not on the PATH,
+use the full path it printed in the steps below. Developers with Go 1.27 can instead run
+`go install github.com/PeterStoica/chatwire/cmd/chatwire@latest`.
 
 ## 2. Register it with the user's AI apps
 

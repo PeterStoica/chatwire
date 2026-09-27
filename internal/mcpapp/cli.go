@@ -73,7 +73,7 @@ func (c cli) session() (*mcp.ClientSession, error) {
 	if err != nil {
 		return nil, err
 	}
-	client := mcp.NewClient(&mcp.Implementation{Name: "chatwire-cli", Version: "0.0.0"}, nil)
+	client := mcp.NewClient(&mcp.Implementation{Name: "chatwire-cli", Version: version()}, nil)
 	session, err := client.Connect(c.ctx, &mcp.IOTransport{Reader: conn, Writer: conn}, nil)
 	if err != nil {
 		_ = conn.Close()

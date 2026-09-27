@@ -13,10 +13,19 @@ The easy way: ask your AI app.
 
 It follows [AGENTS.md](AGENTS.md). You scan a QR code or type a code on your phone, restart the app, and you are done.
 
-By hand, with Go 1.27 or newer:
+By hand, one line. It downloads the right build for your computer, checks it, and puts it in your user folder.
+
+macOS and Linux:
 
 ```sh
-go install github.com/PeterStoica/chatwire/cmd/chatwire@latest
+curl -fsSL https://github.com/PeterStoica/chatwire/releases/latest/download/install.sh | sh
+chatwire setup
+```
+
+Windows (PowerShell):
+
+```powershell
+irm https://github.com/PeterStoica/chatwire/releases/latest/download/install.ps1 | iex
 chatwire setup
 ```
 
@@ -45,7 +54,10 @@ restricted or banned. Chatwire paces its sends to behave like a person, but the 
 
 ## Build from source
 
+With Go 1.27 or newer:
+
 ```sh
-go build ./cmd/chatwire
-go test ./...
+go install github.com/PeterStoica/chatwire/cmd/chatwire@latest
 ```
+
+Or from a clone: `go build ./cmd/chatwire` and `go test ./...`.
