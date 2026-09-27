@@ -51,6 +51,22 @@ jobs:
           if sh dist/install.sh; then echo "a tampered download was installed"; exit 1; fi
           test ! -e "$CHATWIRE_INSTALL_DIR/chatwire"
           mv dist/checksums.txt.bak dist/checksums.txt
+      - name: Install with the single-file installer on macOS or Linux
+        if: runner.os != 'Windows'
+        shell: bash
+        env:
+          CHATWIRE_INSTALL_DIR: ${{ runner.temp }}/single
+        run: |
+          os=$(uname -s | tr '[:upper:]' '[:lower:]')
+          case "$(uname -m)" in x86_64 | amd64) arch=amd64 ;; *) arch=arm64 ;; esac
+          installer="dist/chatwire_installer_${os}_${arch}.sh"
+          sh "$installer" </dev/null | tee "$RUNNER_TEMP/single.txt"
+          grep -q "If you are an AI agent" "$RUNNER_TEMP/single.txt"
+          "$CHATWIRE_INSTALL_DIR/chatwire" version
+          cp "$installer" "$RUNNER_TEMP/damaged.sh"
+          printf 'AAAA' | dd of="$RUNNER_TEMP/damaged.sh" bs=1 seek=$(( $(wc -c <"$installer") / 2 )) conv=notrunc 2>/dev/null
+          if CHATWIRE_INSTALL_DIR="$RUNNER_TEMP/damaged" sh "$RUNNER_TEMP/damaged.sh" </dev/null; then echo "a damaged installer installed"; exit 1; fi
+          test ! -e "$RUNNER_TEMP/damaged/chatwire"
       - name: Install on Windows
         if: runner.os == 'Windows'
         shell: pwsh
