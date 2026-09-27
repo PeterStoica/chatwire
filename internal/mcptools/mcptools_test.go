@@ -1550,7 +1550,8 @@ func TestUnreadAndTicksFromClaude(t *testing.T) {
 			t.Fatalf("unread in another chat = %+v", elsewhere)
 		}
 		read, _ := callAs[mcptools.ReadReport](c, "read_whatsapp_messages", map[string]any{"chat": "bob"})
-		if len(read.Messages) != 3 || read.Messages[2].Status != "read" || read.Messages[2].Text != "yes!" || read.Messages[0].Status != "" {
+		if len(read.Messages) != 3 || read.Messages[2].Status != "read" || read.Messages[2].Text != "yes!" || read.Messages[0].Status != "" ||
+			!strings.Contains(read.Detail, "The phone may keep older ones: call again with before="+read.Messages[0].ID) {
 			t.Fatalf("after the read receipt: %+v", read)
 		}
 		if marked, _ := callAs[mcptools.ChangeReport](c, "change_whatsapp_message", map[string]any{"message_id": read.Messages[0].ID, "mark_read": true}); marked.State != "done" || !strings.Contains(marked.Detail, "as read") {

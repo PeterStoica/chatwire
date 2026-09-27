@@ -136,7 +136,8 @@ func Register(server *mcp.Server, l Linker, s Sender, opts Options) {
 		Name:        "read_whatsapp_messages",
 		Annotations: reads("Read WhatsApp messages"),
 		Description: "Read WhatsApp messages, newest last, including history synced from the phone. " +
-			"Optionally one chat (a contact or group name, a number, me, or status for status updates), only one person's messages (from), only the unread ones, only messages containing some words, and paging back with before.",
+			"Optionally one chat (a contact or group name, a number, me, or status for status updates), only one person's messages (from), only the unread ones, only messages containing some words, and paging back with before; " +
+			"paging back in one chat fetches older messages from the phone when this computer has none.",
 	}, read(s))
 	add(server, &mcp.Tool{
 		Name:        "link_whatsapp",

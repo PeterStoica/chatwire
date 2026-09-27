@@ -168,11 +168,7 @@ func read(s Sender) mcp.ToolHandlerFor[ReadInput, ReadReport] {
 		}
 		fromPhone := -1
 		if pagingOneChat(in, q) && len(found) < q.Limit {
-			if fromPhone, err = s.Older(ctx, q.Chat); err == nil && fromPhone > 0 {
-				if more, err := s.Messages(ctx, q); err == nil {
-					found = more
-				}
-			}
+			fromPhone, found = olderFromPhone(ctx, s, q, found)
 		}
 		messages := make([]ReceivedMessage, 0, len(found))
 		for _, m := range found {
@@ -187,6 +183,28 @@ func read(s Sender) mcp.ToolHandlerFor[ReadInput, ReadReport] {
 		}
 		return nil, report, nil
 	}
+}
+
+const (
+	phoneRounds = 8
+	phoneBudget = 40 * time.Second
+)
+
+func olderFromPhone(ctx context.Context, s Sender, q store.Query, found []store.Message) (int, []store.Message) {
+	ctx, cancel := context.WithTimeout(ctx, phoneBudget)
+	defer cancel()
+	fetched := 0
+	for round := 0; len(found) < q.Limit && round < phoneRounds; round++ {
+		n, err := s.Older(ctx, q.Chat)
+		if err != nil || n == 0 {
+			break
+		}
+		fetched += n
+		if more, err := s.Messages(ctx, q); err == nil {
+			found = more
+		}
+	}
+	return fetched, found
 }
 
 func pagingOneChat(in ReadInput, q store.Query) bool {
@@ -224,6 +242,8 @@ func countDetail(in ReadInput, q store.Query, messages []ReceivedMessage) string
 		return "No messages from this chat have reached this computer. Linking brings only the phone's recent history, so an older chat can be empty here."
 	case len(messages) == 0:
 		return "No messages yet. History from the phone arrives in the first minutes after linking."
+	case len(messages) < q.Limit && q.Chat.Server != "" && !q.Chat.IsStatus() && strings.TrimSpace(in.Before) == "" && strings.TrimSpace(in.Query) == "" && len(q.From) == 0:
+		return fmt.Sprintf("%d message(s): all this computer has for this chat. The phone may keep older ones: call again with before=%s to fetch them.", len(messages), messages[0].ID)
 	case len(messages) == q.Limit:
 		return fmt.Sprintf("%d message(s). There may be older ones: call again with before=%s.", len(messages), messages[0].ID)
 	}

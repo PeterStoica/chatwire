@@ -36,7 +36,8 @@ chatwire setup
 ## What your AI can do with it
 
 - Tell you what you missed, with unread messages from every chat
-- Read and search any chat, including history synced from your phone
+- Read and search any chat, including history synced from your phone (linking asks for up to ten years), and page
+  further back through the phone
 - Send messages, replies, files, polls and forwards
 - React, edit, delete, vote in polls and mark chats as read
 - List your chats and groups, with members
