@@ -18,6 +18,20 @@ func (c *Client) addressLocked(j node.JID) address {
 	return address(j)
 }
 
+func (c *Client) numberLocked(j node.JID) (node.JID, bool) {
+	switch j.Server {
+	case node.ServerUser:
+		return j.WithoutDevice(), true
+	case node.ServerLID:
+		for pn, lid := range c.lids {
+			if lid == j.User {
+				return node.JID{User: pn, Server: node.ServerUser}, true
+			}
+		}
+	}
+	return node.JID{}, false
+}
+
 func (c *Client) Learn(pairs map[node.JID]node.JID) {
 	c.mu.Lock()
 	defer c.mu.Unlock()

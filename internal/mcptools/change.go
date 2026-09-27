@@ -87,7 +87,7 @@ func changed(ctx context.Context, s Sender, target store.Message, done string, e
 	if state, detail := refusedChange(target, err); state != "" {
 		return ChangeReport{State: state, Detail: detail}
 	}
-	if state, detail, ok := paced(err); ok {
+	if state, detail, ok := stopped(err); ok {
 		return ChangeReport{State: state, Detail: detail}
 	}
 	chat := display(target.Chat)

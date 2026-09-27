@@ -102,7 +102,12 @@ func (c *Client) resend(ctx context.Context, req message.RetryRequest) error {
 	if err != nil {
 		return err
 	}
-	return c.deliver(ctx, message.Resend(req, m, parts[0], c.state.Linked.Account.SignedIdentity, c.cfg.Link.Now()))
+	stanza := message.Resend(req, m, parts[0], c.state.Linked.Account.SignedIdentity, c.cfg.Link.Now())
+	if !req.Group() && !c.mine(req.From) {
+		token, _ := c.tokenFor(ctx, chat)
+		stanza = withToken(stanza, token, c.cfg.Link.Now())
+	}
+	return c.deliver(ctx, stanza)
 }
 
 func (c *Client) retryPayload(req message.RetryRequest, chat node.JID, m *wire.Message) (*wire.Message, error) {

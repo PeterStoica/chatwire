@@ -36,7 +36,10 @@ var (
 	ErrDeleted        = errors.New("messenger: that message was deleted")
 	ErrTooFast        = errors.New("messenger: sending too fast")
 	ErrNewChats       = errors.New("messenger: too many new chats started")
+	ErrRestricted     = errors.New("messenger: WhatsApp is limiting messages to new contacts")
 )
+
+const restrictedFor = 24 * time.Hour
 
 type Messenger struct {
 	link    linkflow.Config
@@ -55,6 +58,7 @@ type Messenger struct {
 	running  chan struct{}
 	gone     func(error)
 	synced   HistorySync
+	limited  time.Time
 }
 
 type HistorySync struct {
@@ -86,7 +90,7 @@ func (m *Messenger) keepConnected(ctx context.Context) {
 		state := *m.state
 		m.mu.Unlock()
 		lids, _ := m.store.LIDs(ctx)
-		c, err := client.Connect(ctx, client.Config{LIDs: lids, Link: m.link, HTTP: m.http, Persist: m.save, Receive: m.received, History: m.history, Receipt: m.receipt, Sent: m.sentMessage, Seen: m.seen, Problem: problem, AppState: m}, state)
+		c, err := client.Connect(ctx, client.Config{LIDs: lids, Link: m.link, HTTP: m.http, Persist: m.save, Receive: m.received, History: m.history, Receipt: m.receipt, Sent: m.sentMessage, Seen: m.seen, TokenOf: m.tokenOf, Tokens: m.tokens, Problem: problem, AppState: m}, state)
 		if errors.Is(err, linkflow.ErrLoggedOut) {
 			m.loggedOut(err)
 			return

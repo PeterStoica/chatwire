@@ -13,6 +13,7 @@ import (
 	"google.golang.org/protobuf/proto"
 
 	"github.com/PeterStoica/chatwire/internal/node"
+	"github.com/PeterStoica/chatwire/internal/privacy"
 	"github.com/PeterStoica/chatwire/internal/wire"
 )
 
@@ -73,6 +74,29 @@ func (s *Store) Message(ctx context.Context, id string) (Message, bool, error) {
 		return Message{}, false, err
 	}
 	return found[0], true, nil
+}
+
+func (s *Store) Token(ctx context.Context, contact node.JID) (privacy.Token, error) {
+	contact, err := s.canonical(ctx, contact.WithoutDevice())
+	if err != nil {
+		return privacy.Token{}, err
+	}
+	t := privacy.Token{Contact: contact}
+	var given, ours int64
+	err = s.db.QueryRowContext(ctx, `SELECT theirs, given, ours FROM tokens WHERE jid = ?`, contact.String()).Scan(&t.Theirs, &given, &ours)
+	switch {
+	case errors.Is(err, sql.ErrNoRows):
+		return t, nil
+	case err != nil:
+		return t, fmt.Errorf("store: token of %s: %w", contact, err)
+	}
+	if given > 0 {
+		t.Given = time.Unix(given, 0)
+	}
+	if ours > 0 {
+		t.Ours = time.Unix(ours, 0)
+	}
+	return t, nil
 }
 
 func (s *Store) MessageIn(ctx context.Context, chat node.JID, id string) (Message, bool, error) {

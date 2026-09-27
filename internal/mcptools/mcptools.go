@@ -159,6 +159,7 @@ const (
 	manyForwards        = 5
 	stateNotLinked      = "not_linked"
 	stateFailed         = "failed"
+	stateRestricted     = "restricted"
 	stateSent           = "sent"
 	notLinked           = "WhatsApp is not linked yet. Call link_whatsapp first."
 	noSuchMessage       = "No message has that id. Call read_whatsapp_messages for ids."

@@ -455,3 +455,32 @@ func TestTheChatOfAMessageAndMentionAddresses(t *testing.T) {
 		t.Fatalf("addresses() = %v", got)
 	}
 }
+
+func TestTheHoldAfterA463SparesChatsWeHave(t *testing.T) {
+	t.Parallel()
+	now := time.Unix(1790100000, 0)
+	m, ctx := messenger(t, now, pairing.Account{JID: me, LID: myLID})
+	if err := m.store.Apply(ctx, store.Changes{Messages: []store.Message{{ID: "b1", Chat: bob, Author: bob, Time: now.Add(-time.Hour), Message: &wire.Message{Conversation: new("hey")}}}}); err != nil {
+		t.Fatal(err)
+	}
+	m.limited = now.Add(restrictedFor)
+	stranger := node.JID{User: "40788888888", Server: node.ServerUser}
+	for _, tt := range []struct {
+		name    string
+		to      node.JID
+		wantErr error
+	}{
+		{name: "a new contact", to: stranger, wantErr: ErrRestricted},
+		{name: "a chat we have", to: bob},
+		{name: "a group", to: family},
+		{name: "ourselves", to: me},
+	} {
+		if err := m.pace(ctx, tt.to); !errors.Is(err, tt.wantErr) {
+			t.Errorf("%s: pace() = %v, want %v", tt.name, err, tt.wantErr)
+		}
+	}
+	m.link.Now = func() time.Time { return now.Add(restrictedFor) }
+	if err := m.pace(ctx, stranger); err != nil {
+		t.Fatalf("a day later: %v", err)
+	}
+}

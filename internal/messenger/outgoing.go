@@ -101,6 +101,11 @@ func (m *Messenger) send(ctx context.Context, to node.JID, build func(*client.Cl
 	if err == nil {
 		m.sent(ctx, to, id, msg)
 	}
+	if rejected := (client.Rejection{}); errors.As(err, &rejected) && rejected.Code == client.CodeRestricted {
+		m.mu.Lock()
+		m.limited = m.link.Now().Add(restrictedFor)
+		m.mu.Unlock()
+	}
 	return id, err
 }
 
@@ -210,8 +215,16 @@ func (m *Messenger) pace(ctx context.Context, to node.JID) error {
 		return err
 	case p.LastMinute >= MaxPerMinute:
 		return fmt.Errorf("%w: %d messages in the last minute", ErrTooFast, p.LastMinute)
-	case !p.Known && to.Server != node.ServerGroup && !m.Mine(to) && p.NewChats >= MaxNewChats:
+	case p.Known || to.Server == node.ServerGroup || m.Mine(to):
+		return nil
+	case p.NewChats >= MaxNewChats:
 		return fmt.Errorf("%w: %d new chats in the last 24 hours", ErrNewChats, p.NewChats)
+	}
+	m.mu.Lock()
+	limited := m.limited
+	m.mu.Unlock()
+	if now := m.link.Now(); now.Before(limited) {
+		return fmt.Errorf("%w until %s", ErrRestricted, limited.Format(time.RFC3339))
 	}
 	return nil
 }

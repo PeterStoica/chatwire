@@ -10,6 +10,7 @@ import (
 	"github.com/PeterStoica/chatwire/internal/message"
 	"github.com/PeterStoica/chatwire/internal/node"
 	"github.com/PeterStoica/chatwire/internal/pairing"
+	"github.com/PeterStoica/chatwire/internal/privacy"
 	"github.com/PeterStoica/chatwire/internal/store"
 	"github.com/PeterStoica/chatwire/internal/wire"
 )
@@ -56,8 +57,12 @@ func (m *Messenger) dispatch(ctx context.Context, r client.Received) {
 func (m *Messenger) history(chunk history.Chunk) {
 	m.progress(chunk.Type, chunk.Progress)
 	chats := make([]store.Chat, 0, len(chunk.Chats))
+	var tokens []privacy.Token
 	for _, c := range chunk.Chats {
 		chats = append(chats, store.Chat{JID: c.JID, Name: c.Name, LastMessage: c.LastMessage})
+		if !c.Token.Given.IsZero() || !c.Token.Ours.IsZero() {
+			tokens = append(tokens, c.Token)
+		}
 	}
 	messages := make([]store.Message, 0, len(chunk.Messages))
 	var (
@@ -90,7 +95,7 @@ func (m *Messenger) history(chunk history.Chunk) {
 	for _, c := range chunk.Chats {
 		unread[c.JID] = int(c.Unread)
 	}
-	changes := store.Changes{Chats: chats, Messages: messages, Names: names, LIDs: chunk.LIDs, Reactions: reactions, Votes: votes, Unread: unread}
+	changes := store.Changes{Chats: chats, Messages: messages, Names: names, LIDs: chunk.LIDs, Reactions: reactions, Votes: votes, Unread: unread, Tokens: tokens}
 	m.keep(context.Background(), func(ctx context.Context) error { return m.store.Apply(ctx, changes) })
 }
 
@@ -202,6 +207,15 @@ func (m *Messenger) sentMessage(ctx context.Context, chat node.JID, id string) (
 		return nil, false
 	}
 	return found.Message, true
+}
+
+func (m *Messenger) tokenOf(ctx context.Context, contact node.JID) privacy.Token {
+	token, _ := m.store.Token(ctx, contact)
+	return token
+}
+
+func (m *Messenger) tokens(tokens []privacy.Token) {
+	m.keep(context.Background(), func(ctx context.Context) error { return m.store.Apply(ctx, store.Changes{Tokens: tokens}) })
 }
 
 func (m *Messenger) seen(ctx context.Context, chat node.JID, id string) bool {

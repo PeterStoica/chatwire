@@ -5,10 +5,12 @@ import (
 	"database/sql"
 	"encoding/json/v2"
 	"fmt"
+	"time"
 
 	"google.golang.org/protobuf/proto"
 
 	"github.com/PeterStoica/chatwire/internal/node"
+	"github.com/PeterStoica/chatwire/internal/privacy"
 )
 
 type Changes struct {
@@ -23,6 +25,7 @@ type Changes struct {
 	Unread    map[node.JID]int
 	Seen      []node.JID
 	Ticks     []Tick
+	Tokens    []privacy.Token
 }
 
 func (s *Store) Apply(ctx context.Context, c Changes) error {
@@ -59,7 +62,31 @@ func applyRecords(ctx context.Context, tx *sql.Tx, c Changes) error {
 			return err
 		}
 	}
+	for _, t := range c.Tokens {
+		if err := addToken(ctx, tx, t); err != nil {
+			return err
+		}
+	}
 	return nil
+}
+
+func addToken(ctx context.Context, tx *sql.Tx, t privacy.Token) error {
+	contact, theirs := t.Contact.WithoutDevice(), t.Theirs
+	if theirs == nil {
+		theirs = []byte{}
+	}
+	if _, err := tx.ExecContext(ctx, `INSERT INTO tokens (jid, theirs, given, ours) VALUES (?, ?, ?, ?) ON CONFLICT (jid) DO UPDATE SET`+keepNewest,
+		contact.String(), theirs, unixOrZero(t.Given), unixOrZero(t.Ours)); err != nil {
+		return fmt.Errorf("store: token of %s: %w", contact, err)
+	}
+	return nil
+}
+
+func unixOrZero(at time.Time) int64 {
+	if at.IsZero() {
+		return 0
+	}
+	return at.Unix()
 }
 
 func applyCounts(ctx context.Context, tx *sql.Tx, c Changes) error {

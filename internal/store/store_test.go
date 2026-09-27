@@ -15,7 +15,9 @@ import (
 
 	"modernc.org/sqlite"
 
+	"bytes"
 	"github.com/PeterStoica/chatwire/internal/node"
+	"github.com/PeterStoica/chatwire/internal/privacy"
 	"github.com/PeterStoica/chatwire/internal/store"
 	"github.com/PeterStoica/chatwire/internal/wire"
 )
@@ -931,4 +933,39 @@ func TestOneChatPerPersonWhateverTheirID(t *testing.T) {
 	if chats, err := s.Chats(ctx(t), 10); err != nil || len(chats) != 1 || chats[0].Unread != 0 {
 		t.Fatalf("chats after live traffic = %+v, %v", chats, err)
 	}
+}
+
+func TestPrivacyTokensKeepTheNewestAndFollowThePrivateID(t *testing.T) {
+	s := open(t)
+	bob := node.JID{User: "40722222222", Server: node.ServerUser}
+	bobLID := node.JID{User: "99001", Server: node.ServerLID}
+	at := func(sec int64) time.Time { return time.Unix(sec, 0) }
+	apply := func(tokens ...privacy.Token) {
+		t.Helper()
+		if err := s.Apply(ctx(t), store.Changes{Tokens: tokens}); err != nil {
+			t.Fatal(err)
+		}
+	}
+	check := func(who node.JID, theirs []byte, given, ours time.Time) {
+		t.Helper()
+		got, err := s.Token(ctx(t), who)
+		if err != nil || !bytes.Equal(got.Theirs, theirs) || !got.Given.Equal(given) || !got.Ours.Equal(ours) {
+			t.Fatalf("Token(%s) = %+v, %v; want %v given %v, ours %v", who, got, err, theirs, given, ours)
+		}
+	}
+	check(bob, nil, time.Time{}, time.Time{})
+
+	apply(privacy.Token{Contact: bob, Theirs: []byte{2}, Given: at(2000)})
+	apply(privacy.Token{Contact: bob, Theirs: []byte{1}, Given: at(1000)})
+	apply(privacy.Token{Contact: bob, Ours: at(5000)})
+	apply(privacy.Token{Contact: bob, Ours: at(4000)})
+	check(bob, []byte{2}, at(2000), at(5000))
+
+	apply(privacy.Token{Contact: bobLID, Theirs: []byte{3}, Given: at(3000), Ours: at(6000)})
+	check(bobLID, []byte{3}, at(3000), at(6000))
+	if err := s.Apply(ctx(t), store.Changes{LIDs: map[node.JID]node.JID{bobLID: bob}}); err != nil {
+		t.Fatal(err)
+	}
+	check(bob, []byte{3}, at(3000), at(6000))
+	check(bobLID, []byte{3}, at(3000), at(6000))
 }

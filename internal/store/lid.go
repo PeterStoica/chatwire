@@ -56,6 +56,18 @@ INSERT INTO names (jid, contact, first, push)
 DELETE FROM names WHERE jid IN (SELECT lid FROM lids);
 `
 
+const foldTokens = `
+INSERT INTO tokens (jid, theirs, given, ours)
+	SELECT l.pn, k.theirs, k.given, k.ours FROM tokens k JOIN lids l ON k.jid = l.lid WHERE true
+	ON CONFLICT (jid) DO UPDATE SET` + keepNewest + `;
+DELETE FROM tokens WHERE jid IN (SELECT lid FROM lids);
+`
+
+const keepNewest = `
+		theirs = CASE WHEN excluded.given > tokens.given THEN excluded.theirs ELSE tokens.theirs END,
+		given = max(tokens.given, excluded.given),
+		ours = max(tokens.ours, excluded.ours)`
+
 type querier interface {
 	QueryRowContext(ctx context.Context, query string, args ...any) *sql.Row
 }
@@ -152,6 +164,10 @@ func (r *resolver) changes(ctx context.Context, c Changes) (Changes, error) {
 	for i := range c.Ticks {
 		one(&c.Ticks[i].Chat)
 	}
+	c.Tokens = cloned(c.Tokens)
+	for i := range c.Tokens {
+		one(&c.Tokens[i].Contact)
+	}
 	if err != nil {
 		return Changes{}, err
 	}
@@ -183,6 +199,9 @@ func learn(ctx context.Context, tx *sql.Tx, lids map[node.JID]node.JID) error {
 	}
 	if _, err := tx.ExecContext(ctx, foldLIDs); err != nil {
 		return fmt.Errorf("store: fold chats kept under a private id: %w", err)
+	}
+	if _, err := tx.ExecContext(ctx, foldTokens); err != nil {
+		return fmt.Errorf("store: fold tokens kept under a private id: %w", err)
 	}
 	return nil
 }

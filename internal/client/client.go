@@ -12,6 +12,7 @@ import (
 	"net/http"
 	"runtime/debug"
 	"slices"
+	"strconv"
 	"sync"
 	"time"
 
@@ -30,6 +31,7 @@ import (
 	"github.com/PeterStoica/chatwire/internal/message"
 	"github.com/PeterStoica/chatwire/internal/node"
 	"github.com/PeterStoica/chatwire/internal/prekeys"
+	"github.com/PeterStoica/chatwire/internal/privacy"
 	"github.com/PeterStoica/chatwire/internal/queue"
 	"github.com/PeterStoica/chatwire/internal/signal"
 	"github.com/PeterStoica/chatwire/internal/usync"
@@ -50,6 +52,28 @@ var (
 	ErrRejected = errors.New("client: WhatsApp refused the message")
 	ErrNoTarget = errors.New("client: the recipient has no devices")
 )
+
+const (
+	CodeMalformed   = 400
+	CodeForbidden   = 403
+	CodeUnsupported = 405
+	CodeStaleGroup  = 421
+	CodeRestricted  = 463
+	CodeChatCap     = 475
+	CodeInvalid     = 479
+)
+
+type Rejection struct {
+	Code int
+}
+
+func (r Rejection) Error() string {
+	return fmt.Sprintf("%v: error %d", ErrRejected, r.Code)
+}
+
+func (r Rejection) Is(target error) bool {
+	return target == ErrRejected
+}
 
 type State struct {
 	Linked        linkflow.Linked     `json:"linked"`
@@ -104,6 +128,8 @@ type Config struct {
 	Receipt  func(message.Receipt)
 	Sent     func(ctx context.Context, chat node.JID, id string) (*wire.Message, bool)
 	Seen     func(ctx context.Context, chat node.JID, id string) bool
+	TokenOf  func(ctx context.Context, contact node.JID) privacy.Token
+	Tokens   func([]privacy.Token)
 	Problem  func(error)
 	AppState AppStateStore
 	HTTP     *http.Client
@@ -128,6 +154,7 @@ type Client struct {
 	recentOrder []string
 	resends     map[string]int
 	recreated   map[address]time.Time
+	given       map[node.JID]time.Time
 	groups      map[senderName]*signal.SenderKeys
 	ownKeys     map[node.JID]*signal.SenderKey
 	holders     map[node.JID]map[address]bool
@@ -156,7 +183,7 @@ func Connect(ctx context.Context, cfg Config, state State) (*Client, error) {
 		cfg: cfg, identity: identity, done: make(chan struct{}), state: state,
 		sessions: map[address]*signal.Session{}, lids: map[string]string{}, groups: map[senderName]*signal.SenderKeys{}, acks: map[string]chan node.Node{}, retries: map[string]chan mediaretry.Notification{},
 		ownKeys: map[node.JID]*signal.SenderKey{}, holders: map[node.JID]map[address]bool{},
-		recent: map[string]sentMessage{}, resends: map[string]int{}, recreated: map[address]time.Time{},
+		recent: map[string]sentMessage{}, resends: map[string]int{}, recreated: map[address]time.Time{}, given: map[node.JID]time.Time{},
 	}
 	account := state.Linked.Account
 	pairs := map[node.JID]node.JID{account.LID.WithoutDevice(): account.JID.WithoutDevice()}
@@ -564,7 +591,58 @@ func (c *Client) Send(ctx context.Context, to node.JID, m *wire.Message) (string
 	c.rememberLocked(id, to, m)
 	c.mu.Unlock()
 	c.keep()
-	return id, c.deliver(ctx, message.Outgoing(id, to, m, parts, c.state.Linked.Account.SignedIdentity))
+	token, personal := c.tokenFor(ctx, to)
+	if err := c.deliver(ctx, withToken(message.Outgoing(id, to, m, parts, c.state.Linked.Account.SignedIdentity), token, c.cfg.Link.Now())); err != nil {
+		return id, err
+	}
+	if personal && m.GetProtocolMessage() == nil {
+		c.giveToken(token)
+	}
+	return id, nil
+}
+
+func (c *Client) tokenFor(ctx context.Context, to node.JID) (privacy.Token, bool) {
+	if c.cfg.TokenOf == nil || to.Server != node.ServerUser && to.Server != node.ServerLID || c.mine(to) {
+		return privacy.Token{}, false
+	}
+	token := c.cfg.TokenOf(ctx, to.WithoutDevice())
+	token.Contact = to.WithoutDevice()
+	return token, true
+}
+
+func withToken(stanza node.Node, token privacy.Token, now time.Time) node.Node {
+	if token.Usable(now) {
+		stanza.Children = append(slices.Clone(stanza.Children), token.Node())
+	}
+	return stanza
+}
+
+func (c *Client) giveToken(token privacy.Token) {
+	now := c.cfg.Link.Now()
+	c.mu.Lock()
+	if last := c.given[token.Contact]; last.After(token.Ours) {
+		token.Ours = last
+	}
+	number, known := c.numberLocked(token.Contact)
+	due := known && token.Due(now)
+	if due {
+		c.given[token.Contact] = now
+	}
+	c.mu.Unlock()
+	if !due {
+		return
+	}
+	c.enqueue(func(ctx context.Context) {
+		if _, err := c.online.Session.Query(ctx, privacy.Give(number, now)); err != nil {
+			c.mu.Lock()
+			delete(c.given, token.Contact)
+			c.mu.Unlock()
+			return
+		}
+		if c.cfg.Tokens != nil {
+			c.cfg.Tokens([]privacy.Token{{Contact: token.Contact, Ours: now}})
+		}
+	})
 }
 
 func (c *Client) devices(ctx context.Context, users []node.JID) ([]node.JID, error) {
@@ -659,7 +737,11 @@ func (c *Client) deliver(ctx context.Context, stanza node.Node) error {
 			return ErrClosed
 		}
 		if failure, _ := ack.Attr("error").Text(); failure != "" {
-			return fmt.Errorf("%w: error %s", ErrRejected, failure)
+			code, err := strconv.Atoi(failure)
+			if err != nil {
+				return fmt.Errorf("%w: error %q", ErrRejected, failure)
+			}
+			return Rejection{Code: code}
 		}
 		return nil
 	case <-timeout.Done():

@@ -323,3 +323,26 @@ func TestMediaMineAndGroupsThroughTheMessenger(t *testing.T) {
 		}
 	})
 }
+
+func TestARefusalFor463HoldsMessagesToNewContacts(t *testing.T) {
+	synctest.Test(t, func(t *testing.T) {
+		r := newRig(t)
+		w := r.world
+		w.Script(w.Serve(r.server))
+		r.server.Override = func(n node.Node) (node.Node, bool) {
+			if n.Tag != "message" {
+				return node.Node{}, false
+			}
+			return node.Node{Tag: "ack", Attrs: []node.Attr{{Key: "class", Value: node.Text("message")}, {Key: "id", Value: n.Attr("id")}, {Key: "error", Value: node.Text("463")}}}, true
+		}
+		r.m.Start(t.Context(), r.state)
+		var rejected client.Rejection
+		if _, err := r.m.SendText(t.Context(), r.bob, "hello"); !errors.As(err, &rejected) || rejected.Code != client.CodeRestricted || !errors.Is(err, client.ErrRejected) {
+			t.Fatalf("SendText() = %v, want a 463 rejection", err)
+		}
+		stranger := node.JID{User: "40733333333", Server: node.ServerUser}
+		if _, err := r.m.SendText(t.Context(), stranger, "hi"); !errors.Is(err, messenger.ErrRestricted) {
+			t.Fatalf("SendText() to a new contact after a 463 = %v, want it held", err)
+		}
+	})
+}

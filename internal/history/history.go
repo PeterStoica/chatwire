@@ -16,6 +16,7 @@ import (
 	"github.com/PeterStoica/chatwire/internal/media"
 	"github.com/PeterStoica/chatwire/internal/message"
 	"github.com/PeterStoica/chatwire/internal/node"
+	"github.com/PeterStoica/chatwire/internal/privacy"
 	"github.com/PeterStoica/chatwire/internal/wire"
 )
 
@@ -47,6 +48,7 @@ type Chat struct {
 	Pinned      bool
 	ReadOnly    bool
 	MutedUntil  time.Time
+	Token       privacy.Token
 }
 
 type Message struct {
@@ -197,6 +199,13 @@ func chatOf(jid node.JID, c *wire.Conversation) Chat {
 	}
 	if muted := c.GetMuteEndTime(); muted > 0 {
 		chat.MutedUntil = unix(muted)
+	}
+	chat.Token = privacy.Token{Contact: jid, Theirs: c.GetTcToken()}
+	if given := c.GetTcTokenTimestamp(); given > 0 && len(chat.Token.Theirs) > 0 {
+		chat.Token.Given = unix(given)
+	}
+	if ours := c.GetTcTokenSenderTimestamp(); ours > 0 {
+		chat.Token.Ours = unix(ours)
 	}
 	return chat
 }

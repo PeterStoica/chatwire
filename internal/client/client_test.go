@@ -30,6 +30,7 @@ import (
 	"github.com/PeterStoica/chatwire/internal/message"
 	"github.com/PeterStoica/chatwire/internal/node"
 	"github.com/PeterStoica/chatwire/internal/prekeys"
+	"github.com/PeterStoica/chatwire/internal/privacy"
 	"github.com/PeterStoica/chatwire/internal/signal"
 	"github.com/PeterStoica/chatwire/internal/testkit/fakeappstate"
 	"github.com/PeterStoica/chatwire/internal/testkit/fakecdn"
@@ -69,6 +70,8 @@ type rig struct {
 	lids      map[node.JID]node.JID
 	receive   func(client.Received)
 	seen      func(chat node.JID, id string) bool
+	tokenOf   func(node.JID) privacy.Token
+	saved     []privacy.Token
 	problems  []error
 }
 
@@ -148,6 +151,17 @@ func (r *rig) connect() *client.Client {
 			r.received <- m
 		},
 		Seen: func(_ context.Context, chat node.JID, id string) bool { return r.seen != nil && r.seen(chat, id) },
+		TokenOf: func(_ context.Context, contact node.JID) privacy.Token {
+			if r.tokenOf == nil {
+				return privacy.Token{}
+			}
+			return r.tokenOf(contact)
+		},
+		Tokens: func(tokens []privacy.Token) {
+			r.mu.Lock()
+			defer r.mu.Unlock()
+			r.saved = append(r.saved, tokens...)
+		},
 		Problem: func(err error) {
 			r.mu.Lock()
 			defer r.mu.Unlock()
@@ -1801,6 +1815,125 @@ func TestSessionsKeptUnderANumberMoveToThePrivateIDOnRestart(t *testing.T) {
 			if s.Device.User == r.bob.User {
 				t.Fatalf("a session is still kept under bob's number after the restart: %v", s.Device)
 			}
+		}
+	})
+}
+
+func (r *rig) sentStanza(id string) node.Node {
+	r.mu.Lock()
+	defer r.mu.Unlock()
+	for _, n := range r.sent {
+		if got, _ := n.Attr("id").Text(); n.Tag == "message" && got == id {
+			return n
+		}
+	}
+	r.t.Fatalf("no message %s was sent", id)
+	return node.Node{}
+}
+
+func (r *rig) gives() []string {
+	r.mu.Lock()
+	defer r.mu.Unlock()
+	var out []string
+	for _, n := range r.sent {
+		if xmlns, _ := n.Attr("xmlns").Text(); n.Tag == "iq" && xmlns == "privacy" {
+			tokens, _ := n.Child("tokens")
+			for _, token := range tokens.Children {
+				out = append(out, token.Attr("jid").String()+" t="+token.Attr("t").String())
+			}
+		}
+	}
+	return out
+}
+
+func TestPrivacyTokensTravelWithPersonalMessages(t *testing.T) {
+	synctest.Test(t, func(t *testing.T) {
+		r := newRig(t)
+		var start time.Time
+		carol := node.JID{User: "40733333333", Server: node.ServerUser}
+		carolPhone, err := fakedevice.New(rand.Reader, carol)
+		if err != nil {
+			t.Fatal(err)
+		}
+		if err := carolPhone.Upload(r.keys, 3); err != nil {
+			t.Fatal(err)
+		}
+		r.devices.Set(carol, fakeusync.Device{ID: 0})
+		r.tokenOf = func(contact node.JID) privacy.Token {
+			switch contact {
+			case r.bob:
+				return privacy.Token{Theirs: []byte{9, 9}, Given: start.Add(-24 * time.Hour)}
+			case carol:
+				return privacy.Token{Theirs: []byte{8}, Given: start.Add(-40 * 24 * time.Hour)}
+			}
+			return privacy.Token{}
+		}
+		c := r.connect()
+		start = time.Now()
+		send := func(to node.JID, m *wire.Message) node.Node {
+			t.Helper()
+			id, err := c.Send(t.Context(), to, m)
+			if err != nil {
+				t.Fatal(err)
+			}
+			synctest.Wait()
+			return r.sentStanza(id)
+		}
+		token := func(stanza node.Node) []byte {
+			last := stanza.Children[len(stanza.Children)-1]
+			if last.Tag != "tctoken" {
+				return nil
+			}
+			return last.Bytes
+		}
+		stamp := func(at time.Time) string { return fmt.Sprint(at.Unix()) }
+
+		if got := token(send(r.bob, &wire.Message{Conversation: new("hello")})); !bytes.Equal(got, []byte{9, 9}) {
+			t.Fatalf("tctoken on a message to bob = %v", got)
+		}
+		send(r.bob, &wire.Message{Conversation: new("again")})
+		if got := token(send(carol, &wire.Message{Conversation: new("hi carol")})); got != nil {
+			t.Fatalf("an expired token went out: %v", got)
+		}
+		if got := token(send(r.account, &wire.Message{Conversation: new("note to self")})); got != nil {
+			t.Fatalf("a note to self carried a token: %v", got)
+		}
+		want := []string{"40722222222@s.whatsapp.net t=" + stamp(start), "40733333333@s.whatsapp.net t=" + stamp(start)}
+		if got := r.gives(); !slices.Equal(got, want) {
+			t.Fatalf("tokens given %q, want %q", got, want)
+		}
+
+		time.Sleep(8 * 24 * time.Hour)
+		later := time.Now()
+		revoke := &wire.Message{ProtocolMessage: &wire.Message_ProtocolMessage{Type: wire.Message_ProtocolMessage_REVOKE.Enum(), Key: &wire.MessageKey{Id: new("3EB0OLD")}}}
+		if got := token(send(r.bob, revoke)); !bytes.Equal(got, []byte{9, 9}) {
+			t.Fatalf("tctoken on a delete = %v", got)
+		}
+		if got := r.gives(); len(got) != 2 {
+			t.Fatalf("a delete gave our token again: %q", got)
+		}
+		send(r.bob, &wire.Message{Conversation: new("a week later")})
+		if got := r.gives(); len(got) != 3 || got[2] != "40722222222@s.whatsapp.net t="+stamp(later) {
+			t.Fatalf("tokens given after a week: %q", got)
+		}
+		r.mu.Lock()
+		saved := slices.Clone(r.saved)
+		r.mu.Unlock()
+		if len(saved) != 3 || saved[0].Contact != r.bob || !saved[0].Ours.Equal(start) || saved[2].Contact != r.bob || !saved[2].Ours.Equal(later) {
+			t.Fatalf("our tokens were not remembered: %+v", saved)
+		}
+
+		r.server.Inbox <- node.Node{Tag: "notification", Attrs: []node.Attr{
+			{Key: "from", Value: node.Address(carol)}, {Key: "type", Value: node.Text("privacy_token")}, {Key: "id", Value: node.Text("PT1")}, {Key: "t", Value: node.Text(stamp(later))},
+		}, Children: []node.Node{{Tag: "tokens", Children: []node.Node{{Tag: "token", Attrs: []node.Attr{
+			{Key: "jid", Value: node.Address(r.account)}, {Key: "t", Value: node.Text(stamp(later))}, {Key: "type", Value: node.Text("trusted_contact")},
+		}, Bytes: []byte{4, 2}}}}}}
+		synctest.Wait()
+		r.mu.Lock()
+		defer r.mu.Unlock()
+		last := r.saved[len(r.saved)-1]
+		if last.Contact != carol || !bytes.Equal(last.Theirs, []byte{4, 2}) || !last.Given.Equal(time.Unix(later.Unix(), 0)) {
+			t.Fatalf("carol's new token was not kept: %+v", last)
 		}
 	})
 }

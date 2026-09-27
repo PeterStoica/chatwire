@@ -11,6 +11,7 @@ import (
 	"github.com/PeterStoica/chatwire/internal/appstate"
 	"github.com/PeterStoica/chatwire/internal/media"
 	"github.com/PeterStoica/chatwire/internal/node"
+	"github.com/PeterStoica/chatwire/internal/privacy"
 	"github.com/PeterStoica/chatwire/internal/wire"
 )
 
@@ -81,8 +82,14 @@ func (c *Client) queueAppStateSync(names []string) {
 
 func (c *Client) notified(n node.Node) {
 	kind, _ := n.Attr("type").Text()
-	if kind == "mediaretry" {
+	switch kind {
+	case "mediaretry":
 		c.retried(n)
+		return
+	case "privacy_token":
+		if tokens, err := privacy.Received(c.mine, n); err == nil && len(tokens) > 0 && c.cfg.Tokens != nil {
+			c.cfg.Tokens(tokens)
+		}
 		return
 	}
 	if kind != "server_sync" {

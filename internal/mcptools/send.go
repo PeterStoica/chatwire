@@ -121,7 +121,7 @@ func replyInPlace(ctx context.Context, s Sender, text, quoted string) SendReport
 	if dir, dirErr := loadDirectory(ctx, s); dirErr == nil {
 		name = dir.label(chat)
 	}
-	if state, detail, ok := paced(err); ok {
+	if state, detail, ok := stopped(err); ok {
 		return SendReport{State: state, To: name, Detail: detail}
 	}
 	if err != nil {
@@ -146,7 +146,7 @@ func deliver(ctx context.Context, s Sender, to string, timeout time.Duration, no
 	}
 	name := dir.label(target)
 	id, err := do(ctx, target)
-	if state, detail, ok := paced(err); ok {
+	if state, detail, ok := stopped(err); ok {
 		return SendReport{State: state, To: name, Detail: detail}
 	}
 	if state, detail, ok := refusedSend(err); ok {
@@ -188,14 +188,36 @@ func sendReport(report SendReport) (*mcp.CallToolResult, SendReport, error) {
 	return nil, report, nil
 }
 
-func paced(err error) (state, detail string, ok bool) {
+func stopped(err error) (state, detail string, ok bool) {
+	var rejected client.Rejection
 	switch {
 	case errors.Is(err, messenger.ErrTooFast):
 		return "slow_down", fmt.Sprintf("Nothing was sent: at most %d messages go out a minute, so WhatsApp does not take the account for a spammer. Wait a minute, then send the rest.", messenger.MaxPerMinute), true
 	case errors.Is(err, messenger.ErrNewChats):
 		return "new_chat_limit", fmt.Sprintf("Nothing was sent: this would start a new chat, and %d were started in the last 24 hours. WhatsApp bans accounts that message many new people; send it later, or from the phone.", messenger.MaxNewChats), true
+	case errors.Is(err, messenger.ErrRestricted):
+		return stateRestricted, "Nothing was sent: WhatsApp refused a message to someone new in the last day (error 463), so messages to new contacts are held for 24 hours. Existing chats still work; ask the user to send this one from the phone.", true
+	case errors.As(err, &rejected):
+		state, detail := rejection(rejected.Code)
+		return state, detail, true
 	}
 	return "", "", false
+}
+
+func rejection(code int) (state, detail string) {
+	switch code {
+	case client.CodeRestricted:
+		return stateRestricted, "WhatsApp refused it (error 463): it limits this account's messages to people who have not chatted with it, often after many messages to new contacts. Do not retry; ask the user to send it from the phone. Messages to new contacts are now held for 24 hours."
+	case client.CodeForbidden:
+		return "not_allowed", "WhatsApp refused it (error 403): the person has blocked this account, or only admins can send in this group."
+	case client.CodeUnsupported:
+		return "unsupported", "WhatsApp refused it (error 405): this kind of message cannot be sent from a linked device."
+	case client.CodeChatCap:
+		return "new_chat_limit", "WhatsApp refused it (error 475): this business account reached its limit of new chats. Try again later."
+	case client.CodeMalformed, client.CodeStaleGroup, client.CodeInvalid:
+		return "try_again", fmt.Sprintf("WhatsApp refused it (error %d), usually because the chat's devices or group settings just changed. Try once more; if it fails again, ask the user to send it from the phone.", code)
+	}
+	return "rejected", fmt.Sprintf("WhatsApp refused it (error %d). Do not retry right away; ask the user to check the chat on the phone.", code)
 }
 
 func refusedSend(err error) (state, detail string, ok bool) {

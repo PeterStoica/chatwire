@@ -398,7 +398,7 @@ func (w *World) Serve(s *Server) Script {
 
 func (w *World) answerIQ(c *Conn, s *Server, n node.Node) {
 	switch xmlns, _ := n.Attr("xmlns").Text(); xmlns {
-	case "passive", "w:p":
+	case "passive", "w:p", "privacy":
 		c.Send(fakephone.Result(n))
 	case "encrypt":
 		c.Send(s.Keys.Handle(w.Phone.JID, n))
