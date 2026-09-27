@@ -4,6 +4,7 @@ import (
 	"context"
 	"encoding/json/v2"
 	"errors"
+	"fmt"
 	"os"
 	"path/filepath"
 	"slices"
@@ -225,6 +226,60 @@ func TestSetupAgainKeepsEachAppsOwnSettings(t *testing.T) {
 	}
 	if last := strings.Join(w.runs[len(w.runs)-1], " "); last != "claude mcp add -s user -e CHATWIRE_FILES=/work -e CHATWIRE_READ_ONLY=1 chatwire -- /new/chatwire" {
 		t.Fatalf("Claude Code was registered as: %s", last)
+	}
+}
+
+func TestSetupChangesOnlyTheProgramPath(t *testing.T) {
+	t.Parallel()
+	w := newWorld(t)
+	ctx := t.Context()
+	w.write(t, "Library/Application Support/Claude/claude_desktop_config.json", `{"mcpServers": {"chatwire": {"command": "/old/chatwire", "args": ["-state", "/work/linked.json"]}}}`)
+	w.write(t, ".codex/config.toml", "[mcp_servers.chatwire]\n\"command\" = \"/old/chatwire\"\nargs = [\n  \"-state\",\n  \"/work/linked.json\",\n]\n")
+	w.write(t, ".config/opencode/opencode.json", `{"mcp": {"chatwire": {"type": "local", "command": ["/old/chatwire", "-state", "/work/linked.json"], "enabled": false}}}`)
+	w.write(t, ".claude.json", `{"mcpServers": {"chatwire": {"command": "/old/chatwire", "args": ["-state", "/work/linked.json"]}}}`)
+	var chosen []setup.Client
+	for _, c := range setup.Clients(w.env) {
+		if slices.Contains([]string{"claude-code", "claude-desktop", "codex", "opencode"}, c.ID) {
+			chosen = append(chosen, c)
+		}
+	}
+	got := outcomes(setup.Apply(ctx, w.env, chosen, "/new/chatwire", false))
+	for _, id := range []string{"claude-code", "claude-desktop", "codex", "opencode"} {
+		if got[id] != setup.Updated {
+			t.Errorf("%s: %s, want %s", id, got[id], setup.Updated)
+		}
+	}
+	var desktop map[string]map[string]map[string]any
+	if err := json.Unmarshal([]byte(w.read(t, "Library/Application Support/Claude/claude_desktop_config.json")), &desktop); err != nil {
+		t.Fatal(err)
+	}
+	if entry := desktop["mcpServers"]["chatwire"]; entry["command"] != "/new/chatwire" || len(entry["args"].([]any)) != 2 {
+		t.Errorf("Claude Desktop entry: %v", entry)
+	}
+	if codex := w.read(t, ".codex/config.toml"); codex != "[mcp_servers.chatwire]\ncommand = \"/new/chatwire\"\nargs = [\n  \"-state\",\n  \"/work/linked.json\",\n]\n" {
+		t.Errorf("codex config:\n%s", codex)
+	}
+	var opencode map[string]map[string]map[string]any
+	if err := json.Unmarshal([]byte(w.read(t, ".config/opencode/opencode.json")), &opencode); err != nil {
+		t.Fatal(err)
+	}
+	if entry := opencode["mcp"]["chatwire"]; fmt.Sprint(entry["command"]) != "[/new/chatwire -state /work/linked.json]" || entry["enabled"] != false {
+		t.Errorf("opencode entry: %v", entry)
+	}
+	if last := strings.Join(w.runs[len(w.runs)-1], " "); last != "claude mcp add -s user chatwire -- /new/chatwire -state /work/linked.json" {
+		t.Errorf("Claude Code was registered as: %s", last)
+	}
+}
+
+func TestAFailedCommandDoesNotShowItsSettings(t *testing.T) {
+	t.Parallel()
+	env, err := setup.System()
+	if err != nil {
+		t.Fatal(err)
+	}
+	err = env.Run(t.Context(), "chatwire-no-such-command", "mcp", "add", "-e", "CHATWIRE_SECRET=hunter2", "chatwire")
+	if err == nil || strings.Contains(err.Error(), "hunter2") || !strings.Contains(err.Error(), "chatwire-no-such-command mcp add") {
+		t.Fatalf("error = %v", err)
 	}
 }
 

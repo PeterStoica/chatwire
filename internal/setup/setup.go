@@ -43,7 +43,7 @@ func System() (Env, error) {
 		Run: func(ctx context.Context, name string, args ...string) error {
 			out, err := exec.CommandContext(ctx, name, args...).CombinedOutput()
 			if err != nil {
-				return fmt.Errorf("%s %s: %w: %s", name, strings.Join(args, " "), err, bytes.TrimSpace(out))
+				return fmt.Errorf("%s %s: %w: %s", name, strings.Join(args[:min(2, len(args))], " "), err, bytes.TrimSpace(out))
 			}
 			return nil
 		},
@@ -196,7 +196,7 @@ func entryOf(c Client, command string, remove bool) any {
 }
 
 func viaClaude(ctx context.Context, env Env, command string, remove bool) (Outcome, error) {
-	current, settings := claudeEntry(env.Home)
+	current, extra, settings := claudeEntry(env.Home)
 	if !remove && current == command {
 		return Unchanged, nil
 	}
@@ -211,7 +211,7 @@ func viaClaude(ctx context.Context, env Env, command string, remove bool) (Outco
 	for _, setting := range settings {
 		args = append(args, "-e", setting)
 	}
-	if err := env.Run(ctx, "claude", append(args, Name, "--", command)...); err != nil {
+	if err := env.Run(ctx, "claude", append(append(args, Name, "--", command), extra...)...); err != nil {
 		return Failed, err
 	}
 	if removeErr == nil || current != "" {
@@ -220,19 +220,20 @@ func viaClaude(ctx context.Context, env Env, command string, remove bool) (Outco
 	return Added, nil
 }
 
-func claudeEntry(home string) (string, []string) {
+func claudeEntry(home string) (string, []string, []string) {
 	raw, err := os.ReadFile(filepath.Join(home, ".claude.json"))
 	if err != nil {
-		return "", nil
+		return "", nil, nil
 	}
 	var config struct {
 		Servers map[string]struct {
 			Command string            `json:"command"`
+			Args    []string          `json:"args"`
 			Env     map[string]string `json:"env"`
 		} `json:"mcpServers"`
 	}
 	if json.Unmarshal(raw, &config) != nil {
-		return "", nil
+		return "", nil, nil
 	}
 	entry := config.Servers[Name]
 	settings := make([]string, 0, len(entry.Env))
@@ -240,7 +241,7 @@ func claudeEntry(home string) (string, []string) {
 		settings = append(settings, key+"="+value)
 	}
 	slices.Sort(settings)
-	return entry.Command, settings
+	return entry.Command, entry.Args, settings
 }
 
 func editFile(path string, edit func([]byte) ([]byte, Outcome, error)) (Outcome, error) {
@@ -406,13 +407,28 @@ func keepOthers(current, fresh jsontext.Value) (jsontext.Value, error) {
 		return nil, err
 	}
 	for _, u := range updates {
-		if i := index(kept, u.name); i >= 0 {
-			kept[i].value = u.value
-		} else {
+		i := index(kept, u.name)
+		switch {
+		case i < 0:
 			kept = append(kept, u)
+		case u.name == "command":
+			kept[i].value = newCommand(kept[i].value, u.value)
 		}
 	}
 	return encode(kept, "")
+}
+
+func newCommand(current, fresh jsontext.Value) jsontext.Value {
+	var have, want []jsontext.Value
+	if json.Unmarshal(current, &have) != nil || json.Unmarshal(fresh, &want) != nil || len(have) == 0 || len(want) == 0 {
+		return fresh
+	}
+	have[0] = want[0]
+	joined, err := json.Marshal(have)
+	if err != nil {
+		return fresh
+	}
+	return joined
 }
 
 func same(a, b jsontext.Value) bool {
@@ -524,17 +540,30 @@ func editTOML(raw []byte, command string, remove bool) ([]byte, Outcome, error) 
 		return []byte(text + strings.Join(section, "\n") + "\n"), Added, nil
 	}
 	var rest []string
-	inTable := false
+	inTable, hasCommand, hasArgs := false, false, false
 	for _, line := range lines[start+1 : end] {
 		trimmed := strings.TrimSpace(line)
 		inTable = inTable || strings.HasPrefix(trimmed, "[")
-		if key, _, found := strings.Cut(trimmed, "="); !inTable && found && (strings.TrimSpace(key) == "command" || strings.TrimSpace(key) == "args") {
-			continue
+		key, _, found := strings.Cut(trimmed, "=")
+		key = strings.Trim(strings.TrimSpace(key), `"'`)
+		switch {
+		case inTable || !found:
+		case key == "command":
+			line, hasCommand = "command = "+tomlString(command), true
+		case key == "args":
+			hasArgs = true
 		}
 		rest = append(rest, line)
 	}
 	for len(rest) > 0 && strings.TrimSpace(rest[len(rest)-1]) == "" {
 		rest = rest[:len(rest)-1]
+	}
+	section = section[:1]
+	if !hasCommand {
+		section = append(section, "command = "+tomlString(command))
+	}
+	if !hasArgs {
+		section = append(section, "args = []")
 	}
 	section = append(section, rest...)
 	current := strings.TrimSpace(strings.Join(lines[start:end], "\n"))
@@ -545,8 +574,11 @@ func editTOML(raw []byte, command string, remove bool) ([]byte, Outcome, error) 
 	if end < len(lines) {
 		section = append(section, "")
 	}
-	updated := append(append(append([]string{}, lines[:start]...), section...), tail...)
-	return []byte(strings.Join(updated, "\n")), Updated, nil
+	updated := strings.Join(append(append(append([]string{}, lines[:start]...), section...), tail...), "\n")
+	if strings.HasSuffix(string(raw), "\n") && !strings.HasSuffix(updated, "\n") {
+		updated += "\n"
+	}
+	return []byte(updated), Updated, nil
 }
 
 func tomlString(s string) string {
