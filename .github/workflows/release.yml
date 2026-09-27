@@ -2,10 +2,14 @@ name: release
 
 on:
   push:
+    branches: [master]
     tags: ["v*"]
 
 permissions:
   contents: write
+
+concurrency:
+  group: release
 
 jobs:
   release:
@@ -17,8 +21,23 @@ jobs:
       - uses: actions/setup-go@v6
         with:
           go-version-file: go.mod
-      - run: go test ./...
-      - run: sh scripts/build-release.sh dist
-      - env:
+      - name: Choose the version
+        id: version
+        run: sh scripts/release-version.sh "$GITHUB_SHA" >> "$GITHUB_OUTPUT"
+      - name: Test
+        if: steps.version.outputs.tag != ''
+        run: go test ./...
+      - name: Build
+        if: steps.version.outputs.tag != ''
+        env:
+          TAG: ${{ steps.version.outputs.tag }}
+        run: |
+          git rev-parse -q --verify "refs/tags/$TAG" >/dev/null || git tag "$TAG" "$GITHUB_SHA"
+          sh scripts/build-release.sh dist
+          ./dist/chatwire_linux_amd64 version | grep -q "$TAG"
+      - name: Publish
+        if: steps.version.outputs.tag != ''
+        env:
           GH_TOKEN: ${{ github.token }}
-        run: gh release create "$GITHUB_REF_NAME" dist/* --title "$GITHUB_REF_NAME" --generate-notes
+          TAG: ${{ steps.version.outputs.tag }}
+        run: gh release create "$TAG" dist/* --target "$GITHUB_SHA" --title "$TAG" --generate-notes
