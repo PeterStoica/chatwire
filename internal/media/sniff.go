@@ -8,44 +8,20 @@ import (
 
 const VoiceMimetype = "audio/ogg; codecs=opus"
 
+func Essence(mimetype string) string {
+	base, _, _ := strings.Cut(mimetype, ";")
+	return strings.TrimSpace(base)
+}
+
 func Sniff(name string, data []byte) string {
-	sniffed := strings.TrimSpace(strings.Split(http.DetectContentType(data), ";")[0])
+	sniffed := Essence(http.DetectContentType(data))
 	switch sniffed {
 	case "application/octet-stream", "application/zip", "text/plain", "text/xml", "application/ogg":
 	default:
 		return sniffed
 	}
-	switch strings.ToLower(filepath.Ext(name)) {
-	case ".pdf":
-		return "application/pdf"
-	case ".docx":
-		return "application/vnd.openxmlformats-officedocument.wordprocessingml.document"
-	case ".xlsx":
-		return "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet"
-	case ".pptx":
-		return "application/vnd.openxmlformats-officedocument.presentationml.presentation"
-	case ".doc":
-		return "application/msword"
-	case ".xls":
-		return "application/vnd.ms-excel"
-	case ".csv":
-		return "text/csv"
-	case ".txt", ".md":
-		return "text/plain"
-	case ".zip":
-		return "application/zip"
-	case ".opus", ".ogg", ".oga":
-		return VoiceMimetype
-	case ".m4a":
-		return "audio/mp4"
-	case ".mp3":
-		return "audio/mpeg"
-	case ".heic":
-		return "image/heic"
-	case ".mov":
-		return "video/quicktime"
-	case ".mp4":
-		return "video/mp4"
+	if known, ok := ByExtension(name); ok {
+		return known
 	}
 	if sniffed == "application/ogg" {
 		return VoiceMimetype
@@ -53,8 +29,52 @@ func Sniff(name string, data []byte) string {
 	return sniffed
 }
 
+func ByExtension(name string) (string, bool) {
+	switch strings.ToLower(filepath.Ext(name)) {
+	case ".pdf":
+		return "application/pdf", true
+	case ".docx":
+		return "application/vnd.openxmlformats-officedocument.wordprocessingml.document", true
+	case ".xlsx":
+		return "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet", true
+	case ".pptx":
+		return "application/vnd.openxmlformats-officedocument.presentationml.presentation", true
+	case ".doc":
+		return "application/msword", true
+	case ".xls":
+		return "application/vnd.ms-excel", true
+	case ".csv":
+		return "text/csv", true
+	case ".txt", ".md":
+		return "text/plain", true
+	case ".zip":
+		return "application/zip", true
+	case ".opus", ".ogg", ".oga":
+		return VoiceMimetype, true
+	case ".m4a":
+		return "audio/mp4", true
+	case ".mp3":
+		return "audio/mpeg", true
+	case ".heic":
+		return "image/heic", true
+	case ".mov":
+		return "video/quicktime", true
+	case ".mp4":
+		return "video/mp4", true
+	case ".jpg", ".jpeg":
+		return "image/jpeg", true
+	case ".png":
+		return "image/png", true
+	case ".webp":
+		return "image/webp", true
+	case ".gif":
+		return "image/gif", true
+	}
+	return "", false
+}
+
 func KindOf(mimetype string) Type {
-	base := strings.TrimSpace(strings.Split(mimetype, ";")[0])
+	base := Essence(mimetype)
 	switch {
 	case base == "image/jpeg", base == "image/png", base == "image/webp", base == "image/gif":
 		return Image

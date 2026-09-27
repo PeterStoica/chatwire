@@ -74,9 +74,12 @@ func mediaReport(report MediaReport) (*mcp.CallToolResult, MediaReport, error) {
 }
 
 func mimetypeOf(ref media.Reference) string {
-	given := strings.TrimSpace(strings.Split(ref.Mimetype, ";")[0])
+	given := media.Essence(ref.Mimetype)
 	if given != "" && given != "application/octet-stream" {
 		return ref.Mimetype
+	}
+	if known, ok := media.ByExtension(ref.FileName); ok {
+		return known
 	}
 	if guessed := mime.TypeByExtension(filepath.Ext(ref.FileName)); guessed != "" {
 		return guessed
@@ -117,7 +120,7 @@ func extensionOf(ref media.Reference) string {
 	if extension := strings.TrimPrefix(filepath.Ext(ref.FileName), "."); extension != "" {
 		return extension
 	}
-	switch strings.TrimSpace(strings.Split(ref.Mimetype, ";")[0]) {
+	switch media.Essence(ref.Mimetype) {
 	case "image/jpeg":
 		return "jpg"
 	case "image/png":

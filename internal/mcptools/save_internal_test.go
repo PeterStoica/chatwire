@@ -70,7 +70,8 @@ func TestAGenericDocumentTypeFollowsItsName(t *testing.T) {
 		ref  media.Reference
 		want string
 	}{
-		{ref: media.Reference{Mimetype: "application/octet-stream", FileName: "random-08567f.txt"}, want: "text/plain; charset=utf-8"},
+		{ref: media.Reference{Mimetype: "application/octet-stream", FileName: "random-08567f.txt"}, want: "text/plain"},
+		{ref: media.Reference{Mimetype: "application/octet-stream", FileName: "voice.opus"}, want: media.VoiceMimetype},
 		{ref: media.Reference{FileName: "a.pdf"}, want: "application/pdf"},
 		{ref: media.Reference{Mimetype: "image/jpeg", FileName: "a.pdf"}, want: "image/jpeg"},
 		{ref: media.Reference{Mimetype: "application/octet-stream", FileName: "a.unknownext"}, want: "application/octet-stream"},
