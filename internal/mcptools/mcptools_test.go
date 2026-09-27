@@ -203,7 +203,8 @@ func TestLinkingByPhoneNumberFromClaudesSide(t *testing.T) {
 			t.Fatalf("before linking: %+v", report)
 		}
 		report, result := c.call("link_whatsapp", map[string]any{"phone_number": "+40 700 000 000"})
-		if report.State != "waiting_for_code" || len(report.Code) != 9 || !strings.Contains(textOf(result), report.Code) || !strings.Contains(textOf(result), "+40700000000") {
+		if report.State != "waiting_for_code" || len(report.Code) != 9 || !strings.Contains(textOf(result), report.Code) || !strings.Contains(textOf(result), "+40700000000") ||
+			!strings.Contains(report.Detail, mcptools.RiskNote) {
 			t.Fatalf("link_whatsapp = %+v\n%s", report, textOf(result))
 		}
 		again, _ := c.call("link_whatsapp", map[string]any{"phone_number": "40700000000"})
@@ -242,7 +243,7 @@ func TestLinkingByQRFromClaudesSide(t *testing.T) {
 		}})
 		report, result := c.call("link_whatsapp", nil)
 		if pages != 1 || report.Page != "http://127.0.0.1:1/0123/" || !strings.Contains(report.Detail, "now open in the user's browser: http://127.0.0.1:1/0123/") ||
-			!strings.Contains(report.Detail, "Linked Devices") {
+			!strings.Contains(report.Detail, "Linked Devices") || !strings.Contains(report.Detail, mcptools.RiskNote) {
 			t.Fatalf("the QR page: %d opened, %+v", pages, report)
 		}
 		var image *mcp.ImageContent

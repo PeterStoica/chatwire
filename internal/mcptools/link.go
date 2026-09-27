@@ -51,7 +51,13 @@ func link(l Linker, opts Options) mcp.ToolHandlerFor[LinkInput, Report] {
 		}
 		report := describe(st)
 		if st.Phase == linker.ShowingQR {
-			return qrResult(st.QR, withPage(ctx, opts, report))
+			report = withPage(ctx, opts, report)
+		}
+		if st.Phase == linker.ShowingQR || st.Phase == linker.ShowingCode {
+			report.Detail += "\nAlso tell the user, in these words: " + RiskNote
+		}
+		if st.Phase == linker.ShowingQR {
+			return qrResult(st.QR, report)
 		}
 		return nil, report, nil
 	}
@@ -189,6 +195,8 @@ func qrResult(data string, report Report) (*mcp.CallToolResult, Report, error) {
 	}
 	return withJSON(report, &mcp.ImageContent{MIMEType: "image/png", Data: code.PNG()}), report, nil
 }
+
+const RiskNote = "Chatwire is unofficial: WhatsApp's terms do not allow unofficial apps, so there is a small risk to your account. Your messages stay only on this computer."
 
 const scanSteps = "On the phone, scan it from WhatsApp's Linked devices screen " +
 	"(iPhone: Settings > Linked Devices > Link a Device; Android: the three-dot menu > Linked devices > Link a device)."
