@@ -15,8 +15,9 @@ body { margin: 0; min-height: 100vh; display: grid; place-items: center; backgro
 main { width: min(100%, 440px); background: var(--card); border: 1px solid var(--line); border-radius: 16px; padding: 28px 24px; text-align: center; }
 h1 { font-size: 1.35rem; margin: 0 0 4px; }
 .lead { color: var(--muted); margin: 0 0 20px; }
-.qr { width: 100%; max-width: 300px; aspect-ratio: 1; margin: 0 auto 20px; background: #fff; border-radius: 12px; padding: 12px; display: grid; place-items: center; }
-.qr img { width: 100%; height: 100%; image-rendering: pixelated; }
+.qr { width: 100%; max-width: 300px; aspect-ratio: 1; margin: 0 auto 20px; background: #fff; border-radius: 12px; padding: 12px; }
+.qr canvas { display: block; width: 100%; height: 100%; }
+.qr.paused { cursor: pointer; }
 .code { font: 600 2.4rem/1.2 ui-monospace, SFMono-Regular, Menlo, monospace; letter-spacing: .12em; margin: 8px 0 20px; }
 ol { text-align: left; margin: 0 0 20px; padding-left: 1.3em; }
 li { margin: 6px 0; }
@@ -32,7 +33,7 @@ li { margin: 6px 0; }
 <main>
   <h1>Link your WhatsApp</h1>
   <p class="lead" id="lead">Scan this code from your phone to link this computer.</p>
-  <div class="qr" id="qr" hidden></div>
+  <div class="qr" id="qr"><canvas id="canvas" role="img" aria-label="QR code to scan in WhatsApp's Linked devices screen"></canvas></div>
   <p class="code" id="code" hidden></p>
   <ol id="steps">
     <li>Open WhatsApp on your phone.</li>
@@ -46,11 +47,110 @@ li { margin: 6px 0; }
 </main>
 <script>
 const $ = (id) => document.getElementById(id);
-let shown = "";
-let lost = 0;
-let tries = 0;
-let asked = 0;
+const canvas = $("canvas");
+const pen = canvas.getContext("2d");
+const calm = matchMedia("(prefers-reduced-motion: reduce)");
+const wave = 520, flip = 280, margin = 2;
 const pause = [0, 2000, 5000, 10000, 30000];
+const bright = { on: 1, busy: 0.3, paused: 0.12, off: 0 };
+let shown = "", lost = 0, tries = 0, asked = 0, fresh = true, waiting = false, real = false, ever = false, noise = 7;
+let mode = "busy", level = bright.busy, last = 0, running = false;
+let to = sketch(33, noise), from = to, delays = spread(33), morphAt = 0;
+
+function sketch(size, seed) {
+  const cells = new Uint8Array(size * size);
+  for (let i = 0; i < cells.length; i++) { seed = (seed * 1103515245 + 12345) & 0x7fffffff; cells[i] = seed >> 16 & 1; }
+  for (const [ox, oy] of [[0, 0], [size - 7, 0], [0, size - 7]]) {
+    for (let y = -1; y < 8; y++) for (let x = -1; x < 8; x++) {
+      const cx = ox + x, cy = oy + y;
+      if (cx < 0 || cy < 0 || cx >= size || cy >= size) continue;
+      const ring = Math.max(Math.abs(x - 3), Math.abs(y - 3));
+      cells[cy * size + cx] = ring === 4 || ring === 2 ? 0 : 1;
+    }
+  }
+  return { size, cells };
+}
+function spread(size) {
+  const out = new Float32Array(size * size), c = (size - 1) / 2, far = Math.hypot(c, c);
+  for (let y = 0; y < size; y++) for (let x = 0; x < size; x++) out[y * size + x] = Math.hypot(x - c, y - c) / far * wave;
+  return out;
+}
+function resample(g, size) {
+  if (g.size === size) return g;
+  const cells = new Uint8Array(size * size);
+  for (let y = 0; y < size; y++) for (let x = 0; x < size; x++) cells[y * size + x] = g.cells[Math.floor(y * g.size / size) * g.size + Math.floor(x * g.size / size)];
+  return { size, cells };
+}
+function morph(next) {
+  from = resample(to, next.size);
+  to = next;
+  if (delays.length !== next.cells.length) delays = spread(next.size);
+  morphAt = calm.matches ? 0 : performance.now();
+  wake();
+}
+function parse(rows) {
+  const size = rows.length, cells = new Uint8Array(size * size);
+  rows.forEach((row, y) => { for (let x = 0; x < size; x++) cells[y * size + x] = row.charCodeAt(x) === 49 ? 1 : 0; });
+  return { size, cells };
+}
+function fit() {
+  const px = Math.round(canvas.clientWidth * devicePixelRatio);
+  if (px > 0 && canvas.width !== px) { canvas.width = canvas.height = px; wake(); }
+}
+function draw(t) {
+  const size = to.size, px = canvas.width, cell = Math.floor(px / (size + margin * 2)), off = Math.floor((px - cell * size) / 2);
+  const goal = bright[mode], shimmer = mode === "busy" && !calm.matches;
+  level = calm.matches ? goal : level + (goal - level) * Math.min(1, (t - last) / 200);
+  last = t;
+  let moving = shimmer || Math.abs(goal - level) > 0.005;
+  pen.fillStyle = "#fff";
+  pen.fillRect(0, 0, px, px);
+  for (let y = 0; y < size; y++) {
+    for (let x = 0; x < size; x++) {
+      const i = y * size + x, a = from.cells[i], b = to.cells[i];
+      let scale = b;
+      if (morphAt && a !== b) {
+        const p = Math.min(1, Math.max(0, (t - morphAt - delays[i]) / flip));
+        if (p < 1) moving = true;
+        const e = 1 - Math.pow(1 - p, 3);
+        scale = b ? e : 1 - e;
+      }
+      if (scale <= 0) continue;
+      let alpha = level;
+      if (shimmer) alpha *= 0.55 + 0.45 * (0.5 + 0.5 * Math.sin((x + y) * 0.32 - t / 150));
+      pen.fillStyle = alpha >= 0.995 ? "#000" : "rgba(0,0,0," + alpha.toFixed(3) + ")";
+      if (scale >= 1) { pen.fillRect(off + x * cell, off + y * cell, cell, cell); continue; }
+      const side = cell * scale, gap = (cell - side) / 2;
+      pen.fillRect(off + x * cell + gap, off + y * cell + gap, side, side);
+    }
+  }
+  if (!moving) morphAt = 0;
+  return moving;
+}
+function frame(t) {
+  if (mode !== "off" && draw(t)) requestAnimationFrame(frame);
+  else running = false;
+}
+function wake() {
+  if (running || !canvas.width || mode === "off") return;
+  running = true;
+  last = performance.now();
+  requestAnimationFrame(frame);
+}
+async function load(id) {
+  shown = id;
+  try {
+    const r = await fetch("qr.json?v=" + id, { cache: "no-store" });
+    if (!r.ok) throw new Error(r.status);
+    const g = await r.json();
+    if (mode !== "on") { shown = ""; return; }
+    shown = g.id;
+    real = ever = true;
+    morph(parse(g.rows));
+  } catch (e) {
+    shown = "";
+  }
+}
 function renew(s) {
   const wait = s.phase === "failed" ? pause[Math.min(tries, pause.length - 1)] : 0;
   if (Date.now() - asked < Math.max(wait, 1500)) return;
@@ -60,35 +160,36 @@ function renew(s) {
 }
 function show(s) {
   const qr = s.phase === "qr", code = s.phase === "code", done = s.phase === "linked";
-  $("qr").hidden = !qr;
+  const stopped = s.phase === "expired" || s.phase === "failed" || s.phase === "logged_out" || s.phase === "idle";
+  waiting = s.phase === "expired" && !fresh;
+  if (stopped && !waiting && !document.hidden) renew(s);
+  if (qr || code || s.phase === "starting") fresh = false;
+  if (qr || code) tries = 0;
+  $("qr").hidden = code || done;
+  $("qr").classList.toggle("paused", waiting);
   $("code").hidden = !code;
   $("steps").hidden = done;
-  const stopped = s.phase === "expired" || s.phase === "failed" || s.phase === "logged_out" || s.phase === "idle";
-  if (stopped) renew(s);
-  if (qr || code) tries = 0;
-  if (qr && s.qr !== shown) {
-    shown = s.qr;
-    const img = new Image();
-    img.alt = "QR code to scan in WhatsApp's Linked devices screen";
-    img.src = "qr.png?v=" + s.qr;
-    $("qr").replaceChildren(img);
-  }
+  mode = code || done ? "off" : qr ? "on" : waiting ? "paused" : "busy";
+  if (mode !== "on" && real) { real = false; shown = ""; morph(sketch(to.size, ++noise)); }
+  wake();
+  if (qr && s.qr !== shown) load(s.qr);
   if (code) { $("code").textContent = s.code; $("last").textContent = 'Tap "Link with phone number instead" and type this code.'; }
   else { $("last").textContent = "Point the phone at this code."; }
   const status = $("status");
   status.className = "status" + (done ? " ok" : s.phase === "failed" ? " warn" : "");
   switch (s.phase) {
-    case "qr": status.textContent = "Waiting for your phone. The code changes every 20 seconds; this page keeps up."; $("lead").textContent = "Scan this code from your phone to link this computer."; break;
+    case "qr": status.textContent = "Waiting for your phone. The code renews itself, so there is nothing to refresh."; $("lead").textContent = "Scan this code from your phone to link this computer."; break;
     case "code": status.textContent = "Waiting for you to type the code on your phone."; $("lead").textContent = "Type this code on your phone to link this computer."; break;
-    case "starting": status.textContent = "Contacting WhatsApp..."; break;
+    case "starting": status.textContent = ever ? "Getting a new code..." : "Contacting WhatsApp..."; break;
     case "linked": status.textContent = "Linked to " + s.account + ". You can close this page and go back to your assistant."; $("lead").textContent = "All set."; break;
     case "failed": status.textContent = "Linking failed" + (s.problem ? ": " + s.problem : "") + ". Trying again..."; break;
+    case "expired": status.textContent = waiting ? "Paused. Move the mouse over this page to get a new code." : "Getting a new code..."; break;
     default: status.textContent = "Getting a new code...";
   }
 }
 async function poll() {
   try {
-    const r = await fetch("state", { cache: "no-store" });
+    const r = await fetch("state?visible=" + (document.hidden ? 0 : 1), { cache: "no-store" });
     if (!r.ok) throw new Error(r.status);
     lost = 0;
     show(await r.json());
@@ -96,6 +197,13 @@ async function poll() {
     if (++lost > 3) { $("status").className = "status warn"; $("status").textContent = "Lost contact with the WhatsApp tool. Ask your assistant to link WhatsApp again."; }
   }
 }
+function back() {
+  if (waiting && !document.hidden) { fresh = true; poll(); }
+}
+for (const event of ["pointermove", "pointerdown", "keydown", "focus"]) addEventListener(event, back);
+document.addEventListener("visibilitychange", () => { if (!document.hidden) { fresh = true; poll(); } });
+new ResizeObserver(fit).observe(canvas);
+fit();
 poll();
 setInterval(poll, 1000);
 </script>

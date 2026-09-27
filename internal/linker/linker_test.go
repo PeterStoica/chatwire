@@ -193,6 +193,62 @@ func TestUnscannedQRExpiresAndTheNextStartBeginsAgain(t *testing.T) {
 	})
 }
 
+func TestAQRSomeoneIsLookingAtStaysFresh(t *testing.T) {
+	synctest.Test(t, func(t *testing.T) {
+		r := newRig(t)
+		r.world.Script(r.world.Unscanned(), r.world.QRPairing(time.Second), r.world.Login(fakeworld.Success()))
+		r.linker.KeepQRWhile(func() bool { return true })
+		if _, err := r.linker.Start(t.Context(), ""); err != nil {
+			t.Fatal(err)
+		}
+		if final, err := r.linker.Await(t.Context(), linkedOrOver); err != nil || final.Phase != linker.Linked || r.world.Dials() != 3 {
+			t.Fatalf("final = %+v, %v after %d dials", final, err, r.world.Dials())
+		}
+	})
+}
+
+func TestAQRNobodyIsLookingAtExpires(t *testing.T) {
+	synctest.Test(t, func(t *testing.T) {
+		r := newRig(t)
+		r.world.Script(r.world.Unscanned(), r.world.Unscanned())
+		var looking atomic.Bool
+		looking.Store(true)
+		r.linker.KeepQRWhile(looking.Load)
+		if _, err := r.linker.Start(t.Context(), ""); err != nil {
+			t.Fatal(err)
+		}
+		start := time.Now()
+		if _, err := r.linker.Await(t.Context(), func(s linker.Status) bool { return s.Phase == linker.Starting }); err != nil {
+			t.Fatal(err)
+		}
+		looking.Store(false)
+		expired, err := r.linker.Await(t.Context(), linkedOrOver)
+		if err != nil || expired.Phase != linker.Expired || !errors.Is(expired.Err, linkflow.ErrQRExpired) || time.Since(start) != 320*time.Second {
+			t.Fatalf("after %s: %+v, %v", time.Since(start), expired, err)
+		}
+	})
+}
+
+func TestAQRStopsRenewingAfterAWhile(t *testing.T) {
+	synctest.Test(t, func(t *testing.T) {
+		r := newRig(t)
+		unscanned := make([]fakeworld.Script, 6)
+		for i := range unscanned {
+			unscanned[i] = r.world.Unscanned()
+		}
+		r.world.Script(unscanned...)
+		r.linker.KeepQRWhile(func() bool { return true })
+		start := time.Now()
+		if _, err := r.linker.Start(t.Context(), ""); err != nil {
+			t.Fatal(err)
+		}
+		expired, err := r.linker.Await(t.Context(), linkedOrOver)
+		if err != nil || expired.Phase != linker.Expired || time.Since(start) != 16*time.Minute || r.world.Dials() != 6 {
+			t.Fatalf("after %s and %d dials: %+v, %v", time.Since(start), r.world.Dials(), expired, err)
+		}
+	})
+}
+
 func TestSaveFailureIsReportedNotSwallowed(t *testing.T) {
 	synctest.Test(t, func(t *testing.T) {
 		r := newRig(t)

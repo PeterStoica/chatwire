@@ -306,7 +306,7 @@ func (a *app) linkPage(ctx context.Context) (string, bool, error) {
 		}
 		a.page = page
 	}
-	if time.Since(a.opened) < reopenAfter {
+	if a.page.Open() || time.Since(a.opened) < reopenAfter {
 		return a.page.URL, true, nil
 	}
 	if err := qrpage.Open(ctx, a.page.URL); err != nil {
@@ -374,7 +374,15 @@ func openLocked(ctx context.Context, path string) (*app, error) {
 	if linked {
 		m.Start(ctx, state)
 	}
-	return &app{messages: messages, m: m, l: l, media: filepath.Join(filepath.Dir(path), "media"), repeats: mcptools.NewRepeats()}, nil
+	a := &app{messages: messages, m: m, l: l, media: filepath.Join(filepath.Dir(path), "media"), repeats: mcptools.NewRepeats()}
+	l.KeepQRWhile(a.pageSeen)
+	return a, nil
+}
+
+func (a *app) pageSeen() bool {
+	a.mu.Lock()
+	defer a.mu.Unlock()
+	return a.page != nil && a.page.Seen()
 }
 
 func (a *app) server(settings url.Values) *mcp.Server {

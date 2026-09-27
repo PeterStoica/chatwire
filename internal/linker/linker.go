@@ -10,6 +10,8 @@ import (
 	"github.com/PeterStoica/chatwire/internal/pairing"
 )
 
+const qrSessions = 6
+
 type Phase uint8
 
 const (
@@ -65,6 +67,7 @@ func (s Status) settled() bool {
 type Linker struct {
 	cfg      linkflow.Config
 	onLinked func(linkflow.Linked)
+	keepQR   func() bool
 
 	starting sync.Mutex
 	mu       sync.Mutex
@@ -86,6 +89,19 @@ func (l *Linker) WhenLinked(fn func(linkflow.Linked)) {
 	l.mu.Lock()
 	defer l.mu.Unlock()
 	l.onLinked = fn
+}
+
+func (l *Linker) KeepQRWhile(fn func() bool) {
+	l.mu.Lock()
+	defer l.mu.Unlock()
+	l.keepQR = fn
+}
+
+func (l *Linker) keepingQR() bool {
+	l.mu.Lock()
+	keep := l.keepQR
+	l.mu.Unlock()
+	return keep != nil && keep()
 }
 
 func (l *Linker) LoggedOut(err error) {
@@ -139,11 +155,18 @@ func (l *Linker) begin(parent context.Context, phone pairing.Phone) {
 	go func() {
 		defer close(running)
 		defer cancel()
-		linked, err := linkflow.Link(ctx, cfg)
-		if err != nil && ctx.Err() != nil {
+		for session := 1; ; session++ {
+			linked, err := linkflow.Link(ctx, cfg)
+			if err != nil && ctx.Err() != nil {
+				return
+			}
+			if errors.Is(err, linkflow.ErrQRExpired) && session < qrSessions && l.keepingQR() {
+				l.show(ctx, Status{Phase: Starting, Phone: phone})
+				continue
+			}
+			l.finish(phone, linked, err)
 			return
 		}
-		l.finish(phone, linked, err)
 	}()
 }
 
