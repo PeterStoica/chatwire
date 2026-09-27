@@ -200,6 +200,10 @@ func refusedSend(err error) (state, detail string, ok bool) {
 		return "not_forwardable", "Polls and view-once photos or videos cannot be forwarded.", true
 	case errors.As(err, &problem):
 		return "invalid_poll", "Not sent: " + problem.Reason + ".", true
+	case errors.Is(err, client.ErrNoTarget):
+		return "not_on_whatsapp", "Not sent: this number is not on WhatsApp, or WhatsApp could not reach any of its devices. Check the number and its country code.", true
+	case errors.Is(err, messenger.ErrNotMember):
+		return "not_a_member", "Not sent: the user is not in that group any more.", true
 	}
 	return "", "", false
 }

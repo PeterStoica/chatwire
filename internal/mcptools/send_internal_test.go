@@ -38,3 +38,17 @@ func TestWhatsAppRefusalsBecomeNextSteps(t *testing.T) {
 		}
 	}
 }
+
+func TestSendsThatCannotReachAnyone(t *testing.T) {
+	for _, tt := range []struct {
+		err  error
+		want string
+	}{
+		{err: fmt.Errorf("messenger: %w", client.ErrNoTarget), want: "not_on_whatsapp"},
+		{err: fmt.Errorf("%w: 120363@g.us", messenger.ErrNotMember), want: "not_a_member"},
+	} {
+		if state, _, ok := refusedSend(tt.err); !ok || state != tt.want {
+			t.Errorf("refusedSend(%v) = %q, %v; want %q", tt.err, state, ok, tt.want)
+		}
+	}
+}
