@@ -29,7 +29,8 @@ for target in darwin/arm64 darwin/amd64 linux/amd64 linux/arm64; do
 	echo >>"$installer"
 	chmod 0755 "$installer"
 done
-cp scripts/install.sh scripts/install.ps1 "$out/"
+cp scripts/install.sh scripts/install.ps1 LICENSE NOTICE "$out/"
+cp internal/notices/notices.txt "$out/LICENSES.txt"
 cd "$out"
 if command -v sha256sum >/dev/null 2>&1; then
 	sha256sum chatwire_*
