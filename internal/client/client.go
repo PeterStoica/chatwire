@@ -818,6 +818,10 @@ func (c *Client) Groups(ctx context.Context) ([]groups.Group, error) {
 	return groups.ParseParticipating(reply)
 }
 
+func (c *Client) Query(ctx context.Context, request node.Node) (node.Node, error) {
+	return c.online.Session.Query(ctx, request)
+}
+
 func (c *Client) Group(ctx context.Context, jid node.JID) (groups.Group, bool, error) {
 	reply, err := c.online.Session.Query(ctx, groups.InfoRequest(jid))
 	if err != nil {

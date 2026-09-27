@@ -2122,3 +2122,70 @@ func TestStatusMentionsANewerChatwire(t *testing.T) {
 		}
 	})
 }
+
+func TestManagingAGroupFromClaude(t *testing.T) {
+	synctest.Test(t, func(t *testing.T) {
+		w, err := fakeworld.New(37)
+		if err != nil {
+			t.Fatal(err)
+		}
+		account := node.JID{User: w.Phone.JID.User, Server: w.Phone.JID.Server}
+		bob := node.JID{User: "40722222222", Server: node.ServerUser}
+		carol := node.JID{User: "40733333333", Server: node.ServerUser}
+		shy := node.JID{User: "40744444444", Server: node.ServerUser}
+		family := groups.Group{JID: node.JID{User: "120363000000000011", Server: node.ServerGroup}, Subject: "Family", Created: time.Unix(1700000000, 0),
+			Participants: []groups.Participant{{JID: account, Admin: true}, {JID: bob}}, Description: "Sunday lunch", DescriptionID: "D1"}
+		work := groups.Group{JID: node.JID{User: "120363000000000012", Server: node.ServerGroup}, Subject: "Work", Created: time.Unix(1700000000, 0),
+			Participants: []groups.Participant{{JID: account}, {JID: bob, Admin: true}}}
+		groupsServer := fakegroups.New(family, work)
+		groupsServer.Actor, groupsServer.InviteOnly = account, map[node.JID]bool{shy: true}
+		w.Script(w.CodePairing(), w.Login(fakeworld.Success()), w.Serve(&fakeworld.Server{
+			Keys: fakekeys.New(), Devices: fakeusync.New(), PushName: "Me", Inbox: make(chan node.Node), Groups: groupsServer,
+		}))
+		c, _ := connect(t, w)
+		linking, _ := c.call("link_whatsapp", map[string]any{"phone_number": "+40 700 000 000"})
+		w.Type(linking.Code)
+		c.call("whatsapp_status", map[string]any{"wait_seconds": 60})
+		synctest.Wait()
+		manage := func(args map[string]any) mcptools.GroupReport {
+			t.Helper()
+			report, _ := callAs[mcptools.GroupReport](c, "manage_whatsapp_group", args)
+			return report
+		}
+		if r := manage(map[string]any{"group": "family", "action": "rename", "text": "Family 2026"}); r.State != "done" {
+			t.Fatalf("rename: %+v", r)
+		}
+		if r := manage(map[string]any{"group": "family 2026", "action": "describe", "text": "Lunch at 1"}); r.State != "done" {
+			t.Fatalf("describe: %+v", r)
+		}
+		r := manage(map[string]any{"group": "family 2026", "action": "add", "people": []string{"+40 733 333 333", "+40744444444", "+40722222222"}})
+		if r.State != "partly_done" || len(r.Changed) != 1 || len(r.Failed) != 2 || !strings.Contains(r.Failed[0].Reason, "invite") || r.Failed[1].Reason != "already in the group" {
+			t.Fatalf("add: %+v", r)
+		}
+		if r := manage(map[string]any{"group": "family 2026", "action": "make_admin", "people": []string{"+40733333333"}}); r.State != "done" {
+			t.Fatalf("make_admin: %+v", r)
+		}
+		if r := manage(map[string]any{"group": "family 2026", "action": "remove", "people": []string{"+40722222222"}}); r.State != "done" {
+			t.Fatalf("remove: %+v", r)
+		}
+		after, _ := groupsServer.Group(family.JID)
+		if after.Subject != "Family 2026" || after.Description != "Lunch at 1" || len(after.Participants) != 2 || after.Participants[1].JID != carol || !after.Participants[1].Admin {
+			t.Fatalf("the group after the changes: %+v", after)
+		}
+		if r := manage(map[string]any{"group": "work", "action": "rename", "text": "Mine now"}); r.State != "not_admin" {
+			t.Fatalf("renaming a group we do not run: %+v", r)
+		}
+		if r := manage(map[string]any{"group": "family 2026", "action": "rename", "text": strings.Repeat("x", 101)}); r.State != "invalid" {
+			t.Fatalf("a name that is too long: %+v", r)
+		}
+		if r := manage(map[string]any{"group": "family 2026", "action": "dance"}); r.State != "unknown_action" {
+			t.Fatalf("an unknown action: %+v", r)
+		}
+		if r := manage(map[string]any{"group": "work", "action": "leave"}); r.State != "done" {
+			t.Fatalf("leave: %+v", r)
+		}
+		if left, _ := groupsServer.Group(work.JID); len(left.Participants) != 1 {
+			t.Fatalf("still in work after leaving: %+v", left.Participants)
+		}
+	})
+}

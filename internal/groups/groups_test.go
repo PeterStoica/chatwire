@@ -2,6 +2,7 @@ package groups_test
 
 import (
 	"errors"
+	"slices"
 	"testing"
 	"time"
 
@@ -138,5 +139,57 @@ func TestLookingUpOneGroup(t *testing.T) {
 	}
 	if found, err := groups.ParseParticipating(reply); err != nil || len(found) != 0 {
 		t.Fatalf("the full list skips it too: %+v, %v", found, err)
+	}
+}
+
+func TestChangingAGroup(t *testing.T) {
+	me := node.JID{User: "40711111111", Server: node.ServerUser}
+	bob := node.JID{User: "40722222222", Server: node.ServerUser}
+	carol := node.JID{User: "40733333333", Server: node.ServerUser}
+	shy := node.JID{User: "40744444444", Server: node.ServerUser}
+	family := groups.Group{JID: node.JID{User: "120363000000000031", Server: node.ServerGroup}, Subject: "Family", Created: time.Unix(1700000000, 0),
+		Description: "old rules", DescriptionID: "D7", Participants: []groups.Participant{{JID: me, Admin: true}, {JID: bob}}}
+	server := fakegroups.New(family)
+	server.Actor, server.InviteOnly = me, map[node.JID]bool{shy: true}
+
+	if reply := server.Handle(groups.SetSubject(family.JID, "Family 2026")); groups.RefusedBy(reply) != nil {
+		t.Fatalf("renaming: %s", reply)
+	}
+	request := groups.SetDescription(family.JID, "D8", "D7", "new rules")
+	description, _ := request.Child("description")
+	if body, _ := description.Child("body"); description.Attr("prev").String() != "D7" || string(body.Bytes) != "new rules" {
+		t.Fatalf("description request = %s", request)
+	}
+	if reply := server.Handle(request); groups.RefusedBy(reply) != nil {
+		t.Fatalf("describing: %s", reply)
+	}
+	var refused groups.Refused
+	if err := groups.RefusedBy(server.Handle(groups.SetDescription(family.JID, "D9", "D7", "stale"))); !errors.As(err, &refused) || refused.Code != 409 {
+		t.Fatalf("a description change from a stale copy: %v", err)
+	}
+	add := groups.ChangeMembers(family.JID, groups.Add, []groups.Member{{JID: carol}, {JID: bob}, {JID: shy}})
+	got, err := groups.ParseChange(server.Handle(add), groups.Add)
+	want := []groups.Outcome{{JID: carol}, {JID: bob, Code: 409}, {JID: shy, Code: 403}}
+	if err != nil || !slices.Equal(got, want) {
+		t.Fatalf("adding: %+v, %v", got, err)
+	}
+	if got, err := groups.ParseChange(server.Handle(groups.ChangeMembers(family.JID, groups.Promote, []groups.Member{{JID: carol}})), groups.Promote); err != nil || len(got) != 1 || got[0].Code != 0 {
+		t.Fatalf("promoting: %+v, %v", got, err)
+	}
+	if got, err := groups.ParseChange(server.Handle(groups.ChangeMembers(family.JID, groups.Remove, []groups.Member{{JID: bob}, {JID: shy}})), groups.Remove); err != nil || !slices.Equal(got, []groups.Outcome{{JID: bob}, {JID: shy, Code: 404}}) {
+		t.Fatalf("removing: %+v, %v", got, err)
+	}
+	after, _ := server.Group(family.JID)
+	if after.Subject != "Family 2026" || after.Description != "new rules" || after.DescriptionID != "D8" || len(after.Participants) != 2 || !after.Participants[1].Admin {
+		t.Fatalf("the group after the changes: %+v", after)
+	}
+	server.Actor = bob
+	if err := groups.RefusedBy(server.Handle(groups.SetSubject(family.JID, "hijacked"))); !errors.As(err, &refused) || refused.Code != 401 {
+		t.Fatalf("a change by someone who is not an admin: %v", err)
+	}
+	server.Actor = me
+	server.Handle(groups.Leave(family.JID))
+	if after, _ := server.Group(family.JID); len(after.Participants) != 1 {
+		t.Fatalf("after leaving: %+v", after.Participants)
 	}
 }

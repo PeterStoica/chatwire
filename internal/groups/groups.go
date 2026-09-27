@@ -35,6 +35,7 @@ type Group struct {
 	AddressingMode string
 	Participants   []Participant
 	Description    string
+	DescriptionID  string
 }
 
 func ParticipatingRequest() node.Node {
@@ -110,6 +111,7 @@ func parseGroup(entry node.Node) (Group, error) {
 			role := text(child, "type")
 			g.Participants = append(g.Participants, Participant{JID: jid, LID: lid, Phone: phone, Admin: role == "admin" || role == "superadmin"})
 		case "description":
+			g.DescriptionID = text(child, "id")
 			if body, ok := child.Child("body"); ok {
 				g.Description = string(body.Bytes)
 			}

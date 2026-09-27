@@ -46,6 +46,10 @@ type Sender interface {
 	Delete(ctx context.Context, id string) (store.Message, error)
 	Vote(ctx context.Context, id string, options []string) (store.Message, []string, error)
 	Forward(ctx context.Context, to node.JID, id string) (string, store.Message, error)
+	RenameGroup(ctx context.Context, group node.JID, name string) error
+	DescribeGroup(ctx context.Context, group node.JID, text string) error
+	LeaveGroup(ctx context.Context, group node.JID) error
+	ChangeMembers(ctx context.Context, group node.JID, change groups.Change, people []node.JID) ([]messenger.MemberOutcome, error)
 }
 
 type Options struct {
@@ -97,6 +101,10 @@ func Register(server *mcp.Server, l Linker, s Sender, opts Options) {
 		Name:        "list_whatsapp_groups",
 		Description: "List the WhatsApp groups the user is in, with their names, ids and sizes; with group, also that group's members (admins marked) and description.",
 	}, listGroups(s))
+	add(server, &mcp.Tool{
+		Name:        "manage_whatsapp_group",
+		Description: manageDescription,
+	}, manageGroup(s))
 	add(server, &mcp.Tool{
 		Name: "read_whatsapp_messages",
 		Description: "Read WhatsApp messages, newest last, including history synced from the phone. " +
