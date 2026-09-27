@@ -1969,3 +1969,104 @@ func TestANoteToSelfByPrivateIDReachesEachDeviceOnce(t *testing.T) {
 		}
 	})
 }
+
+func TestANewPhoneOrIdentityGetsFreshSessionsAndOurGroupKey(t *testing.T) {
+	for _, tt := range []struct {
+		name   string
+		notice func(r *rig) node.Node
+	}{
+		{name: "a new identity", notice: func(r *rig) node.Node {
+			return node.Node{Tag: "notification", Attrs: []node.Attr{
+				{Key: "from", Value: node.Address(r.bob)}, {Key: "type", Value: node.Text("encrypt")}, {Key: "id", Value: node.Text("E1")},
+				{Key: "lid", Value: node.Address(node.JID{User: "99001", Server: node.ServerLID})},
+			}, Children: []node.Node{{Tag: "identity"}}}
+		}},
+		{name: "a removed device", notice: func(r *rig) node.Node {
+			return node.Node{Tag: "notification", Attrs: []node.Attr{
+				{Key: "from", Value: node.Address(r.bob)}, {Key: "type", Value: node.Text("devices")}, {Key: "id", Value: node.Text("D1")},
+			}, Children: []node.Node{{Tag: "remove", Children: []node.Node{{Tag: "device", Attrs: []node.Attr{{Key: "jid", Value: node.Address(r.bob)}}}}}}}
+		}},
+	} {
+		t.Run(tt.name, func(t *testing.T) {
+			synctest.Test(t, func(t *testing.T) {
+				r := newRig(t)
+				family := groups.Group{
+					JID: node.JID{User: "120363000000000009", Server: node.ServerGroup}, Subject: "Family", Created: time.Unix(1700000000, 0), AddressingMode: "pn",
+					Participants: []groups.Participant{{JID: r.account, Admin: true}, {JID: r.bob}},
+				}
+				r.server.Groups = fakegroups.New(family)
+				r.server.Members = func(node.JID) []node.JID { return []node.JID{r.bob, r.account, r.world.Phone.JID} }
+				c := r.connect()
+				bobHas := func() (kind string, withKey bool) {
+					t.Helper()
+					toBob := r.deliveredTo(r.bob)
+					in, _, err := r.bobPhone.Receive(toBob[len(toBob)-1])
+					if err != nil {
+						t.Fatal(err)
+					}
+					for _, enc := range in.Encs {
+						if enc.Type != "skmsg" {
+							kind, withKey = enc.Type, true
+						}
+					}
+					return kind, withKey
+				}
+				if _, err := c.Send(t.Context(), r.bob, &wire.Message{Conversation: new("hi")}); err != nil {
+					t.Fatal(err)
+				}
+				bobHas()
+				reply, err := r.bobPhone.Send(r.keys, r.devices, r.account, &wire.Message{Conversation: new("hello back")})
+				if err != nil {
+					t.Fatal(err)
+				}
+				r.server.Inbox <- fakerelay.Deliver(r.bob, "Bob", time.Now(), reply)[r.world.Phone.JID]
+				<-r.received
+				for i, text := range []string{"to the group", "again"} {
+					if _, err := c.SendGroup(t.Context(), family, &wire.Message{Conversation: new(text)}); err != nil {
+						t.Fatal(err)
+					}
+					if _, withKey := bobHas(); withKey != (i == 0) {
+						t.Fatalf("group message %d carried our key: %v", i, withKey)
+					}
+				}
+				if _, err := c.Send(t.Context(), r.bob, &wire.Message{Conversation: new("before")}); err != nil {
+					t.Fatal(err)
+				}
+				if kind, _ := bobHas(); kind != "msg" {
+					t.Fatalf("an established session sent %s", kind)
+				}
+
+				r.server.Inbox <- tt.notice(r)
+				synctest.Wait()
+				if _, err := c.Send(t.Context(), r.bob, &wire.Message{Conversation: new("after")}); err != nil {
+					t.Fatal(err)
+				}
+				if kind, _ := bobHas(); kind != "pkmsg" {
+					t.Fatalf("after %s the old session was kept (%s)", tt.name, kind)
+				}
+				if _, err := c.SendGroup(t.Context(), family, &wire.Message{Conversation: new("welcome back")}); err != nil {
+					t.Fatal(err)
+				}
+				if _, withKey := bobHas(); !withKey {
+					t.Fatalf("after %s bob did not get our group key again", tt.name)
+				}
+			})
+		})
+	}
+}
+
+func TestAServerLowOnOurPrekeysGetsMore(t *testing.T) {
+	synctest.Test(t, func(t *testing.T) {
+		r := newRig(t)
+		r.connect()
+		self := r.world.Phone.JID
+		before := r.keys.Keys(self)
+		r.server.Inbox <- node.Node{Tag: "notification", Attrs: []node.Attr{
+			{Key: "from", Value: node.Address(node.JID{Server: node.ServerUser})}, {Key: "type", Value: node.Text("encrypt")}, {Key: "id", Value: node.Text("K1")},
+		}, Children: []node.Node{{Tag: "count", Attrs: []node.Attr{{Key: "value", Value: node.Text("4")}}}}}
+		synctest.Wait()
+		if after := r.keys.Keys(self); after != before+prekeys.Batch {
+			t.Fatalf("WhatsApp holds %d prekeys after asking for more, had %d", after, before)
+		}
+	})
+}
