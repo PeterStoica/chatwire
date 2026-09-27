@@ -64,6 +64,9 @@ func newWorld(t *testing.T, home string) world {
 
 func shortHome(t *testing.T) string {
 	t.Helper()
+	if runtime.GOOS == "windows" {
+		t.Skip("the process tests need unix sockets and pgrep")
+	}
 	dir, err := os.MkdirTemp("/tmp", "chatwire-home")
 	if err != nil {
 		t.Fatal(err)

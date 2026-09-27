@@ -10,6 +10,7 @@ import (
 func TestOnlyFilesFromAllowedFoldersAreSent(t *testing.T) {
 	root := t.TempDir()
 	t.Setenv("HOME", root)
+	t.Setenv("USERPROFILE", root)
 	write := func(rel, content string) string {
 		t.Helper()
 		path := filepath.Join(root, rel)

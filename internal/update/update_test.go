@@ -90,7 +90,7 @@ func TestInstallingReplacesTheBinaryInPlace(t *testing.T) {
 	}
 	got, err := os.ReadFile(target)
 	info, statErr := os.Stat(target)
-	if err != nil || statErr != nil || string(got) != "new" || info.Mode().Perm()&0o100 == 0 {
+	if err != nil || statErr != nil || string(got) != "new" || runtime.GOOS != "windows" && info.Mode().Perm()&0o100 == 0 {
 		t.Fatalf("after installing: %q, %v, %v", got, err, statErr)
 	}
 	leftovers, _ := filepath.Glob(filepath.Join(filepath.Dir(target), ".chatwire-update-*"))

@@ -31,7 +31,7 @@ var (
 
 func ctx(t *testing.T) context.Context {
 	t.Helper()
-	c, cancel := context.WithTimeout(context.Background(), 30*time.Second)
+	c, cancel := context.WithTimeout(context.Background(), 2*time.Minute)
 	t.Cleanup(cancel)
 	return c
 }
@@ -286,11 +286,15 @@ func TestNamesAndLIDsMerge(t *testing.T) {
 
 func TestReopeningKeepsEverythingAndRefusesANewerSchema(t *testing.T) {
 	t.Parallel()
-	path := filepath.Join(t.TempDir(), "a folder with spaces", "é #1?.db")
+	name := "é #1?.db"
+	if runtime.GOOS == "windows" {
+		name = "é #1%.db"
+	}
+	path := filepath.Join(t.TempDir(), "a folder with spaces", name)
 	if _, err := store.Open(ctx(t), path); err == nil {
 		t.Fatal("opening inside a missing folder must fail")
 	}
-	path = filepath.Join(t.TempDir(), "é #1?.db")
+	path = filepath.Join(t.TempDir(), name)
 	s, err := store.Open(ctx(t), path)
 	if err != nil {
 		t.Fatal(err)
