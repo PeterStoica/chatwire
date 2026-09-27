@@ -11,11 +11,12 @@ done | sort -u)
 	printf '\n\nChatwire includes the following software, under these licences.\n'
 	printf '%s\n' "$modules" | while read -r path dir; do
 		for file in "$dir"/*; do
-			case "$(basename "$file")" in
+			name=${file##*/}
+			case "$name" in
 			LICENSE* | LICENCE* | COPYING* | NOTICE* | PATENTS* | *LICENSE-3RD-PARTY*) ;;
 			*) continue ;;
 			esac
-			printf '\n== %s/%s\n\n' "$path" "$(basename "$file")"
+			printf '\n== %s/%s\n\n' "$path" "$name"
 			cat "$file"
 		done
 	done

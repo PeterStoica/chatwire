@@ -211,7 +211,9 @@ func viaClaude(ctx context.Context, env Env, command string, remove bool) (Outco
 	for _, setting := range settings {
 		args = append(args, "-e", setting)
 	}
-	if err := env.Run(ctx, "claude", append(append(args, Name, "--", command), extra...)...); err != nil {
+	args = append(args, Name, "--", command)
+	args = append(args, extra...)
+	if err := env.Run(ctx, "claude", args...); err != nil {
 		return Failed, err
 	}
 	if removeErr == nil || current != "" {
@@ -525,7 +527,8 @@ func editTOML(raw []byte, command string, remove bool) ([]byte, Outcome, error) 
 			break
 		}
 	}
-	section := []string{header, "command = " + tomlString(command), "args = []"}
+	commandLine := "command = " + tomlString(command)
+	section := []string{header, commandLine, "args = []"}
 	switch {
 	case remove && start < 0:
 		return raw, Absent, nil
@@ -549,7 +552,7 @@ func editTOML(raw []byte, command string, remove bool) ([]byte, Outcome, error) 
 		switch {
 		case inTable || !found:
 		case key == "command":
-			line, hasCommand = "command = "+tomlString(command), true
+			line, hasCommand = commandLine, true
 		case key == "args":
 			hasArgs = true
 		}
@@ -560,7 +563,7 @@ func editTOML(raw []byte, command string, remove bool) ([]byte, Outcome, error) 
 	}
 	section = section[:1]
 	if !hasCommand {
-		section = append(section, "command = "+tomlString(command))
+		section = append(section, commandLine)
 	}
 	if !hasArgs {
 		section = append(section, "args = []")
@@ -570,11 +573,10 @@ func editTOML(raw []byte, command string, remove bool) ([]byte, Outcome, error) 
 	if current == strings.Join(section, "\n") {
 		return raw, Unchanged, nil
 	}
-	tail := lines[end:]
 	if end < len(lines) {
 		section = append(section, "")
 	}
-	updated := strings.Join(append(append(append([]string{}, lines[:start]...), section...), tail...), "\n")
+	updated := strings.Join(slices.Concat(lines[:start], section, lines[end:]), "\n")
 	if strings.HasSuffix(string(raw), "\n") && !strings.HasSuffix(updated, "\n") {
 		updated += "\n"
 	}
