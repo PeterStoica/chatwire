@@ -54,7 +54,7 @@ func send(s Sender) mcp.ToolHandlerFor[SendInput, SendReport] {
 				return sendReport(SendReport{State: "choose_one", Detail: "Give either text (optionally with reply_to), forward or poll."})
 			}
 			poll := *in.Poll
-			return sendReport(deliver(ctx, s, in.To, sendTimeout, "poll", "the poll ", func(ctx context.Context, to node.JID) (string, error) {
+			return sendReport(deliver(ctx, s, in.To, sendTimeout, "poll", "the poll ", func(ctx context.Context, to node.JID, dir directory) (string, error) {
 				return s.SendPoll(ctx, to, poll.Question, poll.Options, poll.MultipleAnswers)
 			}))
 		}
@@ -62,7 +62,7 @@ func send(s Sender) mcp.ToolHandlerFor[SendInput, SendReport] {
 		case forward != "" && (strings.TrimSpace(in.Text) != "" || strings.TrimSpace(in.ReplyTo) != ""):
 			return sendReport(SendReport{State: "choose_one", Detail: "Give either text (optionally with reply_to) or forward, not both."})
 		case forward != "":
-			return sendReport(deliver(ctx, s, in.To, fileTimeout, "message", "the forwarded message ", func(ctx context.Context, to node.JID) (string, error) {
+			return sendReport(deliver(ctx, s, in.To, fileTimeout, "message", "the forwarded message ", func(ctx context.Context, to node.JID, dir directory) (string, error) {
 				id, _, err := s.Forward(ctx, to, forward)
 				return id, err
 			}))
@@ -73,8 +73,8 @@ func send(s Sender) mcp.ToolHandlerFor[SendInput, SendReport] {
 		if quoted != "" && strings.TrimSpace(in.To) == "" {
 			return sendReport(replyInPlace(ctx, s, in.Text, quoted))
 		}
-		return sendReport(deliver(ctx, s, in.To, sendTimeout, "message", "", func(ctx context.Context, to node.JID) (string, error) {
-			text, mentions := withMentions(ctx, s, to, in.Text)
+		return sendReport(deliver(ctx, s, in.To, sendTimeout, "message", "", func(ctx context.Context, to node.JID, dir directory) (string, error) {
+			text, mentions := withMentions(ctx, s, dir, to, in.Text)
 			if quoted != "" {
 				id, _, err := s.Reply(ctx, to, text, quoted, mentions...)
 				return id, err
@@ -95,7 +95,7 @@ func sendFile(s Sender, g gate) mcp.ToolHandlerFor[FileInput, SendReport] {
 		}
 		f.Caption = strings.TrimSpace(in.Caption)
 		what := fmt.Sprintf("%s (%s, %d bytes) ", f.Name, media.KindOf(media.Sniff(f.Name, f.Data)), len(f.Data))
-		return sendReport(deliver(ctx, s, in.To, fileTimeout, "file", what, func(ctx context.Context, to node.JID) (string, error) {
+		return sendReport(deliver(ctx, s, in.To, fileTimeout, "file", what, func(ctx context.Context, to node.JID, dir directory) (string, error) {
 			return s.SendFile(ctx, to, f)
 		}))
 	}
@@ -104,9 +104,10 @@ func sendFile(s Sender, g gate) mcp.ToolHandlerFor[FileInput, SendReport] {
 func replyInPlace(ctx context.Context, s Sender, text, quoted string) SendReport {
 	ctx, cancel := context.WithTimeout(ctx, sendTimeout)
 	defer cancel()
+	dir, dirErr := loadDirectory(ctx, s)
 	var mentions []node.JID
-	if chat, err := s.ChatOf(ctx, quoted); err == nil {
-		text, mentions = withMentions(ctx, s, chat, text)
+	if chat, err := s.ChatOf(ctx, quoted); err == nil && dirErr == nil {
+		text, mentions = withMentions(ctx, s, dir, chat, text)
 	}
 	id, chat, err := s.Reply(ctx, node.JID{}, text, quoted, mentions...)
 	switch {
@@ -116,7 +117,7 @@ func replyInPlace(ctx context.Context, s Sender, text, quoted string) SendReport
 		return SendReport{State: stateDeletedMessage, Detail: "That message was deleted, so it cannot be replied to."}
 	}
 	name := display(chat)
-	if dir, dirErr := loadDirectory(ctx, s); dirErr == nil {
+	if dirErr == nil {
 		name = dir.label(chat)
 	}
 	if state, detail, ok := stopped(err); ok {
@@ -128,7 +129,7 @@ func replyInPlace(ctx context.Context, s Sender, text, quoted string) SendReport
 	return SendReport{State: stateSent, To: name, ID: id, Detail: fmt.Sprintf("Replied in %s.", name)}
 }
 
-func deliver(ctx context.Context, s Sender, to string, timeout time.Duration, noun, what string, do func(context.Context, node.JID) (string, error)) SendReport {
+func deliver(ctx context.Context, s Sender, to string, timeout time.Duration, noun, what string, do func(context.Context, node.JID, directory) (string, error)) SendReport {
 	ctx, cancel := context.WithTimeout(ctx, timeout)
 	defer cancel()
 	dir, err := loadDirectory(ctx, s)
@@ -143,7 +144,7 @@ func deliver(ctx context.Context, s Sender, to string, timeout time.Duration, no
 		return SendReport{State: "unsupported_recipient", Detail: "Posting status updates and broadcast lists is not supported; send to a contact or group."}
 	}
 	name := dir.label(target)
-	id, err := do(ctx, target)
+	id, err := do(ctx, target, dir)
 	if state, detail, ok := stopped(err); ok {
 		return SendReport{State: state, To: name, Detail: detail}
 	}

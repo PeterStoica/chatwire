@@ -108,8 +108,12 @@ const schemaV8 = `
 CREATE INDEX IF NOT EXISTS lids_by_pn ON lids (pn);
 `
 
+const schemaV9 = `
+UPDATE messages SET author = (SELECT pn FROM lids WHERE lid = messages.author) WHERE author IN (SELECT lid FROM lids);
+`
+
 func migrations() []string {
-	return []string{schemaV1, schemaV2, schemaV3, schemaV4, schemaV5, foldLIDs, schemaV7, schemaV8}
+	return []string{schemaV1, schemaV2, schemaV3, schemaV4, schemaV5, foldLIDs, schemaV7, schemaV8, schemaV9}
 }
 
 func (s *Store) migrate(ctx context.Context) error {

@@ -3,12 +3,12 @@ package mcptools
 import (
 	"cmp"
 	"context"
+	"maps"
 	"slices"
 	"strings"
 	"unicode"
+	"unicode/utf8"
 
-	"golang.org/x/text/runes"
-	"golang.org/x/text/transform"
 	"golang.org/x/text/unicode/norm"
 
 	"github.com/PeterStoica/chatwire/internal/node"
@@ -74,20 +74,6 @@ func (d directory) name(j node.JID) string {
 	return ""
 }
 
-func (d directory) forms(j node.JID) []node.JID {
-	j = bare(j)
-	out := []node.JID{j}
-	for lid, pn := range d.lids {
-		switch j {
-		case lid:
-			out = append(out, pn)
-		case pn:
-			out = append(out, lid)
-		}
-	}
-	return out
-}
-
 func (d directory) who(j node.JID) string {
 	if d.canonical(j) == d.self {
 		return "me"
@@ -143,34 +129,42 @@ func (d directory) label(j node.JID) string {
 }
 
 func (d directory) find(query string) []node.JID {
-	want := fold(query)
+	f := newFolder()
+	want := f.fold(query)
 	if want == "" {
 		return nil
 	}
 	wantPlain := plain(want)
 	var exact, undecorated, partial []node.JID
+	seen := map[node.JID]int{}
+	const (
+		inPartial = iota + 1
+		inUndecorated
+		inExact
+	)
 	consider := func(j node.JID, candidates ...string) {
 		j = d.canonical(j)
-		if slices.Contains(exact, j) {
+		if seen[j] == inExact {
 			return
 		}
 		for _, c := range candidates {
-			switch folded := fold(c); {
+			switch folded := f.fold(c); {
 			case folded == "":
 			case folded == want:
-				exact = append(exact, j)
+				exact, seen[j] = append(exact, j), inExact
 				return
-			case wantPlain != "" && plain(folded) == wantPlain && !slices.Contains(undecorated, j):
-				undecorated = append(undecorated, j)
-			case strings.Contains(folded, want) && !slices.Contains(partial, j):
-				partial = append(partial, j)
+			case seen[j] >= inUndecorated:
+			case wantPlain != "" && plain(folded) == wantPlain:
+				undecorated, seen[j] = append(undecorated, j), inUndecorated
+			case seen[j] == 0 && strings.Contains(folded, want):
+				partial, seen[j] = append(partial, j), inPartial
 			}
 		}
 	}
 	for _, c := range d.chats {
 		consider(c.JID, c.Name)
 	}
-	for _, j := range sortedKeys(d.names) {
+	for _, j := range slices.SortedFunc(maps.Keys(d.names), byAddress) {
 		n := d.names[j]
 		consider(j, n.Contact, n.First, n.Push)
 	}
@@ -178,13 +172,31 @@ func (d directory) find(query string) []node.JID {
 	case len(exact) > 0:
 		return exact
 	case len(undecorated) > 0:
-		return undecorated
+		return slices.DeleteFunc(undecorated, func(j node.JID) bool { return seen[j] == inExact })
 	}
-	return partial
+	return slices.DeleteFunc(partial, func(j node.JID) bool { return seen[j] != inPartial })
+}
+
+func byAddress(a, b node.JID) int {
+	return cmp.Or(cmp.Compare(a.User, b.User), cmp.Compare(a.Server, b.Server), cmp.Compare(a.Device, b.Device))
 }
 
 func plain(folded string) string {
-	return strings.Join(strings.FieldsFunc(folded, func(r rune) bool { return !unicode.IsLetter(r) && !unicode.IsDigit(r) }), " ")
+	var b strings.Builder
+	b.Grow(len(folded))
+	gap := false
+	for _, r := range folded {
+		if !unicode.IsLetter(r) && !unicode.IsDigit(r) {
+			gap = b.Len() > 0
+			continue
+		}
+		if gap {
+			b.WriteByte(' ')
+			gap = false
+		}
+		b.WriteRune(r)
+	}
+	return b.String()
 }
 
 func clean(s string) string {
@@ -196,16 +208,43 @@ func clean(s string) string {
 	}, s))
 }
 
-func sortedKeys(names map[node.JID]store.Name) []node.JID {
-	keys := make([]node.JID, 0, len(names))
-	for j := range names {
-		keys = append(keys, j)
+type folder struct {
+	decomposed []byte
+}
+
+func newFolder() *folder {
+	return &folder{}
+}
+
+func (f *folder) fold(s string) string {
+	text := s
+	for i := 0; i < len(s); i++ {
+		if s[i] >= utf8.RuneSelf {
+			f.decomposed = norm.NFD.AppendString(f.decomposed[:0], s)
+			text = string(f.decomposed)
+			break
+		}
 	}
-	slices.SortFunc(keys, func(a, b node.JID) int { return cmp.Compare(a.String(), b.String()) })
-	return keys
+	var b strings.Builder
+	b.Grow(len(text))
+	gap := false
+	for _, r := range text {
+		switch {
+		case unicode.IsSpace(r):
+			gap = b.Len() > 0
+			continue
+		case r >= utf8.RuneSelf && unicode.Is(unicode.Mn, r):
+			continue
+		}
+		if gap {
+			b.WriteByte(' ')
+			gap = false
+		}
+		b.WriteRune(unicode.ToLower(r))
+	}
+	return b.String()
 }
 
 func fold(s string) string {
-	folded, _, _ := transform.String(transform.Chain(norm.NFD, runes.Remove(runes.In(unicode.Mn)), norm.NFC), s)
-	return strings.ToLower(strings.Join(strings.Fields(folded), " "))
+	return newFolder().fold(s)
 }

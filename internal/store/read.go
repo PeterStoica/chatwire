@@ -48,7 +48,11 @@ func (s *Store) Messages(ctx context.Context, q Query) ([]Message, error) {
 	if len(q.From) > 0 {
 		marks := make([]string, 0, len(q.From))
 		for _, j := range q.From {
-			marks, args = append(marks, "?"), append(args, j.WithoutDevice().String())
+			author, err := s.canonical(ctx, j.WithoutDevice())
+			if err != nil {
+				return nil, err
+			}
+			marks, args = append(marks, "?"), append(args, author.String())
 		}
 		where = append(where, `m.author IN (`+strings.Join(marks, ", ")+`)`)
 	}

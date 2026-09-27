@@ -12,15 +12,11 @@ import (
 
 const maxMentionWords = 3
 
-func withMentions(ctx context.Context, s Sender, to node.JID, text string) (string, []node.JID) {
+func withMentions(ctx context.Context, s Sender, dir directory, to node.JID, text string) (string, []node.JID) {
 	if to.Server != node.ServerGroup || !strings.Contains(text, "@") {
 		return text, nil
 	}
 	all, err := s.Groups(ctx)
-	if err != nil {
-		return text, nil
-	}
-	dir, err := loadDirectory(ctx, s)
 	if err != nil {
 		return text, nil
 	}

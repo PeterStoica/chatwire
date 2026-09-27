@@ -95,16 +95,19 @@ func listGroups(s Sender) mcp.ToolHandlerFor[GroupsInput, GroupsReport] {
 				return refuse("unknown_group", fmt.Sprintf("The user is in no group called %q. Call list_whatsapp_groups without group to see them all.", want))
 			}
 		}
+		report := GroupsReport{State: "ok", Groups: make([]ListedGroup, len(listed)), Detail: fmt.Sprintf("%d group(s).", len(listed))}
+		if strings.TrimSpace(in.Group) == "" {
+			for i, g := range listed {
+				report.Groups[i] = ListedGroup{ID: g.JID.String(), Name: g.Subject, Participants: len(g.Participants)}
+			}
+			return nil, report, nil
+		}
 		dir, err := loadDirectory(listCtx, s)
 		if err != nil {
 			return refuse(stateFailed, fmt.Sprintf("Could not look up contacts: %v", err))
 		}
-		report := GroupsReport{State: "ok", Groups: make([]ListedGroup, len(listed)), Detail: fmt.Sprintf("%d group(s).", len(listed))}
 		for i, g := range listed {
-			report.Groups[i] = ListedGroup{ID: g.JID.String(), Name: g.Subject, Participants: len(g.Participants)}
-			if in.Group != "" {
-				report.Groups[i] = describeGroup(dir, g)
-			}
+			report.Groups[i] = describeGroup(dir, g)
 		}
 		return nil, report, nil
 	}
@@ -261,7 +264,7 @@ func readQuery(ctx context.Context, s Sender, dir *directory, in ReadInput) (sto
 		case dir.canonical(who) == dir.self:
 			q.Mine = true
 		default:
-			q.From = dir.forms(who)
+			q.From = []node.JID{who}
 		}
 	}
 	switch strings.ToLower(strings.TrimSpace(in.Chat)) {
