@@ -2420,7 +2420,9 @@ func TestAGroupAddressedByPrivateIDsIsSentThatWay(t *testing.T) {
 			Participants: []groups.Participant{{JID: ourLID, Phone: r.account, Admin: true}, {JID: bobLID, Phone: r.bob}},
 		}
 		r.server.Groups = fakegroups.New(community)
-		r.server.Members = func(node.JID) []node.JID { return []node.JID{bobLID, ourLID, node.JID{User: ourLID.User, Device: r.world.Phone.JID.Device, Server: node.ServerLID}} }
+		r.server.Members = func(node.JID) []node.JID {
+			return []node.JID{bobLID, ourLID, node.JID{User: ourLID.User, Device: r.world.Phone.JID.Device, Server: node.ServerLID}}
+		}
 		c := r.connect()
 		id, err := c.SendGroup(t.Context(), community, &wire.Message{Conversation: new("bins go out tonight")})
 		if err != nil {

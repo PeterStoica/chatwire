@@ -72,8 +72,16 @@ func (c cli) session() (*mcp.ClientSession, error) {
 	return session, nil
 }
 
-func call[T any](ctx context.Context, s *mcp.ClientSession, tool string, args map[string]any) (T, error) {
-	var out T
+var asCommands = strings.NewReplacer(
+	"Ask the user for their WhatsApp mobile number with country code and call link_whatsapp with it.", "Run chatwire link to link it.",
+	"Ask the user for their WhatsApp mobile number with country code and call link_whatsapp to link again.", "Run chatwire link to link it again.",
+	"call whatsapp_status with wait_seconds", "run chatwire status --wait 50 until it is linked",
+	"Call link_whatsapp", "Run chatwire link",
+	"call link_whatsapp", "run chatwire link",
+)
+
+func ask(ctx context.Context, s *mcp.ClientSession, tool string, args map[string]any) (mcptools.Report, error) {
+	var out mcptools.Report
 	res, err := s.CallTool(ctx, &mcp.CallToolParams{Name: tool, Arguments: args})
 	if err != nil {
 		return out, fmt.Errorf("chatwire: %s: %w", tool, err)
@@ -85,6 +93,7 @@ func call[T any](ctx context.Context, s *mcp.ClientSession, tool string, args ma
 	if err := json.Unmarshal(raw, &out); err != nil {
 		return out, fmt.Errorf("chatwire: %s answered in an unexpected form: %w", tool, err)
 	}
+	out.Detail = asCommands.Replace(out.Detail)
 	return out, nil
 }
 
@@ -105,7 +114,7 @@ func (c cli) status(wait time.Duration) error {
 		return err
 	}
 	defer s.Close()
-	report, err := call[mcptools.Report](c.ctx, s, "whatsapp_status", map[string]any{"wait_seconds": int(min(wait, maxWaitStep).Seconds())})
+	report, err := ask(c.ctx, s, "whatsapp_status", map[string]any{"wait_seconds": int(min(wait, maxWaitStep).Seconds())})
 	if err != nil {
 		return err
 	}
@@ -123,7 +132,7 @@ func (c cli) link(phone string, wait time.Duration) error {
 	if phone != "" {
 		args["phone_number"] = phone
 	}
-	report, err := call[mcptools.Report](c.ctx, s, "link_whatsapp", args)
+	report, err := ask(c.ctx, s, "link_whatsapp", args)
 	if err != nil {
 		return err
 	}
@@ -136,7 +145,7 @@ func (c cli) link(phone string, wait time.Duration) error {
 	}
 	deadline := time.Now().Add(wait)
 	for shown := report.Code; time.Now().Before(deadline); {
-		report, err = call[mcptools.Report](c.ctx, s, "whatsapp_status", map[string]any{"wait_seconds": int(min(time.Until(deadline), maxWaitStep).Seconds())})
+		report, err = ask(c.ctx, s, "whatsapp_status", map[string]any{"wait_seconds": int(min(time.Until(deadline), maxWaitStep).Seconds())})
 		if err != nil {
 			return err
 		}
@@ -216,7 +225,7 @@ func (c cli) linkIfNeeded(wait time.Duration) error {
 	if err != nil {
 		return err
 	}
-	report, err := call[mcptools.Report](c.ctx, s, "whatsapp_status", map[string]any{})
+	report, err := ask(c.ctx, s, "whatsapp_status", map[string]any{})
 	_ = s.Close()
 	if err != nil {
 		return err

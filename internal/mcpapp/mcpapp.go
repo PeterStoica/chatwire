@@ -18,6 +18,7 @@ import (
 	"path/filepath"
 	"runtime"
 	"runtime/debug"
+	"strconv"
 	"strings"
 	"sync"
 	"time"
@@ -100,7 +101,8 @@ func run(ctx context.Context, args []string, stdin io.Reader, stdout, stderr io.
 	linger := flags.Duration("linger", defaultLinger, "how long the shared background process stays up after the last window closes")
 	asJSON := flags.Bool("json", false, "print results as JSON")
 	phone := flags.String("phone", "", "link with a code for this mobile number instead of a QR code")
-	wait := flags.Duration("wait", -1, "how long to wait for the result")
+	wait := &seconds{d: -1}
+	flags.Var(wait, "wait", "how long to wait for the result, in seconds (60) or as a duration (1m)")
 	rest := args
 	if command != "setup" {
 		if err := flags.Parse(args); err != nil {
@@ -117,13 +119,37 @@ func run(ctx context.Context, args []string, stdin io.Reader, stdout, stderr io.
 	case "serve":
 		return serveAlone(ctx, *state, stdin, stdout)
 	case "status":
-		return c.status(max(*wait, 0))
+		return c.status(max(wait.d, 0))
 	case "link":
-		return c.link(*phone, waitFor(*wait, c.human))
+		return c.link(*phone, waitFor(wait.d, c.human))
 	case "setup":
 		return c.setupCommand(rest, stdin)
 	}
 	return fmt.Errorf("unknown command %q; run chatwire help", command)
+}
+
+type seconds struct {
+	d time.Duration
+}
+
+func (s *seconds) String() string {
+	if s == nil || s.d < 0 {
+		return ""
+	}
+	return s.d.String()
+}
+
+func (s *seconds) Set(value string) error {
+	if n, err := strconv.ParseFloat(value, 64); err == nil && n >= 0 {
+		s.d = time.Duration(n * float64(time.Second))
+		return nil
+	}
+	d, err := time.ParseDuration(value)
+	if err != nil || d < 0 {
+		return fmt.Errorf("give seconds like 60 or a duration like 1m, not %q", value)
+	}
+	s.d = d
+	return nil
 }
 
 func waitFor(asked time.Duration, human bool) time.Duration {
@@ -217,7 +243,23 @@ func socketPath(state string) (string, error) {
 		return "", fmt.Errorf("mcpapp: state dir: %w", err)
 	}
 	sum := sha256.Sum256([]byte(absolute))
-	return filepath.Join(cache, "chatwire", hex.EncodeToString(sum[:4])+".sock"), nil
+	name := hex.EncodeToString(sum[:4]) + ".sock"
+	for _, base := range []string{cache, os.Getenv("XDG_RUNTIME_DIR"), privateTemp()} {
+		if base == "" {
+			continue
+		}
+		if path := filepath.Join(base, "chatwire", name); daemon.CheckPath(path) == nil {
+			return path, nil
+		}
+	}
+	return filepath.Join(cache, "chatwire", name), nil
+}
+
+func privateTemp() string {
+	if runtime.GOOS == "linux" {
+		return ""
+	}
+	return os.TempDir()
 }
 
 func self() (executable, build string, err error) {

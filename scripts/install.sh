@@ -41,7 +41,7 @@ else
 fi
 fetch "$base/$asset" "$tmp/$asset"
 fetch "$base/checksums.txt" "$tmp/checksums.txt"
-want=$(awk -v name="$asset" '$2 == name { print $1 }' "$tmp/checksums.txt")
+want=$(awk -v name="$asset" '{ file = $2; sub(/^\*/, "", file) } file == name { print $1 }' "$tmp/checksums.txt")
 got=$(checksum "$tmp/$asset")
 if [ -z "$want" ] || [ "$want" != "$got" ]; then
 	echo "chatwire: the download does not match its checksum; nothing was installed" >&2

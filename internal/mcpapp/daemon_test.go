@@ -41,6 +41,7 @@ func TestMain(m *testing.M) {
 type world struct {
 	home  string
 	state string
+	env   []string
 }
 
 func newWorld(t *testing.T, home string) world {
@@ -113,7 +114,7 @@ type window struct {
 func (w world) open(t *testing.T, binary string, linger time.Duration) window {
 	t.Helper()
 	cmd := exec.CommandContext(t.Context(), binary, "-state", w.state, "-linger", linger.String())
-	cmd.Env = append(cmd.Environ(), "HOME="+w.home, "XDG_CACHE_HOME=", "XDG_CONFIG_HOME=")
+	cmd.Env = append(append(cmd.Environ(), "HOME="+w.home, "XDG_CACHE_HOME=", "XDG_CONFIG_HOME="), w.env...)
 	stderr := &lockedBuffer{}
 	cmd.Stderr = stderr
 	session, err := mcp.NewClient(&mcp.Implementation{Name: "window", Version: "0"}, nil).Connect(t.Context(), &mcp.CommandTransport{Command: cmd}, nil)
@@ -201,7 +202,9 @@ func TestANewBuildReplacesTheDaemon(t *testing.T) {
 
 func TestWithoutADaemonAWindowServesItself(t *testing.T) {
 	t.Parallel()
-	w := newWorld(t, filepath.Join(shortHome(t), strings.Repeat("h", 90)))
+	long := filepath.Join(shortHome(t), strings.Repeat("h", 90))
+	w := newWorld(t, long)
+	w.env = []string{"TMPDIR=" + long, "XDG_RUNTIME_DIR=" + long}
 	win := w.open(t, builds[0], time.Minute)
 	if got := win.status(t); !strings.Contains(got, "not linked") {
 		t.Fatalf("status = %q", got)
