@@ -99,7 +99,7 @@ func sendFile(s Sender, g gate, repeats *Repeats) mcp.ToolHandlerFor[FileInput, 
 				return SendReport{State: refused.state, Detail: refused.detail}
 			}
 			f.Caption = strings.TrimSpace(in.Caption)
-			what := fmt.Sprintf("%s (%s, %d bytes) ", f.Name, media.KindOf(media.Sniff(f.Name, f.Data)), len(f.Data))
+			what := fmt.Sprintf("%s (%s, %d bytes) ", f.Name, media.SentAs(media.Sniff(f.Name, f.Data)), len(f.Data))
 			return deliver(ctx, s, in.To, fileTimeout, "file", what, func(ctx context.Context, to node.JID, dir directory) (string, error) {
 				return s.SendFile(ctx, to, f)
 			})

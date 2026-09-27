@@ -233,8 +233,12 @@ type File struct {
 }
 
 func fileMessage(ctx context.Context, c *client.Client, f File, now time.Time) (*wire.Message, error) {
-	mimetype := media.Sniff(f.Name, f.Data)
-	kind := media.KindOf(mimetype)
+	mimetype, data, kind := media.Prepare(media.Sniff(f.Name, f.Data), f.Data)
+	f.Data = data
+	recording, opus := media.OggOpus(f.Data)
+	if kind == media.Voice && !opus {
+		mimetype, kind = "audio/ogg", media.Audio
+	}
 	up, err := c.Upload(ctx, kind, f.Data)
 	if err != nil {
 		return nil, err
@@ -255,15 +259,32 @@ func fileMessage(ctx context.Context, c *client.Client, f File, now time.Time) (
 		}
 		return &wire.Message{ImageMessage: image}, nil
 	case media.Video:
-		return &wire.Message{VideoMessage: &wire.Message_VideoMessage{
+		video := &wire.Message_VideoMessage{
 			Url: new(up.URL), DirectPath: new(up.DirectPath), MediaKey: up.MediaKey, Mimetype: new(mimetype),
 			FileEncSha256: up.FileEncSHA256, FileSha256: up.FileSHA256, FileLength: new(up.FileLength), MediaKeyTimestamp: new(stamp), Caption: caption,
-		}}, nil
+		}
+		if movie, ok := media.MP4(f.Data); ok {
+			video.Seconds = new(movie.Seconds)
+			if movie.Width > 0 && movie.Height > 0 {
+				video.Width, video.Height = new(movie.Width), new(movie.Height)
+			}
+		}
+		return &wire.Message{VideoMessage: video}, nil
 	case media.Voice, media.Audio:
-		return &wire.Message{AudioMessage: &wire.Message_AudioMessage{
+		audio := &wire.Message_AudioMessage{
 			Url: new(up.URL), DirectPath: new(up.DirectPath), MediaKey: up.MediaKey, Mimetype: new(mimetype),
 			FileEncSha256: up.FileEncSHA256, FileSha256: up.FileSHA256, FileLength: new(up.FileLength), MediaKeyTimestamp: new(stamp), Ptt: new(kind == media.Voice),
-		}}, nil
+		}
+		switch movie, isMP4 := media.MP4(f.Data); {
+		case opus:
+			audio.Seconds = new(recording.Seconds)
+			if kind == media.Voice {
+				audio.Waveform = recording.Waveform
+			}
+		case isMP4:
+			audio.Seconds = new(movie.Seconds)
+		}
+		return &wire.Message{AudioMessage: audio}, nil
 	default:
 		document := &wire.Message{DocumentMessage: &wire.Message_DocumentMessage{
 			Url: new(up.URL), DirectPath: new(up.DirectPath), MediaKey: up.MediaKey, Mimetype: new(mimetype),

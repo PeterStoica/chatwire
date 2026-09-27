@@ -4131,6 +4131,7 @@ type Message_AudioMessage struct {
 	DirectPath        *string                `protobuf:"bytes,9,opt,name=directPath" json:"directPath,omitempty"`
 	MediaKeyTimestamp *int64                 `protobuf:"varint,10,opt,name=mediaKeyTimestamp" json:"mediaKeyTimestamp,omitempty"`
 	ContextInfo       *ContextInfo           `protobuf:"bytes,17,opt,name=contextInfo" json:"contextInfo,omitempty"`
+	Waveform          []byte                 `protobuf:"bytes,19,opt,name=waveform" json:"waveform,omitempty"`
 	ViewOnce          *bool                  `protobuf:"varint,21,opt,name=viewOnce" json:"viewOnce,omitempty"`
 	unknownFields     protoimpl.UnknownFields
 	sizeCache         protoimpl.SizeCache
@@ -4238,6 +4239,13 @@ func (x *Message_AudioMessage) GetMediaKeyTimestamp() int64 {
 func (x *Message_AudioMessage) GetContextInfo() *ContextInfo {
 	if x != nil {
 		return x.ContextInfo
+	}
+	return nil
+}
+
+func (x *Message_AudioMessage) GetWaveform() []byte {
+	if x != nil {
+		return x.Waveform
 	}
 	return nil
 }
@@ -7074,9 +7082,12 @@ type Message_VideoMessage struct {
 	Mimetype          *string                `protobuf:"bytes,2,opt,name=mimetype" json:"mimetype,omitempty"`
 	FileSha256        []byte                 `protobuf:"bytes,3,opt,name=fileSha256" json:"fileSha256,omitempty"`
 	FileLength        *uint64                `protobuf:"varint,4,opt,name=fileLength" json:"fileLength,omitempty"`
+	Seconds           *uint32                `protobuf:"varint,5,opt,name=seconds" json:"seconds,omitempty"`
 	MediaKey          []byte                 `protobuf:"bytes,6,opt,name=mediaKey" json:"mediaKey,omitempty"`
 	Caption           *string                `protobuf:"bytes,7,opt,name=caption" json:"caption,omitempty"`
 	GifPlayback       *bool                  `protobuf:"varint,8,opt,name=gifPlayback" json:"gifPlayback,omitempty"`
+	Height            *uint32                `protobuf:"varint,9,opt,name=height" json:"height,omitempty"`
+	Width             *uint32                `protobuf:"varint,10,opt,name=width" json:"width,omitempty"`
 	FileEncSha256     []byte                 `protobuf:"bytes,11,opt,name=fileEncSha256" json:"fileEncSha256,omitempty"`
 	DirectPath        *string                `protobuf:"bytes,13,opt,name=directPath" json:"directPath,omitempty"`
 	MediaKeyTimestamp *int64                 `protobuf:"varint,14,opt,name=mediaKeyTimestamp" json:"mediaKeyTimestamp,omitempty"`
@@ -7143,6 +7154,13 @@ func (x *Message_VideoMessage) GetFileLength() uint64 {
 	return 0
 }
 
+func (x *Message_VideoMessage) GetSeconds() uint32 {
+	if x != nil && x.Seconds != nil {
+		return *x.Seconds
+	}
+	return 0
+}
+
 func (x *Message_VideoMessage) GetMediaKey() []byte {
 	if x != nil {
 		return x.MediaKey
@@ -7162,6 +7180,20 @@ func (x *Message_VideoMessage) GetGifPlayback() bool {
 		return *x.GifPlayback
 	}
 	return false
+}
+
+func (x *Message_VideoMessage) GetHeight() uint32 {
+	if x != nil && x.Height != nil {
+		return *x.Height
+	}
+	return 0
+}
+
+func (x *Message_VideoMessage) GetWidth() uint32 {
+	if x != nil && x.Width != nil {
+		return *x.Width
+	}
+	return 0
 }
 
 func (x *Message_VideoMessage) GetFileEncSha256() []byte {
@@ -7750,7 +7782,7 @@ const file_github_com_PeterStoica_chatwire_wire_proto_rawDesc = "" +
 	"\rGENERAL_ERROR\x10\x00\x12\v\n" +
 	"\aSUCCESS\x10\x01\x12\r\n" +
 	"\tNOT_FOUND\x10\x02\x12\x14\n" +
-	"\x10DECRYPTION_ERROR\x10\x03\"\xfar\n" +
+	"\x10DECRYPTION_ERROR\x10\x03\"\xbcs\n" +
 	"\aMessage\x12\x14\n" +
 	"\fconversation\x18\x01 \x01(\t\x12Y\n" +
 	"\x1csenderKeyDistributionMessage\x18\x02 \x01(\v23.chatwire.wire.Message.SenderKeyDistributionMessage\x129\n" +
@@ -7838,7 +7870,7 @@ const file_github_com_PeterStoica_chatwire_wire_proto_rawDesc = "" +
 	"\x16AppStateSyncKeyRequest\x128\n" +
 	"\x06keyIds\x18\x01 \x03(\v2(.chatwire.wire.Message.AppStateSyncKeyId\x1aL\n" +
 	"\x14AppStateSyncKeyShare\x124\n" +
-	"\x04keys\x18\x01 \x03(\v2&.chatwire.wire.Message.AppStateSyncKey\x1a\x8e\x02\n" +
+	"\x04keys\x18\x01 \x03(\v2&.chatwire.wire.Message.AppStateSyncKey\x1a\xa0\x02\n" +
 	"\fAudioMessage\x12\v\n" +
 	"\x03url\x18\x01 \x01(\t\x12\x10\n" +
 	"\bmimetype\x18\x02 \x01(\t\x12\x12\n" +
@@ -7855,6 +7887,7 @@ const file_github_com_PeterStoica_chatwire_wire_proto_rawDesc = "" +
 	"\x11mediaKeyTimestamp\x18\n" +
 	" \x01(\x03\x12/\n" +
 	"\vcontextInfo\x18\x11 \x01(\v2\x1a.chatwire.wire.ContextInfo\x12\x10\n" +
+	"\bwaveform\x18\x13 \x01(\f\x12\x10\n" +
 	"\bviewOnce\x18\x15 \x01(\b\x1aA\n" +
 	"\x0eButtonsMessage\x12/\n" +
 	"\vcontextInfo\x18\b \x01(\v2\x1a.chatwire.wire.ContextInfo\x1aI\n" +
@@ -8127,17 +8160,21 @@ const file_github_com_PeterStoica_chatwire_wire_proto_rawDesc = "" +
 	"\x1aTemplateButtonReplyMessage\x12/\n" +
 	"\vcontextInfo\x18\x03 \x01(\v2\x1a.chatwire.wire.ContextInfo\x1aB\n" +
 	"\x0fTemplateMessage\x12/\n" +
-	"\vcontextInfo\x18\x03 \x01(\v2\x1a.chatwire.wire.ContextInfo\x1a\x96\x02\n" +
+	"\vcontextInfo\x18\x03 \x01(\v2\x1a.chatwire.wire.ContextInfo\x1a\xc6\x02\n" +
 	"\fVideoMessage\x12\v\n" +
 	"\x03url\x18\x01 \x01(\t\x12\x10\n" +
 	"\bmimetype\x18\x02 \x01(\t\x12\x12\n" +
 	"\n" +
 	"fileSha256\x18\x03 \x01(\f\x12\x12\n" +
 	"\n" +
-	"fileLength\x18\x04 \x01(\x04\x12\x10\n" +
+	"fileLength\x18\x04 \x01(\x04\x12\x0f\n" +
+	"\aseconds\x18\x05 \x01(\r\x12\x10\n" +
 	"\bmediaKey\x18\x06 \x01(\f\x12\x0f\n" +
 	"\acaption\x18\a \x01(\t\x12\x13\n" +
-	"\vgifPlayback\x18\b \x01(\b\x12\x15\n" +
+	"\vgifPlayback\x18\b \x01(\b\x12\x0e\n" +
+	"\x06height\x18\t \x01(\r\x12\r\n" +
+	"\x05width\x18\n" +
+	" \x01(\r\x12\x15\n" +
 	"\rfileEncSha256\x18\v \x01(\f\x12\x12\n" +
 	"\n" +
 	"directPath\x18\r \x01(\t\x12\x19\n" +

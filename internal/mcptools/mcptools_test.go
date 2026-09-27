@@ -10,6 +10,7 @@ import (
 	"fmt"
 	"image"
 	"image/color"
+	"image/jpeg"
 	"image/png"
 	"net/http"
 	"net/http/httptest"
@@ -48,6 +49,7 @@ import (
 	"github.com/PeterStoica/chatwire/internal/testkit/fakedevice"
 	"github.com/PeterStoica/chatwire/internal/testkit/fakegroups"
 	"github.com/PeterStoica/chatwire/internal/testkit/fakekeys"
+	"github.com/PeterStoica/chatwire/internal/testkit/fakemedia"
 	"github.com/PeterStoica/chatwire/internal/testkit/fakerelay"
 	"github.com/PeterStoica/chatwire/internal/testkit/fakeusync"
 	"github.com/PeterStoica/chatwire/internal/testkit/fakeworld"
@@ -1193,9 +1195,10 @@ func TestSendingFilesFromClaude(t *testing.T) {
 			t.Fatalf("send photo = %+v", sent)
 		}
 		photo := receive(t).GetImageMessage()
-		if photo.GetCaption() != "the view" || photo.GetWidth() != 320 || photo.GetHeight() != 160 || photo.GetMimetype() != "image/png" || len(photo.GetJpegThumbnail()) == 0 ||
-			!bytes.Equal(download(t, &wire.Message{ImageMessage: photo}), picture.Bytes()) {
-			t.Fatalf("bob got %v", photo)
+		got, err := jpeg.Decode(bytes.NewReader(download(t, &wire.Message{ImageMessage: photo})))
+		if err != nil || got.Bounds().Dx() != 320 || got.Bounds().Dy() != 160 || photo.GetCaption() != "the view" || photo.GetWidth() != 320 || photo.GetHeight() != 160 ||
+			photo.GetMimetype() != "image/jpeg" || len(photo.GetJpegThumbnail()) == 0 {
+			t.Fatalf("bob got %v, a picture that decodes as %v: %v", photo, got, err)
 		}
 		reopened, result := callAs[mcptools.MediaReport](c, "get_whatsapp_media", map[string]any{"message_id": sent.ID})
 		if reopened.State != "ok" || reopened.Type != "image" || len(result.Content) != 2 {
@@ -1209,6 +1212,24 @@ func TestSendingFilesFromClaude(t *testing.T) {
 		doc := media.Unwrap(receive(t))
 		if doc.GetDocumentMessage().GetFileName() != "Q3 report.pdf" || doc.GetDocumentMessage().GetMimetype() != "application/pdf" || !bytes.Equal(download(t, doc), report) {
 			t.Fatalf("the family got %v", doc)
+		}
+
+		for name, data := range map[string][]byte{"hello.opus": fakemedia.VoiceNote(4), "clip.mp4": fakemedia.Video(12, 1280, 720)} {
+			if err := os.WriteFile(filepath.Join(home, name), data, 0o600); err != nil {
+				t.Fatal(err)
+			}
+		}
+		if sent, _ := callAs[mcptools.SendReport](c, "send_whatsapp_file", map[string]any{"to": "+40 722 222 222", "path": "~/hello.opus"}); sent.State != "sent" {
+			t.Fatalf("send voice note = %+v", sent)
+		}
+		if voice := receive(t).GetAudioMessage(); !voice.GetPtt() || voice.GetSeconds() != 4 || len(voice.GetWaveform()) != 64 || voice.GetMimetype() != "audio/ogg; codecs=opus" {
+			t.Fatalf("bob got the voice note as %v", voice)
+		}
+		if sent, _ := callAs[mcptools.SendReport](c, "send_whatsapp_file", map[string]any{"to": "+40 722 222 222", "path": "~/clip.mp4"}); sent.State != "sent" {
+			t.Fatalf("send video = %+v", sent)
+		}
+		if video := receive(t).GetVideoMessage(); video.GetSeconds() != 12 || video.GetWidth() != 1280 || video.GetHeight() != 720 {
+			t.Fatalf("bob got the video as %v", video)
 		}
 
 		for _, tt := range []struct {
