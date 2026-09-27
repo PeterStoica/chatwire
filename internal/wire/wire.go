@@ -1127,16 +1127,18 @@ func (x *ClientPayload) GetPull() bool {
 }
 
 type ContextInfo struct {
-	state           protoimpl.MessageState `protogen:"open.v1"`
-	StanzaId        *string                `protobuf:"bytes,1,opt,name=stanzaId" json:"stanzaId,omitempty"`
-	Participant     *string                `protobuf:"bytes,2,opt,name=participant" json:"participant,omitempty"`
-	QuotedMessage   *Message               `protobuf:"bytes,3,opt,name=quotedMessage" json:"quotedMessage,omitempty"`
-	RemoteJid       *string                `protobuf:"bytes,4,opt,name=remoteJid" json:"remoteJid,omitempty"`
-	MentionedJid    []string               `protobuf:"bytes,15,rep,name=mentionedJid" json:"mentionedJid,omitempty"`
-	ForwardingScore *uint32                `protobuf:"varint,21,opt,name=forwardingScore" json:"forwardingScore,omitempty"`
-	IsForwarded     *bool                  `protobuf:"varint,22,opt,name=isForwarded" json:"isForwarded,omitempty"`
-	unknownFields   protoimpl.UnknownFields
-	sizeCache       protoimpl.SizeCache
+	state                     protoimpl.MessageState `protogen:"open.v1"`
+	StanzaId                  *string                `protobuf:"bytes,1,opt,name=stanzaId" json:"stanzaId,omitempty"`
+	Participant               *string                `protobuf:"bytes,2,opt,name=participant" json:"participant,omitempty"`
+	QuotedMessage             *Message               `protobuf:"bytes,3,opt,name=quotedMessage" json:"quotedMessage,omitempty"`
+	RemoteJid                 *string                `protobuf:"bytes,4,opt,name=remoteJid" json:"remoteJid,omitempty"`
+	MentionedJid              []string               `protobuf:"bytes,15,rep,name=mentionedJid" json:"mentionedJid,omitempty"`
+	ForwardingScore           *uint32                `protobuf:"varint,21,opt,name=forwardingScore" json:"forwardingScore,omitempty"`
+	IsForwarded               *bool                  `protobuf:"varint,22,opt,name=isForwarded" json:"isForwarded,omitempty"`
+	Expiration                *uint32                `protobuf:"varint,25,opt,name=expiration" json:"expiration,omitempty"`
+	EphemeralSettingTimestamp *int64                 `protobuf:"varint,26,opt,name=ephemeralSettingTimestamp" json:"ephemeralSettingTimestamp,omitempty"`
+	unknownFields             protoimpl.UnknownFields
+	sizeCache                 protoimpl.SizeCache
 }
 
 func (x *ContextInfo) Reset() {
@@ -1217,24 +1219,40 @@ func (x *ContextInfo) GetIsForwarded() bool {
 	return false
 }
 
+func (x *ContextInfo) GetExpiration() uint32 {
+	if x != nil && x.Expiration != nil {
+		return *x.Expiration
+	}
+	return 0
+}
+
+func (x *ContextInfo) GetEphemeralSettingTimestamp() int64 {
+	if x != nil && x.EphemeralSettingTimestamp != nil {
+		return *x.EphemeralSettingTimestamp
+	}
+	return 0
+}
+
 type Conversation struct {
-	state                  protoimpl.MessageState `protogen:"open.v1"`
-	Id                     *string                `protobuf:"bytes,1,req,name=id" json:"id,omitempty"`
-	Messages               []*HistorySyncMsg      `protobuf:"bytes,2,rep,name=messages" json:"messages,omitempty"`
-	LastMsgTimestamp       *uint64                `protobuf:"varint,5,opt,name=lastMsgTimestamp" json:"lastMsgTimestamp,omitempty"`
-	UnreadCount            *uint32                `protobuf:"varint,6,opt,name=unreadCount" json:"unreadCount,omitempty"`
-	ReadOnly               *bool                  `protobuf:"varint,7,opt,name=readOnly" json:"readOnly,omitempty"`
-	ConversationTimestamp  *uint64                `protobuf:"varint,12,opt,name=conversationTimestamp" json:"conversationTimestamp,omitempty"`
-	Name                   *string                `protobuf:"bytes,13,opt,name=name" json:"name,omitempty"`
-	Archived               *bool                  `protobuf:"varint,16,opt,name=archived" json:"archived,omitempty"`
-	TcToken                []byte                 `protobuf:"bytes,21,opt,name=tcToken" json:"tcToken,omitempty"`
-	TcTokenTimestamp       *uint64                `protobuf:"varint,22,opt,name=tcTokenTimestamp" json:"tcTokenTimestamp,omitempty"`
-	Pinned                 *uint32                `protobuf:"varint,24,opt,name=pinned" json:"pinned,omitempty"`
-	MuteEndTime            *uint64                `protobuf:"varint,25,opt,name=muteEndTime" json:"muteEndTime,omitempty"`
-	TcTokenSenderTimestamp *uint64                `protobuf:"varint,28,opt,name=tcTokenSenderTimestamp" json:"tcTokenSenderTimestamp,omitempty"`
-	DisplayName            *string                `protobuf:"bytes,38,opt,name=displayName" json:"displayName,omitempty"`
-	unknownFields          protoimpl.UnknownFields
-	sizeCache              protoimpl.SizeCache
+	state                     protoimpl.MessageState `protogen:"open.v1"`
+	Id                        *string                `protobuf:"bytes,1,req,name=id" json:"id,omitempty"`
+	Messages                  []*HistorySyncMsg      `protobuf:"bytes,2,rep,name=messages" json:"messages,omitempty"`
+	LastMsgTimestamp          *uint64                `protobuf:"varint,5,opt,name=lastMsgTimestamp" json:"lastMsgTimestamp,omitempty"`
+	UnreadCount               *uint32                `protobuf:"varint,6,opt,name=unreadCount" json:"unreadCount,omitempty"`
+	ReadOnly                  *bool                  `protobuf:"varint,7,opt,name=readOnly" json:"readOnly,omitempty"`
+	EphemeralExpiration       *uint32                `protobuf:"varint,9,opt,name=ephemeralExpiration" json:"ephemeralExpiration,omitempty"`
+	EphemeralSettingTimestamp *int64                 `protobuf:"varint,10,opt,name=ephemeralSettingTimestamp" json:"ephemeralSettingTimestamp,omitempty"`
+	ConversationTimestamp     *uint64                `protobuf:"varint,12,opt,name=conversationTimestamp" json:"conversationTimestamp,omitempty"`
+	Name                      *string                `protobuf:"bytes,13,opt,name=name" json:"name,omitempty"`
+	Archived                  *bool                  `protobuf:"varint,16,opt,name=archived" json:"archived,omitempty"`
+	TcToken                   []byte                 `protobuf:"bytes,21,opt,name=tcToken" json:"tcToken,omitempty"`
+	TcTokenTimestamp          *uint64                `protobuf:"varint,22,opt,name=tcTokenTimestamp" json:"tcTokenTimestamp,omitempty"`
+	Pinned                    *uint32                `protobuf:"varint,24,opt,name=pinned" json:"pinned,omitempty"`
+	MuteEndTime               *uint64                `protobuf:"varint,25,opt,name=muteEndTime" json:"muteEndTime,omitempty"`
+	TcTokenSenderTimestamp    *uint64                `protobuf:"varint,28,opt,name=tcTokenSenderTimestamp" json:"tcTokenSenderTimestamp,omitempty"`
+	DisplayName               *string                `protobuf:"bytes,38,opt,name=displayName" json:"displayName,omitempty"`
+	unknownFields             protoimpl.UnknownFields
+	sizeCache                 protoimpl.SizeCache
 }
 
 func (x *Conversation) Reset() {
@@ -1299,6 +1317,20 @@ func (x *Conversation) GetReadOnly() bool {
 		return *x.ReadOnly
 	}
 	return false
+}
+
+func (x *Conversation) GetEphemeralExpiration() uint32 {
+	if x != nil && x.EphemeralExpiration != nil {
+		return *x.EphemeralExpiration
+	}
+	return 0
+}
+
+func (x *Conversation) GetEphemeralSettingTimestamp() int64 {
+	if x != nil && x.EphemeralSettingTimestamp != nil {
+		return *x.EphemeralSettingTimestamp
+	}
+	return 0
 }
 
 func (x *Conversation) GetConversationTimestamp() uint64 {
@@ -6370,6 +6402,8 @@ type Message_ProtocolMessage struct {
 	state                                   protoimpl.MessageState                           `protogen:"open.v1"`
 	Key                                     *MessageKey                                      `protobuf:"bytes,1,opt,name=key" json:"key,omitempty"`
 	Type                                    *Message_ProtocolMessage_Type                    `protobuf:"varint,2,opt,name=type,enum=chatwire.wire.Message_ProtocolMessage_Type" json:"type,omitempty"`
+	EphemeralExpiration                     *uint32                                          `protobuf:"varint,4,opt,name=ephemeralExpiration" json:"ephemeralExpiration,omitempty"`
+	EphemeralSettingTimestamp               *int64                                           `protobuf:"varint,5,opt,name=ephemeralSettingTimestamp" json:"ephemeralSettingTimestamp,omitempty"`
 	HistorySyncNotification                 *Message_HistorySyncNotification                 `protobuf:"bytes,6,opt,name=historySyncNotification" json:"historySyncNotification,omitempty"`
 	AppStateSyncKeyShare                    *Message_AppStateSyncKeyShare                    `protobuf:"bytes,7,opt,name=appStateSyncKeyShare" json:"appStateSyncKeyShare,omitempty"`
 	AppStateSyncKeyRequest                  *Message_AppStateSyncKeyRequest                  `protobuf:"bytes,8,opt,name=appStateSyncKeyRequest" json:"appStateSyncKeyRequest,omitempty"`
@@ -6422,6 +6456,20 @@ func (x *Message_ProtocolMessage) GetType() Message_ProtocolMessage_Type {
 		return *x.Type
 	}
 	return Message_ProtocolMessage_REVOKE
+}
+
+func (x *Message_ProtocolMessage) GetEphemeralExpiration() uint32 {
+	if x != nil && x.EphemeralExpiration != nil {
+		return *x.EphemeralExpiration
+	}
+	return 0
+}
+
+func (x *Message_ProtocolMessage) GetEphemeralSettingTimestamp() int64 {
+	if x != nil && x.EphemeralSettingTimestamp != nil {
+		return *x.EphemeralSettingTimestamp
+	}
+	return 0
 }
 
 func (x *Message_ProtocolMessage) GetHistorySyncNotification() *Message_HistorySyncNotification {
@@ -7624,7 +7672,7 @@ const file_github_com_PeterStoica_chatwire_wire_proto_rawDesc = "" +
 	"\x06device\x18\x12 \x01(\r\x12U\n" +
 	"\x11devicePairingData\x18\x13 \x01(\v2:.chatwire.wire.ClientPayload.DevicePairingRegistrationData\x12\f\n" +
 	"\x04pull\x18! \x01(\b\x1a\x1f\n" +
-	"\x1dDevicePairingRegistrationData\"\xba\x01\n" +
+	"\x1dDevicePairingRegistrationData\"\xf1\x01\n" +
 	"\vContextInfo\x12\x10\n" +
 	"\bstanzaId\x18\x01 \x01(\t\x12\x13\n" +
 	"\vparticipant\x18\x02 \x01(\t\x12-\n" +
@@ -7632,14 +7680,20 @@ const file_github_com_PeterStoica_chatwire_wire_proto_rawDesc = "" +
 	"\tremoteJid\x18\x04 \x01(\t\x12\x14\n" +
 	"\fmentionedJid\x18\x0f \x03(\t\x12\x17\n" +
 	"\x0fforwardingScore\x18\x15 \x01(\r\x12\x13\n" +
-	"\visForwarded\x18\x16 \x01(\b\"\xd0\x02\n" +
+	"\visForwarded\x18\x16 \x01(\b\x12\x12\n" +
+	"\n" +
+	"expiration\x18\x19 \x01(\r\x12!\n" +
+	"\x19ephemeralSettingTimestamp\x18\x1a \x01(\x03\"\x90\x03\n" +
 	"\fConversation\x12\n" +
 	"\n" +
 	"\x02id\x18\x01 \x02(\t\x12/\n" +
 	"\bmessages\x18\x02 \x03(\v2\x1d.chatwire.wire.HistorySyncMsg\x12\x18\n" +
 	"\x10lastMsgTimestamp\x18\x05 \x01(\x04\x12\x13\n" +
 	"\vunreadCount\x18\x06 \x01(\r\x12\x10\n" +
-	"\breadOnly\x18\a \x01(\b\x12\x1d\n" +
+	"\breadOnly\x18\a \x01(\b\x12\x1b\n" +
+	"\x13ephemeralExpiration\x18\t \x01(\r\x12!\n" +
+	"\x19ephemeralSettingTimestamp\x18\n" +
+	" \x01(\x03\x12\x1d\n" +
 	"\x15conversationTimestamp\x18\f \x01(\x04\x12\f\n" +
 	"\x04name\x18\r \x01(\t\x12\x10\n" +
 	"\barchived\x18\x10 \x01(\b\x12\x0f\n" +
@@ -7696,7 +7750,7 @@ const file_github_com_PeterStoica_chatwire_wire_proto_rawDesc = "" +
 	"\rGENERAL_ERROR\x10\x00\x12\v\n" +
 	"\aSUCCESS\x10\x01\x12\r\n" +
 	"\tNOT_FOUND\x10\x02\x12\x14\n" +
-	"\x10DECRYPTION_ERROR\x10\x03\"\xbar\n" +
+	"\x10DECRYPTION_ERROR\x10\x03\"\xfar\n" +
 	"\aMessage\x12\x14\n" +
 	"\fconversation\x18\x01 \x01(\t\x12Y\n" +
 	"\x1csenderKeyDistributionMessage\x18\x02 \x01(\v23.chatwire.wire.Message.SenderKeyDistributionMessage\x129\n" +
@@ -7969,10 +8023,12 @@ const file_github_com_PeterStoica_chatwire_wire_proto_rawDesc = "" +
 	"\x0fPollVoteMessage\x12\x17\n" +
 	"\x0fselectedOptions\x18\x01 \x03(\f\x1aA\n" +
 	"\x0eProductMessage\x12/\n" +
-	"\vcontextInfo\x18\x11 \x01(\v2\x1a.chatwire.wire.ContextInfo\x1a\x8b\r\n" +
+	"\vcontextInfo\x18\x11 \x01(\v2\x1a.chatwire.wire.ContextInfo\x1a\xcb\r\n" +
 	"\x0fProtocolMessage\x12&\n" +
 	"\x03key\x18\x01 \x01(\v2\x19.chatwire.wire.MessageKey\x129\n" +
-	"\x04type\x18\x02 \x01(\x0e2+.chatwire.wire.Message.ProtocolMessage.Type\x12O\n" +
+	"\x04type\x18\x02 \x01(\x0e2+.chatwire.wire.Message.ProtocolMessage.Type\x12\x1b\n" +
+	"\x13ephemeralExpiration\x18\x04 \x01(\r\x12!\n" +
+	"\x19ephemeralSettingTimestamp\x18\x05 \x01(\x03\x12O\n" +
 	"\x17historySyncNotification\x18\x06 \x01(\v2..chatwire.wire.Message.HistorySyncNotification\x12I\n" +
 	"\x14appStateSyncKeyShare\x18\a \x01(\v2+.chatwire.wire.Message.AppStateSyncKeyShare\x12M\n" +
 	"\x16appStateSyncKeyRequest\x18\b \x01(\v2-.chatwire.wire.Message.AppStateSyncKeyRequest\x12-\n" +

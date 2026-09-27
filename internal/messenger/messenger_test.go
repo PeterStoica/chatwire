@@ -276,6 +276,53 @@ func TestWhatsAppLimitsHoldMessagesToPeopleWhoNeverWrote(t *testing.T) {
 	})
 }
 
+func TestMessagesFollowTheChatsDisappearingTimer(t *testing.T) {
+	synctest.Test(t, func(t *testing.T) {
+		r := newRig(t)
+		var (
+			mu    sync.Mutex
+			toBob []node.Node
+		)
+		r.server.Deliver = func(device node.JID, stanza node.Node) {
+			if device.User == r.bob.User {
+				mu.Lock()
+				toBob = append(toBob, stanza)
+				mu.Unlock()
+			}
+		}
+		r.world.Script(r.world.Serve(r.server))
+		r.m.Start(t.Context(), r.state)
+		r.send(t, "before")
+		week, set := uint32(604800), time.Now().Add(-time.Minute).Unix()
+		setting := &wire.Message{ProtocolMessage: &wire.Message_ProtocolMessage{
+			Type: wire.Message_ProtocolMessage_EPHEMERAL_SETTING.Enum(), EphemeralExpiration: new(week), EphemeralSettingTimestamp: new(set),
+		}}
+		out, err := r.bobPhone.Send(r.server.Keys, r.server.Devices, r.account, setting)
+		if err != nil {
+			t.Fatal(err)
+		}
+		r.server.Inbox <- fakerelay.Deliver(r.bob, "Bob", time.Now(), out)[r.world.Phone.JID]
+		synctest.Wait()
+		r.send(t, "after")
+		mu.Lock()
+		stanzas := slices.Clone(toBob)
+		mu.Unlock()
+		var last *wire.Message
+		for _, stanza := range stanzas {
+			if _, last, err = r.bobPhone.Receive(stanza); err != nil {
+				t.Fatal(err)
+			}
+		}
+		info := last.GetExtendedTextMessage().GetContextInfo()
+		if last.GetExtendedTextMessage().GetText() != "after" || info.GetExpiration() != week || info.GetEphemeralSettingTimestamp() != set {
+			t.Fatalf("bob got %v", last)
+		}
+		if recent := r.recent(t); len(recent) != 2 {
+			t.Fatalf("stored %d messages, want the two texts and not the timer setting", len(recent))
+		}
+	})
+}
+
 func TestRemembersWhatArrives(t *testing.T) {
 	synctest.Test(t, func(t *testing.T) {
 		r := newRig(t)
@@ -514,6 +561,26 @@ func TestGroupSendsReuseWhatTheyKnowUntilTheGroupChanges(t *testing.T) {
 		}
 		if _, lookups := known.Queries(); lookups != 2 {
 			t.Fatalf("an old copy was used: %d lookups", lookups)
+		}
+	})
+}
+
+func TestGroupMessagesFollowTheGroupsTimer(t *testing.T) {
+	synctest.Test(t, func(t *testing.T) {
+		r := newRig(t)
+		family := groups.Group{JID: node.JID{User: "120363000000000021", Server: node.ServerGroup}, Subject: "Family", Disappearing: 86400,
+			Participants: []groups.Participant{{JID: r.account}, {JID: r.bob}}}
+		r.server.Groups = fakegroups.New(family)
+		r.server.Members = func(node.JID) []node.JID { return []node.JID{r.bob, r.account} }
+		r.world.Script(r.world.Serve(r.server))
+		r.m.Start(t.Context(), r.state)
+		synctest.Wait()
+		if _, err := r.m.SendText(t.Context(), family.JID, "for a day"); err != nil {
+			t.Fatal(err)
+		}
+		stored := r.recent(t)
+		if len(stored) != 1 || stored[0].Message.GetExtendedTextMessage().GetContextInfo().GetExpiration() != 86400 || stored[0].Message.GetExtendedTextMessage().GetText() != "for a day" {
+			t.Fatalf("sent %+v", stored)
 		}
 	})
 }

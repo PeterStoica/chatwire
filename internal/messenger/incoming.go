@@ -24,7 +24,14 @@ func (m *Messenger) dispatch(ctx context.Context, r client.Received) {
 		m.keep(ctx, func(ctx context.Context) error { return m.store.Apply(ctx, store.Changes{LIDs: r.Pairs}) })
 	}
 	inner := media.Unwrap(r.Message)
+	if timer, ok := timerOf(r, inner); ok {
+		m.keep(ctx, func(ctx context.Context) error {
+			return m.store.Apply(ctx, store.Changes{Timers: []store.Timer{timer}})
+		})
+	}
 	switch p := inner.GetProtocolMessage(); {
+	case p.GetType() == wire.Message_ProtocolMessage_EPHEMERAL_SETTING:
+		return
 	case p.GetKey() != nil && p.GetType() == wire.Message_ProtocolMessage_MESSAGE_EDIT:
 		m.keep(ctx, func(ctx context.Context) error { return m.edit(ctx, r, p) })
 		return
@@ -58,14 +65,35 @@ func (m *Messenger) dispatch(ctx context.Context, r client.Received) {
 	m.keep(ctx, func(ctx context.Context) error { return m.store.Apply(ctx, changes) })
 }
 
+func timerOf(r client.Received, inner *wire.Message) (store.Timer, bool) {
+	if p := inner.GetProtocolMessage(); p.GetType() == wire.Message_ProtocolMessage_EPHEMERAL_SETTING {
+		set := r.Time
+		if at := p.GetEphemeralSettingTimestamp(); at > 0 {
+			set = time.Unix(at, 0)
+		}
+		return store.Timer{Chat: r.Chat, Seconds: p.GetEphemeralExpiration(), Set: set}, true
+	}
+	context := message.ContextOf(inner)
+	if context.GetExpiration() == 0 || context.GetEphemeralSettingTimestamp() <= 0 || context.GetIsForwarded() {
+		return store.Timer{}, false
+	}
+	return store.Timer{Chat: r.Chat, Seconds: context.GetExpiration(), Set: time.Unix(context.GetEphemeralSettingTimestamp(), 0)}, true
+}
+
 func (m *Messenger) history(chunk history.Chunk) {
 	m.progress(chunk.Type, chunk.Progress)
 	chats := make([]store.Chat, 0, len(chunk.Chats))
-	var tokens []privacy.Token
+	var (
+		tokens []privacy.Token
+		timers []store.Timer
+	)
 	for _, c := range chunk.Chats {
 		chats = append(chats, store.Chat{JID: c.JID, Name: c.Name, LastMessage: c.LastMessage})
 		if !c.Token.Given.IsZero() || !c.Token.Ours.IsZero() {
 			tokens = append(tokens, c.Token)
+		}
+		if c.Timer.Seconds > 0 || !c.Timer.Set.IsZero() {
+			timers = append(timers, store.Timer{Chat: c.JID, Seconds: c.Timer.Seconds, Set: c.Timer.Set})
 		}
 	}
 	messages := make([]store.Message, 0, len(chunk.Messages))
@@ -99,7 +127,7 @@ func (m *Messenger) history(chunk history.Chunk) {
 	for _, c := range chunk.Chats {
 		unread[c.JID] = int(c.Unread)
 	}
-	changes := store.Changes{Chats: chats, Messages: messages, Names: names, LIDs: chunk.LIDs, Reactions: reactions, Votes: votes, Unread: unread, Tokens: tokens}
+	changes := store.Changes{Chats: chats, Messages: messages, Names: names, LIDs: chunk.LIDs, Reactions: reactions, Votes: votes, Unread: unread, Tokens: tokens, Timers: timers}
 	m.keep(context.Background(), func(ctx context.Context) error { return m.store.Apply(ctx, changes) })
 	if chunk.Type == wire.HistorySync_ON_DEMAND {
 		m.mu.Lock()

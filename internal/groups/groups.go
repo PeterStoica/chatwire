@@ -36,6 +36,7 @@ type Group struct {
 	Participants   []Participant
 	Description    string
 	DescriptionID  string
+	Disappearing   uint32
 }
 
 func ParticipatingRequest() node.Node {
@@ -110,6 +111,10 @@ func parseGroup(entry node.Node) (Group, error) {
 			phone, _ := child.Attr("phone_number").JID()
 			role := text(child, "type")
 			g.Participants = append(g.Participants, Participant{JID: jid, LID: lid, Phone: phone, Admin: role == "admin" || role == "superadmin"})
+		case "ephemeral":
+			if seconds, err := strconv.ParseUint(text(child, "expiration"), 10, 32); err == nil {
+				g.Disappearing = uint32(seconds)
+			}
 		case "description":
 			g.DescriptionID = text(child, "id")
 			if body, ok := child.Child("body"); ok {

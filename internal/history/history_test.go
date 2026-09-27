@@ -227,6 +227,7 @@ func TestParsingAHistoryChunk(t *testing.T) {
 				Id: new(bob.String()), DisplayName: new("Bob Contact"), UnreadCount: new(uint32(3)), LastMsgTimestamp: new(uint64(1790000010)),
 				Archived: new(true), Pinned: new(uint32(1790000000)), MuteEndTime: new(uint64(1790009999)),
 				TcToken: []byte{5, 5}, TcTokenTimestamp: new(uint64(1790000300)), TcTokenSenderTimestamp: new(uint64(1790000400)),
+				EphemeralExpiration: new(uint32(604800)), EphemeralSettingTimestamp: new(int64(1789999000)),
 				Messages: []*wire.HistorySyncMsg{
 					webMessage(bob.String(), false, "3EB0B1", "", 1790000001, text("hi from bob")),
 					webMessage(bob.String(), true, "3EB0B2", "", 1790000002, text("hi from me")),
@@ -276,7 +277,8 @@ func TestParsingAHistoryChunk(t *testing.T) {
 	}
 	wantChats := []history.Chat{
 		{JID: bob, Name: "Bob Contact", Unread: 3, LastMessage: time.Unix(1790000010, 0), Archived: true, Pinned: true, MutedUntil: time.Unix(1790009999, 0),
-			Token: privacy.Token{Contact: bob, Theirs: []byte{5, 5}, Given: time.Unix(1790000300, 0), Ours: time.Unix(1790000400, 0)}},
+			Token: privacy.Token{Contact: bob, Theirs: []byte{5, 5}, Given: time.Unix(1790000300, 0), Ours: time.Unix(1790000400, 0)},
+			Timer: history.Timer{Seconds: 604800, Set: time.Unix(1789999000, 0)}},
 		{JID: family, Name: "Family", LastMessage: time.Unix(1790000200, 0), ReadOnly: true, Token: privacy.Token{Contact: family}},
 		{JID: lidChat, Token: privacy.Token{Contact: lidChat}},
 	}
@@ -491,5 +493,6 @@ func TestPollsInHistory(t *testing.T) {
 func sameChat(a, b history.Chat) bool {
 	return a.JID == b.JID && a.Name == b.Name && a.Unread == b.Unread && a.LastMessage.Equal(b.LastMessage) && a.Archived == b.Archived &&
 		a.Pinned == b.Pinned && a.ReadOnly == b.ReadOnly && a.MutedUntil.Equal(b.MutedUntil) && a.Token.Contact == b.Token.Contact &&
-		bytes.Equal(a.Token.Theirs, b.Token.Theirs) && a.Token.Given.Equal(b.Token.Given) && a.Token.Ours.Equal(b.Token.Ours)
+		bytes.Equal(a.Token.Theirs, b.Token.Theirs) && a.Token.Given.Equal(b.Token.Given) && a.Token.Ours.Equal(b.Token.Ours) &&
+		a.Timer.Seconds == b.Timer.Seconds && a.Timer.Set.Equal(b.Timer.Set)
 }

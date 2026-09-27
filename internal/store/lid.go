@@ -166,6 +166,10 @@ func (r *resolver) changes(ctx context.Context, c Changes) (Changes, error) {
 	for i := range c.Tokens {
 		one(&c.Tokens[i].Contact)
 	}
+	c.Timers = cloned(c.Timers)
+	for i := range c.Timers {
+		one(&c.Timers[i].Chat)
+	}
 	if err != nil {
 		return Changes{}, err
 	}

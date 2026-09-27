@@ -83,6 +83,9 @@ func (s *Server) Handle(request node.Node) node.Node {
 			}
 			children = append(children, node.Node{Tag: "participant", Attrs: pattrs})
 		}
+		if g.Disappearing > 0 {
+			children = append(children, node.Node{Tag: "ephemeral", Attrs: []node.Attr{{Key: "expiration", Value: node.Text(strconv.FormatUint(uint64(g.Disappearing), 10))}}})
+		}
 		if g.Description != "" {
 			children = append(children, node.Node{Tag: "description", Attrs: []node.Attr{{Key: "id", Value: node.Text(cmp.Or(g.DescriptionID, "D1"))}}, Children: []node.Node{{Tag: "body", Bytes: []byte(g.Description)}}})
 		}

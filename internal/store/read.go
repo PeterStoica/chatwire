@@ -80,6 +80,26 @@ func (s *Store) Message(ctx context.Context, id string) (Message, bool, error) {
 	return found[0], true, nil
 }
 
+func (s *Store) Timer(ctx context.Context, chat node.JID) (Timer, error) {
+	chat, err := s.canonical(ctx, chat.WithoutDevice())
+	if err != nil {
+		return Timer{}, err
+	}
+	t := Timer{Chat: chat}
+	var set int64
+	err = s.db.QueryRowContext(ctx, `SELECT expiration, expiration_set FROM chats WHERE jid = ?`, chat.String()).Scan(&t.Seconds, &set)
+	switch {
+	case errors.Is(err, sql.ErrNoRows):
+		return t, nil
+	case err != nil:
+		return t, fmt.Errorf("store: disappearing timer of %s: %w", chat, err)
+	}
+	if set > 0 {
+		t.Set = time.Unix(set, 0)
+	}
+	return t, nil
+}
+
 func (s *Store) Token(ctx context.Context, contact node.JID) (privacy.Token, error) {
 	contact, err := s.canonical(ctx, contact.WithoutDevice())
 	if err != nil {

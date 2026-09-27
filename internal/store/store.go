@@ -42,6 +42,12 @@ type Message struct {
 	Unread    bool
 }
 
+type Timer struct {
+	Chat    node.JID
+	Seconds uint32
+	Set     time.Time
+}
+
 type Status int
 
 const (

@@ -27,7 +27,7 @@ func TestParticipatingRequestLayout(t *testing.T) {
 func TestGroupsRoundTripThroughTheServer(t *testing.T) {
 	family := groups.Group{
 		JID: node.JID{User: "120363000000000001", Server: node.ServerGroup}, Subject: "Family", Created: time.Unix(1700000000, 0),
-		AddressingMode: "lid", Description: "plans",
+		AddressingMode: "lid", Description: "plans", Disappearing: 86400,
 		Participants: []groups.Participant{
 			{JID: node.JID{User: "1", Server: node.ServerLID}, Admin: true},
 			{JID: node.JID{User: "40722222222", Server: node.ServerUser}, LID: node.JID{User: "2", Server: node.ServerLID}},
@@ -39,13 +39,13 @@ func TestGroupsRoundTripThroughTheServer(t *testing.T) {
 		t.Fatalf("ParseParticipating() = %+v, %v", got, err)
 	}
 	g := got[0]
-	if g.JID != family.JID || g.Subject != "Family" || !g.Created.Equal(family.Created) || g.AddressingMode != "lid" || g.Description != "plans" || len(g.Participants) != 2 {
+	if g.JID != family.JID || g.Subject != "Family" || !g.Created.Equal(family.Created) || g.AddressingMode != "lid" || g.Description != "plans" || g.Disappearing != 86400 || len(g.Participants) != 2 {
 		t.Fatalf("family = %+v", g)
 	}
 	if !g.Participants[0].Admin || g.Participants[1].Admin || g.Participants[1].LID != family.Participants[1].LID || g.Participants[1].JID != family.Participants[1].JID {
 		t.Fatalf("participants = %+v", g.Participants)
 	}
-	if got[1].Description != "" || len(got[1].Participants) != 0 || got[1].AddressingMode != "" {
+	if got[1].Description != "" || len(got[1].Participants) != 0 || got[1].AddressingMode != "" || got[1].Disappearing != 0 {
 		t.Fatalf("quiet = %+v", got[1])
 	}
 }

@@ -554,7 +554,11 @@ func boolRank(b bool) int {
 }
 
 func hasContent(m *wire.Message) bool {
-	if p := m.GetProtocolMessage(); p.GetKey() != nil && p.Type != nil && (p.GetType() == wire.Message_ProtocolMessage_REVOKE || p.GetType() == wire.Message_ProtocolMessage_MESSAGE_EDIT) {
+	p := m.GetProtocolMessage()
+	switch {
+	case p.GetKey() != nil && p.Type != nil && (p.GetType() == wire.Message_ProtocolMessage_REVOKE || p.GetType() == wire.Message_ProtocolMessage_MESSAGE_EDIT):
+		return true
+	case p.GetType() == wire.Message_ProtocolMessage_EPHEMERAL_SETTING:
 		return true
 	}
 	rest := proto.CloneOf(m)

@@ -95,6 +95,8 @@ func (m *Messenger) send(ctx context.Context, to node.JID, build func(*client.Cl
 	if err != nil {
 		return "", err
 	}
+	seconds, set := m.timerFor(ctx, to, group)
+	msg = message.Disappearing(msg, seconds, set)
 	if message.NeedsSecret(msg) {
 		secret := make([]byte, message.SecretSize)
 		if _, err := io.ReadFull(m.link.Random, secret); err != nil {
@@ -127,6 +129,17 @@ func (m *Messenger) send(ctx context.Context, to node.JID, build func(*client.Cl
 		m.mu.Unlock()
 	}
 	return id, err
+}
+
+func (m *Messenger) timerFor(ctx context.Context, to node.JID, group *groups.Group) (uint32, time.Time) {
+	if group != nil {
+		return group.Disappearing, time.Time{}
+	}
+	t, err := m.store.Timer(ctx, to)
+	if err != nil {
+		return 0, time.Time{}
+	}
+	return t.Seconds, t.Set
 }
 
 func (m *Messenger) replacement(ctx context.Context, old *client.Client) (*client.Client, bool) {

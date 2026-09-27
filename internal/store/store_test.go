@@ -1004,3 +1004,33 @@ func TestLearningAPairRewritesOldAuthorsOnce(t *testing.T) {
 		t.Fatalf("Forms of someone without a pair = %v, %v", forms, err)
 	}
 }
+
+func TestDisappearingTimersKeepTheNewestSetting(t *testing.T) {
+	s := open(t)
+	lid := node.JID{User: "98765", Server: node.ServerLID}
+	week, day := uint32(7*24*3600), uint32(24*3600)
+	steps := []struct {
+		timer store.Timer
+		want  uint32
+	}{
+		{timer: store.Timer{Chat: bob, Seconds: week, Set: time.Unix(2000, 0)}, want: week},
+		{timer: store.Timer{Chat: bob, Seconds: day, Set: time.Unix(1000, 0)}, want: week},
+		{timer: store.Timer{Chat: lid, Seconds: day, Set: time.Unix(3000, 0)}, want: day},
+		{timer: store.Timer{Chat: bob, Seconds: 0, Set: time.Unix(4000, 0)}, want: 0},
+	}
+	if err := s.Apply(ctx(t), store.Changes{LIDs: map[node.JID]node.JID{lid: bob}}); err != nil {
+		t.Fatal(err)
+	}
+	for i, step := range steps {
+		if err := s.Apply(ctx(t), store.Changes{Timers: []store.Timer{step.timer}}); err != nil {
+			t.Fatal(err)
+		}
+		got, err := s.Timer(ctx(t), lid)
+		if err != nil || got.Seconds != step.want || got.Chat != bob {
+			t.Fatalf("step %d: Timer() = %+v, %v; want %d seconds on %v", i, got, err, step.want, bob)
+		}
+	}
+	if none, err := s.Timer(ctx(t), carol); err != nil || none.Seconds != 0 || !none.Set.IsZero() {
+		t.Fatalf("a chat never seen = %+v, %v", none, err)
+	}
+}

@@ -49,6 +49,12 @@ type Chat struct {
 	ReadOnly    bool
 	MutedUntil  time.Time
 	Token       privacy.Token
+	Timer       Timer
+}
+
+type Timer struct {
+	Seconds uint32
+	Set     time.Time
 }
 
 type Message struct {
@@ -199,6 +205,10 @@ func chatOf(jid node.JID, c *wire.Conversation) Chat {
 	}
 	if muted := c.GetMuteEndTime(); muted > 0 {
 		chat.MutedUntil = unix(muted)
+	}
+	chat.Timer.Seconds = c.GetEphemeralExpiration()
+	if set := c.GetEphemeralSettingTimestamp(); set > 0 {
+		chat.Timer.Set = unix(uint64(set))
 	}
 	chat.Token = privacy.Token{Contact: jid, Theirs: c.GetTcToken()}
 	if given := c.GetTcTokenTimestamp(); given > 0 && len(chat.Token.Theirs) > 0 {

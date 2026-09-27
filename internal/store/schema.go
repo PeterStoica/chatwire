@@ -112,8 +112,13 @@ const schemaV9 = `
 UPDATE messages SET author = (SELECT pn FROM lids WHERE lid = messages.author) WHERE author IN (SELECT lid FROM lids);
 `
 
+const schemaV10 = `
+ALTER TABLE chats ADD COLUMN expiration INTEGER NOT NULL DEFAULT 0;
+ALTER TABLE chats ADD COLUMN expiration_set INTEGER NOT NULL DEFAULT 0;
+`
+
 func migrations() []string {
-	return []string{schemaV1, schemaV2, schemaV3, schemaV4, schemaV5, foldLIDs, schemaV7, schemaV8, schemaV9}
+	return []string{schemaV1, schemaV2, schemaV3, schemaV4, schemaV5, foldLIDs, schemaV7, schemaV8, schemaV9, schemaV10}
 }
 
 func (s *Store) migrate(ctx context.Context) error {
