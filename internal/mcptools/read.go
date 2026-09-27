@@ -428,6 +428,9 @@ func clip(text string, limit int) string {
 }
 
 func display(j node.JID) string {
+	if j.Server == node.ServerUser && j.User == "0" {
+		return "WhatsApp"
+	}
 	if j.Server == node.ServerUser {
 		return "+" + j.User
 	}

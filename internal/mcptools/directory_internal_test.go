@@ -43,3 +43,15 @@ func TestFindingAPersonAmongChatsThatMentionThem(t *testing.T) {
 		t.Errorf("clean = %q", got)
 	}
 }
+
+func TestWhatsAppsOwnAccountHasItsName(t *testing.T) {
+	t.Parallel()
+	for jid, want := range map[node.JID]string{
+		{User: "0", Server: node.ServerUser}:           "WhatsApp",
+		{User: "40700000100", Server: node.ServerUser}: "+40700000100",
+	} {
+		if got := display(jid); got != want {
+			t.Errorf("display(%s) = %q, want %q", jid, got, want)
+		}
+	}
+}
