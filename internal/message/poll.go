@@ -2,9 +2,7 @@ package message
 
 import (
 	"cmp"
-	"crypto/aes"
 	"crypto/cipher"
-	"crypto/hkdf"
 	"crypto/sha256"
 	"errors"
 	"fmt"
@@ -38,6 +36,9 @@ type Ballot struct {
 }
 
 func PollOf(m *wire.Message) *wire.Message_PollCreationMessage {
+	if wrapped := m.GetPollCreationMessageV4().GetMessage(); wrapped != nil {
+		return PollOf(wrapped)
+	}
 	return cmp.Or(m.GetPollCreationMessage(), m.GetPollCreationMessageV2(), m.GetPollCreationMessageV3(), m.GetPollCreationMessageV5(), m.GetPollCreationMessageV6())
 }
 
@@ -47,19 +48,7 @@ func OptionHash(name string) []byte {
 }
 
 func (b Ballot) sealer() (cipher.AEAD, error) {
-	if len(b.Secret) != SecretSize {
-		return nil, fmt.Errorf("%w: %d bytes", ErrSecret, len(b.Secret))
-	}
-	info := b.PollID + b.Creator.WithoutDevice().String() + b.Voter.WithoutDevice().String() + pollVoteUseCase
-	key, err := hkdf.Key(sha256.New, b.Secret, nil, info, 32)
-	if err != nil {
-		return nil, fmt.Errorf("message: vote key: %w", err)
-	}
-	block, err := aes.NewCipher(key)
-	if err != nil {
-		return nil, fmt.Errorf("message: vote key: %w", err)
-	}
-	return cipher.NewGCM(block)
+	return addonCipher(b.Secret, b.PollID, b.Creator, b.Voter, pollVoteUseCase)
 }
 
 func (b Ballot) additionalData() []byte {

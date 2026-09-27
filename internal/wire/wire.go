@@ -1744,6 +1744,7 @@ type Message struct {
 	PollResultSnapshotMessage         *Message_PollResultSnapshotMessage       `protobuf:"bytes,88,opt,name=pollResultSnapshotMessage" json:"pollResultSnapshotMessage,omitempty"`
 	PollCreationOptionImageMessage    *Message_FutureProofMessage              `protobuf:"bytes,90,opt,name=pollCreationOptionImageMessage" json:"pollCreationOptionImageMessage,omitempty"`
 	AssociatedChildMessage            *Message_FutureProofMessage              `protobuf:"bytes,91,opt,name=associatedChildMessage" json:"associatedChildMessage,omitempty"`
+	PollCreationMessageV4             *Message_FutureProofMessage              `protobuf:"bytes,93,opt,name=pollCreationMessageV4" json:"pollCreationMessageV4,omitempty"`
 	RichResponseMessage               *AIRichResponseMessage                   `protobuf:"bytes,97,opt,name=richResponseMessage" json:"richResponseMessage,omitempty"`
 	QuestionMessage                   *Message_FutureProofMessage              `protobuf:"bytes,101,opt,name=questionMessage" json:"questionMessage,omitempty"`
 	MessageHistoryNotice              *Message_MessageHistoryNotice            `protobuf:"bytes,102,opt,name=messageHistoryNotice" json:"messageHistoryNotice,omitempty"`
@@ -2185,6 +2186,13 @@ func (x *Message) GetPollCreationOptionImageMessage() *Message_FutureProofMessag
 func (x *Message) GetAssociatedChildMessage() *Message_FutureProofMessage {
 	if x != nil {
 		return x.AssociatedChildMessage
+	}
+	return nil
+}
+
+func (x *Message) GetPollCreationMessageV4() *Message_FutureProofMessage {
+	if x != nil {
+		return x.PollCreationMessageV4
 	}
 	return nil
 }
@@ -6291,10 +6299,13 @@ func (x *Message_RequestPhoneNumberMessage) GetContextInfo() *ContextInfo {
 }
 
 type Message_SecretEncryptedMessage struct {
-	state         protoimpl.MessageState                        `protogen:"open.v1"`
-	SecretEncType *Message_SecretEncryptedMessage_SecretEncType `protobuf:"varint,4,opt,name=secretEncType,enum=chatwire.wire.Message_SecretEncryptedMessage_SecretEncType" json:"secretEncType,omitempty"`
-	unknownFields protoimpl.UnknownFields
-	sizeCache     protoimpl.SizeCache
+	state            protoimpl.MessageState                        `protogen:"open.v1"`
+	TargetMessageKey *MessageKey                                   `protobuf:"bytes,1,opt,name=targetMessageKey" json:"targetMessageKey,omitempty"`
+	EncPayload       []byte                                        `protobuf:"bytes,2,opt,name=encPayload" json:"encPayload,omitempty"`
+	EncIv            []byte                                        `protobuf:"bytes,3,opt,name=encIv" json:"encIv,omitempty"`
+	SecretEncType    *Message_SecretEncryptedMessage_SecretEncType `protobuf:"varint,4,opt,name=secretEncType,enum=chatwire.wire.Message_SecretEncryptedMessage_SecretEncType" json:"secretEncType,omitempty"`
+	unknownFields    protoimpl.UnknownFields
+	sizeCache        protoimpl.SizeCache
 }
 
 func (x *Message_SecretEncryptedMessage) Reset() {
@@ -6324,6 +6335,27 @@ func (x *Message_SecretEncryptedMessage) ProtoReflect() protoreflect.Message {
 
 func (*Message_SecretEncryptedMessage) Descriptor() ([]byte, []int) {
 	return file_github_com_PeterStoica_chatwire_wire_proto_rawDescGZIP(), []int{14, 46}
+}
+
+func (x *Message_SecretEncryptedMessage) GetTargetMessageKey() *MessageKey {
+	if x != nil {
+		return x.TargetMessageKey
+	}
+	return nil
+}
+
+func (x *Message_SecretEncryptedMessage) GetEncPayload() []byte {
+	if x != nil {
+		return x.EncPayload
+	}
+	return nil
+}
+
+func (x *Message_SecretEncryptedMessage) GetEncIv() []byte {
+	if x != nil {
+		return x.EncIv
+	}
+	return nil
 }
 
 func (x *Message_SecretEncryptedMessage) GetSecretEncType() Message_SecretEncryptedMessage_SecretEncType {
@@ -7174,7 +7206,7 @@ const file_github_com_PeterStoica_chatwire_wire_proto_rawDesc = "" +
 	"\rGENERAL_ERROR\x10\x00\x12\v\n" +
 	"\aSUCCESS\x10\x01\x12\r\n" +
 	"\tNOT_FOUND\x10\x02\x12\x14\n" +
-	"\x10DECRYPTION_ERROR\x10\x03\"\x8ca\n" +
+	"\x10DECRYPTION_ERROR\x10\x03\"\xaeb\n" +
 	"\aMessage\x12\x14\n" +
 	"\fconversation\x18\x01 \x01(\t\x12Y\n" +
 	"\x1csenderKeyDistributionMessage\x18\x02 \x01(\v23.chatwire.wire.Message.SenderKeyDistributionMessage\x129\n" +
@@ -7234,7 +7266,8 @@ const file_github_com_PeterStoica_chatwire_wire_proto_rawDesc = "" +
 	"\x12stickerPackMessage\x18V \x01(\v2).chatwire.wire.Message.StickerPackMessage\x12S\n" +
 	"\x19pollResultSnapshotMessage\x18X \x01(\v20.chatwire.wire.Message.PollResultSnapshotMessage\x12Q\n" +
 	"\x1epollCreationOptionImageMessage\x18Z \x01(\v2).chatwire.wire.Message.FutureProofMessage\x12I\n" +
-	"\x16associatedChildMessage\x18[ \x01(\v2).chatwire.wire.Message.FutureProofMessage\x12A\n" +
+	"\x16associatedChildMessage\x18[ \x01(\v2).chatwire.wire.Message.FutureProofMessage\x12H\n" +
+	"\x15pollCreationMessageV4\x18] \x01(\v2).chatwire.wire.Message.FutureProofMessage\x12A\n" +
 	"\x13richResponseMessage\x18a \x01(\v2$.chatwire.wire.AIRichResponseMessage\x12B\n" +
 	"\x0fquestionMessage\x18e \x01(\v2).chatwire.wire.Message.FutureProofMessage\x12I\n" +
 	"\x14messageHistoryNotice\x18f \x01(\v2+.chatwire.wire.Message.MessageHistoryNotice\x12F\n" +
@@ -7473,8 +7506,12 @@ const file_github_com_PeterStoica_chatwire_wire_proto_rawDesc = "" +
 	"\x04text\x18\x02 \x01(\t\x12\x19\n" +
 	"\x11senderTimestampMs\x18\x04 \x01(\x03\x1aL\n" +
 	"\x19RequestPhoneNumberMessage\x12/\n" +
-	"\vcontextInfo\x18\x01 \x01(\v2\x1a.chatwire.wire.ContextInfo\x1a\xe6\x01\n" +
-	"\x16SecretEncryptedMessage\x12R\n" +
+	"\vcontextInfo\x18\x01 \x01(\v2\x1a.chatwire.wire.ContextInfo\x1a\xbe\x02\n" +
+	"\x16SecretEncryptedMessage\x123\n" +
+	"\x10targetMessageKey\x18\x01 \x01(\v2\x19.chatwire.wire.MessageKey\x12\x12\n" +
+	"\n" +
+	"encPayload\x18\x02 \x01(\f\x12\r\n" +
+	"\x05encIv\x18\x03 \x01(\f\x12R\n" +
 	"\rsecretEncType\x18\x04 \x01(\x0e2;.chatwire.wire.Message.SecretEncryptedMessage.SecretEncType\"x\n" +
 	"\rSecretEncType\x12\v\n" +
 	"\aUNKNOWN\x10\x00\x12\x0e\n" +
@@ -7887,6 +7924,7 @@ var file_github_com_PeterStoica_chatwire_wire_proto_depIdxs = []int32{
 	88,
 	68,
 	68,
+	68,
 	13,
 	68,
 	80,
@@ -7976,6 +8014,7 @@ var file_github_com_PeterStoica_chatwire_wire_proto_depIdxs = []int32{
 	24,
 	28,
 	15,
+	28,
 	7,
 	15,
 	15,
@@ -7983,10 +8022,10 @@ var file_github_com_PeterStoica_chatwire_wire_proto_depIdxs = []int32{
 	15,
 	15,
 	15,
-	167,
-	167,
-	167,
-	167,
+	169,
+	169,
+	169,
+	169,
 	0,
 }
 

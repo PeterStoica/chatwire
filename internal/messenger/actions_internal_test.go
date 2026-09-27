@@ -484,3 +484,29 @@ func TestTheHoldAfterA463SparesChatsWeHave(t *testing.T) {
 		t.Fatalf("a day later: %v", err)
 	}
 }
+
+func TestEncryptedEditsChangeTheOriginalInPlace(t *testing.T) {
+	t.Parallel()
+	now := time.Unix(1790000000, 0)
+	m, ctx := messenger(t, now, pairing.Account{JID: me, LID: myLID})
+	secret := bytes.Repeat([]byte{7}, message.SecretSize)
+	original := &wire.Message{Conversation: new("see you at 7"), MessageContextInfo: &wire.MessageContextInfo{MessageSecret: secret}}
+	m.received(client.Received{ID: "3EB0ORIG", Chat: bob, Author: bob, Time: now, Message: original})
+	sealed, err := message.SealEdit(rand.Reader, message.Addon{Secret: secret, ID: "3EB0ORIG", Original: bobLID, Sender: bobLID}, &wire.Message{Conversation: new("see you at 8")})
+	if err != nil {
+		t.Fatal(err)
+	}
+	m.received(client.Received{ID: "3EB0EDIT", Chat: bobLID, Author: bobLID, Time: now.Add(time.Minute), Message: sealed})
+	forged, err := message.SealEdit(rand.Reader, message.Addon{Secret: secret, ID: "3EB0ORIG", Original: bobLID, Sender: bobLID}, &wire.Message{Conversation: new("forged")})
+	if err != nil {
+		t.Fatal(err)
+	}
+	m.received(client.Received{ID: "3EB0FORGED", Chat: bob, Author: node.JID{User: "40799999999", Server: node.ServerUser}, Time: now.Add(2 * time.Minute), Message: forged})
+	all, err := m.store.Messages(ctx, store.Query{Chat: bob, Limit: 10})
+	if err != nil || len(all) != 1 {
+		t.Fatalf("the edits were stored as messages: %d rows, %v", len(all), err)
+	}
+	if got := store.Text(all[0].Message); got != "see you at 8" || all[0].Edited.IsZero() {
+		t.Fatalf("after the encrypted edit: %q, edited %v", got, all[0].Edited)
+	}
+}

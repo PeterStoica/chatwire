@@ -30,12 +30,7 @@ func (m *Messenger) SendPoll(ctx context.Context, to node.JID, question string, 
 	if err != nil {
 		return "", err
 	}
-	secret := make([]byte, message.SecretSize)
-	if _, err := io.ReadFull(m.link.Random, secret); err != nil {
-		return "", fmt.Errorf("messenger: poll secret: %w", err)
-	}
 	poll := message.NewPoll(question, options, multiple)
-	poll.MessageContextInfo = &wire.MessageContextInfo{MessageSecret: secret}
 	return m.send(ctx, to, func(*client.Client) (*wire.Message, error) { return poll, nil })
 }
 
@@ -91,6 +86,13 @@ func (m *Messenger) send(ctx context.Context, to node.JID, build func(*client.Cl
 	msg, err := build(c)
 	if err != nil {
 		return "", err
+	}
+	if message.NeedsSecret(msg) {
+		secret := make([]byte, message.SecretSize)
+		if _, err := io.ReadFull(m.link.Random, secret); err != nil {
+			return "", fmt.Errorf("messenger: message secret: %w", err)
+		}
+		msg = message.WithSecret(msg, secret)
 	}
 	var id string
 	if group != nil {

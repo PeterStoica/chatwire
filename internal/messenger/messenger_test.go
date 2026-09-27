@@ -20,6 +20,7 @@ import (
 	"github.com/PeterStoica/chatwire/internal/groups"
 	"github.com/PeterStoica/chatwire/internal/linkflow"
 	"github.com/PeterStoica/chatwire/internal/media"
+	"github.com/PeterStoica/chatwire/internal/message"
 	"github.com/PeterStoica/chatwire/internal/messenger"
 	"github.com/PeterStoica/chatwire/internal/node"
 	"github.com/PeterStoica/chatwire/internal/pairing"
@@ -31,6 +32,7 @@ import (
 	"github.com/PeterStoica/chatwire/internal/testkit/fakeusync"
 	"github.com/PeterStoica/chatwire/internal/testkit/fakeworld"
 	"github.com/PeterStoica/chatwire/internal/wire"
+	"sync"
 )
 
 func TestMain(m *testing.M) {
@@ -382,6 +384,36 @@ func TestGroupSendsReuseWhatTheyKnowUntilTheGroupChanges(t *testing.T) {
 		}
 		if _, lookups := known.Queries(); lookups != 2 {
 			t.Fatalf("an old copy was used: %d lookups", lookups)
+		}
+	})
+}
+
+func TestSentMessagesCarryASecretForLaterEdits(t *testing.T) {
+	synctest.Test(t, func(t *testing.T) {
+		r := newRig(t)
+		var toBob []node.Node
+		var mu sync.Mutex
+		r.server.Deliver = func(device node.JID, stanza node.Node) {
+			mu.Lock()
+			defer mu.Unlock()
+			if device == r.bob {
+				toBob = append(toBob, stanza)
+			}
+		}
+		r.world.Script(r.world.Serve(r.server))
+		r.m.Start(t.Context(), r.state)
+		synctest.Wait()
+		r.send(t, "hello")
+		mu.Lock()
+		stanza := toBob[0]
+		mu.Unlock()
+		_, m, err := r.bobPhone.Receive(stanza)
+		if err != nil || m.GetConversation() != "hello" || len(m.GetMessageContextInfo().GetMessageSecret()) != message.SecretSize {
+			t.Fatalf("bob got %v: %v", m, err)
+		}
+		stored := r.recent(t)
+		if len(stored) != 1 || !bytes.Equal(stored[0].Message.GetMessageContextInfo().GetMessageSecret(), m.GetMessageContextInfo().GetMessageSecret()) {
+			t.Fatalf("the secret was not kept with our copy: %+v", stored)
 		}
 	})
 }

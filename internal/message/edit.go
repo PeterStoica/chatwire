@@ -31,7 +31,7 @@ func editedContent(m *wire.Message) *wire.Message {
 func ApplyEdit(original, edited *wire.Message) (*wire.Message, bool) {
 	e := editedContent(edited)
 	if e.GetConversation() != "" || e.GetExtendedTextMessage() != nil {
-		return &wire.Message{Conversation: e.Conversation, ExtendedTextMessage: e.GetExtendedTextMessage()}, true
+		return &wire.Message{Conversation: e.Conversation, ExtendedTextMessage: e.GetExtendedTextMessage(), MessageContextInfo: original.GetMessageContextInfo()}, true
 	}
 	caption, ok := editedCaption(e)
 	if !ok || caption == "" {

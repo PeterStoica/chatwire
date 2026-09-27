@@ -32,6 +32,10 @@ func (m *Messenger) dispatch(ctx context.Context, r client.Received) {
 		m.keep(ctx, func(ctx context.Context) error { return m.revoke(ctx, r, p) })
 		return
 	}
+	if enc := message.EncryptedEdit(inner); enc != nil {
+		m.keep(ctx, func(ctx context.Context) error { return m.secretEdit(ctx, r, enc) })
+		return
+	}
 	if update := inner.GetPollUpdateMessage(); update != nil {
 		m.keep(ctx, func(ctx context.Context) error { return m.vote(ctx, r, update) })
 		return
@@ -122,6 +126,35 @@ func (m *Messenger) edit(ctx context.Context, r client.Received, p *wire.Message
 		return nil
 	}
 	return m.store.Apply(ctx, store.Changes{Edits: []store.Edit{{Chat: r.Chat, ID: original.ID, Message: merged, Time: sentAt(p.GetTimestampMs(), r.Time)}}})
+}
+
+func (m *Messenger) secretEdit(ctx context.Context, r client.Received, enc *wire.Message_SecretEncryptedMessage) error {
+	original, ok, err := m.store.MessageIn(ctx, r.Chat, enc.GetTargetMessageKey().GetId())
+	if err != nil || !ok {
+		return err
+	}
+	if same, err := m.sameSender(ctx, original.Author, r.Author); err != nil || !same {
+		return err
+	}
+	authors, err := m.addresses(ctx, original.Author)
+	if err != nil {
+		return err
+	}
+	secret := original.Message.GetMessageContextInfo().GetMessageSecret()
+	for _, from := range authors {
+		for _, by := range authors {
+			edited, err := message.OpenEdit(message.Addon{Secret: secret, ID: original.ID, Original: from, Sender: by}, enc)
+			if err != nil {
+				continue
+			}
+			merged, ok := message.ApplyEdit(original.Message, edited)
+			if !ok {
+				return nil
+			}
+			return m.store.Apply(ctx, store.Changes{Edits: []store.Edit{{Chat: r.Chat, ID: original.ID, Message: merged, Time: r.Time}}})
+		}
+	}
+	return nil
 }
 
 func (m *Messenger) revoke(ctx context.Context, r client.Received, p *wire.Message_ProtocolMessage) error {
