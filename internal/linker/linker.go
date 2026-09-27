@@ -160,7 +160,7 @@ func (l *Linker) begin(parent context.Context, phone pairing.Phone) {
 			if err != nil && ctx.Err() != nil {
 				return
 			}
-			if errors.Is(err, linkflow.ErrQRExpired) && session < qrSessions && l.keepingQR() {
+			if phone == "" && (errors.Is(err, linkflow.ErrQRExpired) || errors.Is(err, linkflow.ErrEnded)) && session < qrSessions && l.keepingQR() {
 				l.show(ctx, Status{Phase: Starting, Phone: phone})
 				continue
 			}

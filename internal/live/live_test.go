@@ -5,6 +5,7 @@ import (
 	"crypto/rand"
 	"errors"
 	"fmt"
+	"strings"
 	"sync"
 	"sync/atomic"
 	"testing"
@@ -209,5 +210,22 @@ func TestAcksAndRefusals(t *testing.T) {
 				t.Errorf("Nack\n got %s\nwant %s", got, tt.nack)
 			}
 		})
+	}
+}
+
+func TestPingsGetAPongInTheirOwnShape(t *testing.T) {
+	t.Parallel()
+	server := node.Address(node.JID{Server: node.ServerUser})
+	ping := node.Node{Tag: "iq", Attrs: []node.Attr{{Key: "from", Value: server}, {Key: "type", Value: node.Text("get")}, {Key: "t", Value: node.Text("1790528734")}, {Key: "xmlns", Value: node.Text("urn:xmpp:ping")}}}
+	pong, ok := live.Pong(ping)
+	if !ok || strings.TrimSpace(pong.String()) != `<iq type="result" to="s.whatsapp.net"/>` {
+		t.Fatalf("Pong(%s) = %s, %v", ping, pong, ok)
+	}
+	pong, ok = live.Pong(ping.With("id", node.Text("ping-7")))
+	if !ok || strings.TrimSpace(pong.String()) != `<iq id="ping-7" type="result" to="s.whatsapp.net"/>` {
+		t.Fatalf("Pong with an id = %s, %v", pong, ok)
+	}
+	if _, ok := live.Pong(ping.With("xmlns", node.Text("w:other"))); ok {
+		t.Fatal("answered an iq that is not a ping")
 	}
 }

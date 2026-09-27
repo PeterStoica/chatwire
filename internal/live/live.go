@@ -97,6 +97,10 @@ func (s *Session) read(ctx context.Context) {
 			return
 		}
 		s.log("<-", n)
+		if pong, ok := Pong(n); ok {
+			_ = s.Send(ctx, pong)
+			continue
+		}
 		if !s.deliver(n) {
 			s.inbox.Push(n)
 		}
@@ -180,6 +184,19 @@ func (s *Session) Query(ctx context.Context, request node.Node) (node.Node, erro
 	case <-ctx.Done():
 		return node.Node{}, ctx.Err()
 	}
+}
+
+func Pong(ping node.Node) (node.Node, bool) {
+	kind, _ := ping.Attr("type").Text()
+	xmlns, _ := ping.Attr("xmlns").Text()
+	if ping.Tag != "iq" || kind != "get" || xmlns != "urn:xmpp:ping" {
+		return node.Node{}, false
+	}
+	var attrs []node.Attr
+	if id := ping.Attr("id"); !id.IsZero() {
+		attrs = append(attrs, node.Attr{Key: "id", Value: id})
+	}
+	return node.Node{Tag: "iq", Attrs: append(attrs, node.Attr{Key: "type", Value: node.Text("result")}, node.Attr{Key: "to", Value: ping.Attr("from")})}, true
 }
 
 type Refusal int

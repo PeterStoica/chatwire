@@ -6,7 +6,6 @@ import (
 	"runtime"
 	"strconv"
 	"sync"
-	"testing/synctest"
 	"time"
 
 	"google.golang.org/protobuf/proto"
@@ -27,7 +26,11 @@ import (
 	"github.com/PeterStoica/chatwire/internal/wire"
 )
 
-const refsPerPairDevice = 6
+const (
+	refsPerPairDevice = 6
+	pairingPingEvery  = 30 * time.Second
+	pairingPongWithin = 12 * time.Second
+)
 
 type World struct {
 	Authority  *cert.Authority
@@ -311,7 +314,9 @@ func (w *World) FinishPairing(c *Conn, companion curve.PublicKey, advSecret []by
 func (w *World) QRPairing(scanAfter time.Duration) Script {
 	return func(c *Conn) {
 		w.OfferPairing(c)
-		synctest.Sleep(scanAfter)
+		if !c.idle(scanAfter) {
+			return
+		}
 		scan, err := fakephone.ParseQR(w.Screen())
 		if err != nil {
 			panic(err)
@@ -323,7 +328,51 @@ func (w *World) QRPairing(scanAfter time.Duration) Script {
 func (w *World) Unscanned() Script {
 	return func(c *Conn) {
 		w.OfferPairing(c)
-		c.WaitForHangUp()
+		c.idle(0)
+	}
+}
+
+func (c *Conn) idle(d time.Duration) bool {
+	var end <-chan time.Time
+	if d > 0 {
+		end = time.After(d)
+	}
+	ping := time.NewTicker(pairingPingEvery)
+	defer ping.Stop()
+	for n := 1; ; n++ {
+		select {
+		case <-end:
+			return true
+		case <-c.hungUp:
+			return false
+		case <-c.incoming:
+		case <-ping.C:
+			if !c.pinged("ping-" + strconv.Itoa(n)) {
+				return false
+			}
+		}
+	}
+}
+
+func (c *Conn) pinged(id string) bool {
+	c.Send(node.Node{Tag: "iq", Attrs: []node.Attr{
+		{Key: "from", Value: node.Address(node.JID{Server: node.ServerUser})}, {Key: "type", Value: node.Text("get")},
+		{Key: "id", Value: node.Text(id)}, {Key: "xmlns", Value: node.Text("urn:xmpp:ping")},
+	}})
+	deadline := time.After(pairingPongWithin)
+	for {
+		select {
+		case n := <-c.incoming:
+			kind, _ := n.Attr("type").Text()
+			answer, _ := n.Attr("id").Text()
+			if n.Tag == "iq" && kind == "result" && answer == id {
+				return true
+			}
+		case <-deadline:
+			return false
+		case <-c.hungUp:
+			return false
+		}
 	}
 }
 
