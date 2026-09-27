@@ -172,7 +172,7 @@ func (d directory) find(query string) []node.JID {
 	case len(undecorated) > 0:
 		return undecorated
 	}
-	return slices.DeleteFunc(partial, func(j node.JID) bool { return seen[j] != inPartial })
+	return partial
 }
 
 func byAddress(a, b node.JID) int {

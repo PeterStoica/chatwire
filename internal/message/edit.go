@@ -33,8 +33,8 @@ func ApplyEdit(original, edited *wire.Message) (*wire.Message, bool) {
 	if e.GetConversation() != "" || e.GetExtendedTextMessage() != nil {
 		return &wire.Message{Conversation: e.Conversation, ExtendedTextMessage: e.GetExtendedTextMessage(), MessageContextInfo: original.GetMessageContextInfo()}, true
 	}
-	caption, ok := editedCaption(e)
-	if !ok || caption == "" {
+	caption := editedCaption(e)
+	if caption == "" {
 		return nil, false
 	}
 	out := proto.CloneOf(original)
@@ -51,17 +51,17 @@ func ApplyEdit(original, edited *wire.Message) (*wire.Message, bool) {
 	return out, true
 }
 
-func editedCaption(e *wire.Message) (string, bool) {
+func editedCaption(e *wire.Message) string {
 	switch {
 	case e.GetImageMessage() != nil:
-		return e.GetImageMessage().GetCaption(), true
+		return e.GetImageMessage().GetCaption()
 	case e.GetVideoMessage() != nil:
-		return e.GetVideoMessage().GetCaption(), true
+		return e.GetVideoMessage().GetCaption()
 	case e.GetDocumentMessage() != nil:
-		return e.GetDocumentMessage().GetCaption(), true
+		return e.GetDocumentMessage().GetCaption()
 	case e.GetDocumentWithCaptionMessage() != nil:
-		return e.GetDocumentWithCaptionMessage().GetMessage().GetDocumentMessage().GetCaption(), true
+		return e.GetDocumentWithCaptionMessage().GetMessage().GetDocumentMessage().GetCaption()
 	default:
-		return "", false
+		return ""
 	}
 }

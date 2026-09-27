@@ -107,6 +107,9 @@ func (d *decoder) node() (Node, error) {
 }
 
 func (d *decoder) attributes(out *Node, pairs int) error {
+	if pairs == 0 {
+		return nil
+	}
 	attrs := make([]Attr, 0, min(pairs, sizeHint))
 	positions := make(map[string]int, min(pairs, sizeHint))
 	for range pairs {
@@ -291,6 +294,10 @@ func (d *decoder) packed(tag byte) (string, error) {
 	if odd {
 		length--
 	}
+	alphabet := nibbleDigits
+	if tag == tagHex8 {
+		alphabet = hexDigits
+	}
 	var out strings.Builder
 	out.Grow(length)
 	for i := range length {
@@ -298,20 +305,13 @@ func (d *decoder) packed(tag byte) (string, error) {
 		if i%2 == 1 {
 			nibble = raw[i/2] & 0x0f
 		}
-		out.WriteString(unpack(tag, nibble))
+		if int(nibble) < len(alphabet) {
+			out.WriteByte(alphabet[nibble])
+		} else {
+			out.WriteString(string(utf8.RuneError))
+		}
 	}
 	return out.String(), nil
-}
-
-func unpack(tag, nibble byte) string {
-	alphabet := nibbleDigits
-	if tag == tagHex8 {
-		alphabet = hexDigits
-	}
-	if int(nibble) < len(alphabet) {
-		return alphabet[nibble : nibble+1]
-	}
-	return string(utf8.RuneError)
 }
 
 func (d *decoder) binary(tag byte) ([]byte, error) {

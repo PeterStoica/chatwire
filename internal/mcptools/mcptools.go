@@ -1,7 +1,6 @@
 package mcptools
 
 import (
-	"cmp"
 	"context"
 	"encoding/json/v2"
 	"fmt"
@@ -88,13 +87,16 @@ func NewServer(impl *mcp.Implementation, l Linker, s Sender, opts Options) *mcp.
 }
 
 func Register(server *mcp.Server, l Linker, s Sender, opts Options) {
-	repeats := cmp.Or(opts.Repeats, NewRepeats())
 	add(server, &mcp.Tool{
 		Name:        "get_whatsapp_media",
 		Annotations: reads("Open WhatsApp media"),
 		Description: "Open the photo, video, voice note, sticker or document of a WhatsApp message by its id from read_whatsapp_messages. Photos up to 4 MB come back as an image; larger ones and other files are saved and their path is returned.",
 	}, getMedia(s, opts))
 	if !opts.ReadOnly {
+		repeats := opts.Repeats
+		if repeats == nil {
+			repeats = NewRepeats()
+		}
 		add(server, &mcp.Tool{
 			Name:        "send_whatsapp_message",
 			Annotations: writes("Send a WhatsApp message", false),

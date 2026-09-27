@@ -103,15 +103,17 @@ func (s *Server) digest(from node.JID, request node.Node) node.Node {
 	}
 	value, _ := b.skey.Child("value")
 	signature, _ := b.skey.Child("signature")
-	material := bytes.Join([][]byte{b.identity, value.Bytes, signature.Bytes}, nil)
+	hash := sha1.New()
+	hash.Write(b.identity)
+	hash.Write(value.Bytes)
+	hash.Write(signature.Bytes)
 	ids := make([]node.Node, len(b.keys))
 	for i, key := range b.keys {
 		id, _ := key.Child("id")
 		keyValue, _ := key.Child("value")
 		ids[i] = node.Node{Tag: "id", Bytes: id.Bytes}
-		material = append(material, keyValue.Bytes...)
+		hash.Write(keyValue.Bytes)
 	}
-	hash := sha1.Sum(material)
 	reply := result(request)
 	reply.Children = []node.Node{{Tag: "digest", Children: []node.Node{
 		{Tag: "registration", Bytes: b.registration},
@@ -119,7 +121,7 @@ func (s *Server) digest(from node.JID, request node.Node) node.Node {
 		{Tag: "identity", Bytes: b.identity},
 		b.skey,
 		{Tag: "list", Children: ids},
-		{Tag: "hash", Bytes: hash[:]},
+		{Tag: "hash", Bytes: hash.Sum(nil)},
 	}}}
 	return reply
 }

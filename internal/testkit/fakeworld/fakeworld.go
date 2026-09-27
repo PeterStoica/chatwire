@@ -514,9 +514,11 @@ func (w *World) answer(c *Conn, s *Server, n node.Node) {
 	case "iq":
 		w.answerIQ(c, s, n)
 	case "message":
-		deliveries := fakerelay.DeliverFrom(w.Phone.JID, w.Phone.LID, s.PushName, time.Now(), n)
+		var deliveries map[node.JID]node.Node
 		if to, _ := n.Attr("to").JID(); to.Server == node.ServerGroup {
 			deliveries = fakerelay.DeliverGroup(w.Phone.JID, s.PushName, time.Now(), n, s.Members(to))
+		} else {
+			deliveries = fakerelay.DeliverFrom(w.Phone.JID, w.Phone.LID, s.PushName, time.Now(), n)
 		}
 		for device, stanza := range deliveries {
 			s.Deliver(device, stanza)

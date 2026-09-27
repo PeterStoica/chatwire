@@ -169,7 +169,11 @@ func (s *Server) Handle(request node.Node) (node.Node, error) {
 func (s *Server) answer(name string, since uint64) (node.Node, error) {
 	s.mu.Lock()
 	c := s.collection(name)
-	version, patches := c.state.Version, slices.Clone(c.patches)
+	version := c.state.Version
+	var patches []*wire.SyncdPatch
+	if since != 0 {
+		patches = slices.Clone(c.patches)
+	}
 	s.mu.Unlock()
 	out := node.Node{Tag: "collection", Attrs: []node.Attr{{Key: "name", Value: node.Text(name)}, {Key: "version", Value: node.Text(strconv.FormatUint(version, 10))}}}
 	if since == 0 {

@@ -19,6 +19,8 @@ import (
 
 var ErrNoSuchMessage = errors.New("store: no such message")
 
+const messageColumns = `m.chat, m.id, m.author, m.from_me, m.t, m.push_name, m.raw, m.edited, m.revoked, m.status`
+
 func (s *Store) Messages(ctx context.Context, q Query) ([]Message, error) {
 	chat, err := s.canonical(ctx, q.Chat)
 	if err != nil {
@@ -66,14 +68,14 @@ func (s *Store) Messages(ctx context.Context, q Query) ([]Message, error) {
 		}
 		where, args = append(where, order+` < ?`), append(args, key)
 	}
-	query := `SELECT m.chat, m.id, m.author, m.from_me, m.t, m.push_name, m.raw, m.edited, m.revoked, m.status FROM ` + from + ` WHERE ` + strings.Join(where, ` AND `)
+	query := `SELECT ` + messageColumns + ` FROM ` + from + ` WHERE ` + strings.Join(where, ` AND `)
 	out, err := s.messages(ctx, query+` ORDER BY `+order+` DESC LIMIT ?`, append(args, max(q.Limit, 1))...)
 	slices.Reverse(out)
 	return out, err
 }
 
 func (s *Store) Message(ctx context.Context, id string) (Message, bool, error) {
-	found, err := s.messages(ctx, `SELECT m.chat, m.id, m.author, m.from_me, m.t, m.push_name, m.raw, m.edited, m.revoked, m.status FROM messages m WHERE m.id = ? ORDER BY m.key DESC LIMIT 1`, id)
+	found, err := s.messages(ctx, `SELECT `+messageColumns+` FROM messages m WHERE m.id = ? ORDER BY m.key DESC LIMIT 1`, id)
 	if err != nil || len(found) == 0 {
 		return Message{}, false, err
 	}
@@ -128,7 +130,7 @@ func (s *Store) Oldest(ctx context.Context, chat node.JID) (Message, bool, error
 	if err != nil {
 		return Message{}, false, err
 	}
-	found, err := s.messages(ctx, `SELECT m.chat, m.id, m.author, m.from_me, m.t, m.push_name, m.raw, m.edited, m.revoked, m.status FROM messages m WHERE m.chat = ? ORDER BY m.key LIMIT 1`, chat.String())
+	found, err := s.messages(ctx, `SELECT `+messageColumns+` FROM messages m WHERE m.chat = ? ORDER BY m.key LIMIT 1`, chat.String())
 	if err != nil || len(found) == 0 {
 		return Message{}, false, err
 	}
@@ -140,7 +142,7 @@ func (s *Store) MessageIn(ctx context.Context, chat node.JID, id string) (Messag
 	if err != nil {
 		return Message{}, false, err
 	}
-	found, err := s.messages(ctx, `SELECT m.chat, m.id, m.author, m.from_me, m.t, m.push_name, m.raw, m.edited, m.revoked, m.status FROM messages m WHERE m.chat = ? AND m.id = ?`, chat.String(), id)
+	found, err := s.messages(ctx, `SELECT `+messageColumns+` FROM messages m WHERE m.chat = ? AND m.id = ?`, chat.String(), id)
 	if err != nil || len(found) == 0 {
 		return Message{}, false, err
 	}

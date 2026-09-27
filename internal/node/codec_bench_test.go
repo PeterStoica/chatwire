@@ -1,6 +1,7 @@
 package node_test
 
 import (
+	"bytes"
 	"testing"
 
 	"github.com/PeterStoica/chatwire/internal/node"
@@ -19,6 +20,29 @@ func BenchmarkMarshalAttributes(b *testing.B) {
 		if _, err := dict.Marshal(n); err != nil {
 			b.Fatal(err)
 		}
+	}
+}
+
+func BenchmarkUnmarshalPacked(b *testing.B) {
+	dict := dictionary(b)
+	for _, tc := range []struct {
+		name string
+		tag  byte
+		pair byte
+	}{
+		{"digits", 0xff, 0x12},
+		{"hex", 0xfb, 0xab},
+		{"invalid nibbles", 0xff, 0xcf},
+	} {
+		b.Run(tc.name, func(b *testing.B) {
+			frame := append([]byte{0, 0xf8, 3, tokenIQ, tokenID, tc.tag, 64}, bytes.Repeat([]byte{tc.pair}, 64)...)
+			b.ReportAllocs()
+			for b.Loop() {
+				if _, err := dict.Unmarshal(frame); err != nil {
+					b.Fatal(err)
+				}
+			}
+		})
 	}
 }
 

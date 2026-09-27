@@ -121,7 +121,9 @@ func formEncode(s string) string {
 		case b == ' ':
 			out.WriteByte('+')
 		default:
-			out.WriteString(fmt.Sprintf("%%%02X", b))
+			out.WriteByte('%')
+			out.WriteByte("0123456789ABCDEF"[b>>4])
+			out.WriteByte("0123456789ABCDEF"[b&15])
 		}
 	}
 	return out.String()

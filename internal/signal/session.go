@@ -161,7 +161,7 @@ func (s *Session) Merge(other *Session) *Session {
 	case s.empty():
 		return other
 	}
-	states := append(append([]*state(nil), s.states...), other.states...)
+	states := slices.Concat(s.states, other.states)
 	return &Session{states: states[:min(len(states), maxArchivedStates+1)]}
 }
 

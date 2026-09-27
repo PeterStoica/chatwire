@@ -27,15 +27,15 @@ func benchmarkStore(b *testing.B, n int) *store.Store {
 	}
 	batch := make([]store.Message, 0, 1000)
 	for i := range n {
-		text := make([]string, 1+r.IntN(10))
-		for j := range text {
-			text[j] = words[r.IntN(len(words))]
+		body := make([]string, 1+r.IntN(10))
+		for j := range body {
+			body[j] = words[r.IntN(len(words))]
 		}
 		if r.IntN(2000) == 0 {
-			text[0] = "ornitorinc"
+			body[0] = "ornitorinc"
 		}
 		chat := chats[r.IntN(len(chats))]
-		batch = append(batch, text2(fmt.Sprintf("3EB0%08X", i), chat, chat, int64(1700000000+i*30), strings.Join(text, " ")))
+		batch = append(batch, text(fmt.Sprintf("3EB0%08X", i), chat, chat, int64(1700000000+i*30), strings.Join(body, " ")))
 		if len(batch) == cap(batch) {
 			if err := s.Apply(b.Context(), store.Changes{Messages: batch}); err != nil {
 				b.Fatal(err)
@@ -44,10 +44,6 @@ func benchmarkStore(b *testing.B, n int) *store.Store {
 		}
 	}
 	return s
-}
-
-func text2(id string, chat, author node.JID, at int64, body string) store.Message {
-	return text(id, chat, author, at, body)
 }
 
 func BenchmarkStoreAtScale(b *testing.B) {
@@ -94,7 +90,7 @@ func BenchmarkMessagesThatRepeatAKnownPair(b *testing.B) {
 		i := 0
 		for b.Loop() {
 			i++
-			m := text2(fmt.Sprintf("3EB1%08X", i), lid, lid, int64(1790000000+i), "hello")
+			m := text(fmt.Sprintf("3EB1%08X", i), lid, lid, int64(1790000000+i), "hello")
 			if err := s.Apply(b.Context(), store.Changes{Messages: []store.Message{m}, LIDs: map[node.JID]node.JID{lid: pn}}); err != nil {
 				b.Fatal(err)
 			}
@@ -105,7 +101,7 @@ func BenchmarkMessagesThatRepeatAKnownPair(b *testing.B) {
 		for b.Loop() {
 			i++
 			fresh := node.JID{User: fmt.Sprintf("8%07d", i), Server: node.ServerLID}
-			m := text2(fmt.Sprintf("3EB2%08X", i), fresh, fresh, int64(1790000000+i), "hello")
+			m := text(fmt.Sprintf("3EB2%08X", i), fresh, fresh, int64(1790000000+i), "hello")
 			if err := s.Apply(b.Context(), store.Changes{Messages: []store.Message{m}, LIDs: map[node.JID]node.JID{fresh: {User: fmt.Sprintf("4079%07d", i), Server: node.ServerUser}}}); err != nil {
 				b.Fatal(err)
 			}

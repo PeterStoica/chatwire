@@ -2,7 +2,6 @@ package client
 
 import (
 	"context"
-	"encoding/hex"
 	"errors"
 	"fmt"
 	"time"
@@ -52,7 +51,7 @@ func (c *Client) hasSyncKeyLocked(id []byte) bool {
 func (c *Client) syncKey(id []byte) (appstate.Keys, bool) {
 	c.mu.Lock()
 	defer c.mu.Unlock()
-	name := hex.EncodeToString(id)
+	name := string(id)
 	if keys, ok := c.syncKeys[name]; ok {
 		return keys, true
 	}
@@ -253,7 +252,7 @@ func (c *Client) askForKey(ctx context.Context, id []byte) {
 		return
 	}
 	now := c.cfg.Link.Now()
-	name := hex.EncodeToString(id)
+	name := string(id)
 	c.mu.Lock()
 	last, asked := c.askedKeys[name]
 	if asked && now.Sub(last) < askKeyEvery {

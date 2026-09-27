@@ -47,7 +47,8 @@ func ParseDigest(reply node.Node) (Digest, error) {
 		return Digest{}, fmt.Errorf("%w: no digest in %s", ErrDigest, reply)
 	}
 	registration, keyType, identity := fieldBytes(digest, "registration"), fieldBytes(digest, attrType), fieldBytes(digest, "identity")
-	skeyID, skey, signature, hash := fieldBytes(digest, "skey", "id"), fieldBytes(digest, "skey", "value"), fieldBytes(digest, "skey", "signature"), fieldBytes(digest, "hash")
+	signed, _ := digest.Child("skey")
+	skeyID, skey, signature, hash := fieldBytes(signed, "id"), fieldBytes(signed, "value"), fieldBytes(signed, "signature"), fieldBytes(digest, "hash")
 	if len(registration) != 4 || len(keyType) != 1 || len(identity) != curve.KeySize || len(skeyID) != 3 ||
 		len(skey) != curve.KeySize || len(signature) != curve.SignatureSize || len(hash) != sha1.Size {
 		return Digest{}, fmt.Errorf("%w: field sizes in %s", ErrDigest, reply)

@@ -198,7 +198,7 @@ func Pong(ping node.Node) (node.Node, bool) {
 	if kind != "get" || xmlns != "urn:xmpp:ping" {
 		return node.Node{}, false
 	}
-	var attrs []node.Attr
+	attrs := make([]node.Attr, 0, 3)
 	if id := ping.Attr("id"); !id.IsZero() {
 		attrs = append(attrs, node.Attr{Key: "id", Value: id})
 	}

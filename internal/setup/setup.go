@@ -503,7 +503,7 @@ func encode(ms []member, indent string) (jsontext.Value, error) {
 }
 
 func indentOf(raw []byte) string {
-	for _, line := range strings.Split(string(raw), "\n") {
+	for line := range strings.SplitSeq(string(raw), "\n") {
 		if trimmed := strings.TrimLeft(line, " \t"); trimmed != line && trimmed != "" {
 			return line[:len(line)-len(trimmed)]
 		}

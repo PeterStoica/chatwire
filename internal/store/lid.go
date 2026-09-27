@@ -183,9 +183,6 @@ func (r *resolver) changes(ctx context.Context, c Changes) (Changes, error) {
 }
 
 func cloned[T any](in []T) []T {
-	if in == nil {
-		return nil
-	}
 	return append([]T(nil), in...)
 }
 

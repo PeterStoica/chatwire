@@ -61,3 +61,16 @@ func BenchmarkFindingSomeoneByName(b *testing.B) {
 		}
 	}
 }
+
+func BenchmarkFindingPartialName(b *testing.B) {
+	book := addressBook(500, 3000)
+	for b.Loop() {
+		dir, err := loadDirectory(b.Context(), book)
+		if err != nil {
+			b.Fatal(err)
+		}
+		if found := dir.find("popescu"); len(found) != 3000 {
+			b.Fatalf("found %d", len(found))
+		}
+	}
+}

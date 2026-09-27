@@ -109,13 +109,7 @@ func Result(reply node.Node) error {
 	}
 }
 
-func fieldBytes(n node.Node, path ...string) []byte {
-	for _, tag := range path {
-		child, ok := n.Child(tag)
-		if !ok {
-			return nil
-		}
-		n = child
-	}
-	return n.Bytes
+func fieldBytes(n node.Node, tag string) []byte {
+	child, _ := n.Child(tag)
+	return child.Bytes
 }

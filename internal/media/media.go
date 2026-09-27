@@ -1,7 +1,6 @@
 package media
 
 import (
-	"bytes"
 	"crypto/aes"
 	"crypto/cipher"
 	"crypto/hkdf"
@@ -142,8 +141,13 @@ func Decrypt(mediaKey []byte, t Type, file, fileEncSHA256, fileSHA256 []byte) ([
 	plain := make([]byte, len(ciphertext))
 	cipher.NewCBCDecrypter(block, keys.IV[:]).CryptBlocks(plain, ciphertext)
 	pad := int(plain[len(plain)-1])
-	if pad == 0 || pad > aes.BlockSize || !bytes.Equal(plain[len(plain)-pad:], bytes.Repeat([]byte{byte(pad)}, pad)) {
+	if pad == 0 || pad > aes.BlockSize {
 		return nil, ErrPadding
+	}
+	for _, b := range plain[len(plain)-pad:] {
+		if int(b) != pad {
+			return nil, ErrPadding
+		}
 	}
 	plain = plain[:len(plain)-pad]
 	if fileSHA256 != nil {

@@ -137,10 +137,13 @@ func meta(m *wire.Message) []node.Node {
 
 func Outgoing(id string, to node.JID, m *wire.Message, parts []Part, deviceIdentity []byte) node.Node {
 	out := node.Node{Tag: tagMessage, Attrs: header(id, to, m)}
-	targets, prekey := encryptedTargets(parts, m)
+	var prekey bool
 	if len(parts) == 1 && parts[0].Device.Device == 0 {
-		out.Children = targets[0].Children
+		out.Children = []node.Node{encNode(parts[0].Ciphertext, m)}
+		prekey = parts[0].Ciphertext.Type == signal.TypePreKeyMessage
 	} else {
+		var targets []node.Node
+		targets, prekey = encryptedTargets(parts, m)
 		out.Children = []node.Node{{Tag: "participants", Children: targets}}
 	}
 	if prekey && deviceIdentity != nil {
