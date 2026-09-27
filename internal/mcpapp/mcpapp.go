@@ -43,6 +43,7 @@ const (
 	versionTimeout = 5 * time.Second
 	defaultLinger  = 10 * time.Minute
 	reopenAfter    = 2 * time.Minute
+	parentCheck    = 5 * time.Second
 	buildIDLength  = 16
 )
 
@@ -150,6 +151,8 @@ func launcher(state string, linger time.Duration) (shim.Launcher, error) {
 }
 
 func viaDaemon(ctx context.Context, state string, linger time.Duration, stdin io.Reader, stdout, stderr io.Writer) error {
+	ctx, stop := shim.WhileParentLives(ctx, os.Getppid, parentCheck)
+	defer stop()
 	launcher, err := launcher(state, linger)
 	if err != nil {
 		return err

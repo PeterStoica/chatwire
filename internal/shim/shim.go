@@ -120,3 +120,24 @@ func Pipe(ctx context.Context, conn net.Conn, in io.Reader, out io.Writer) error
 	}
 	return conn.Close()
 }
+
+func WhileParentLives(ctx context.Context, parent func() int, every time.Duration) (context.Context, context.CancelFunc) {
+	ctx, cancel := context.WithCancel(ctx)
+	first := parent()
+	go func() {
+		ticker := time.NewTicker(every)
+		defer ticker.Stop()
+		for {
+			select {
+			case <-ctx.Done():
+				return
+			case <-ticker.C:
+				if parent() != first {
+					cancel()
+					return
+				}
+			}
+		}
+	}()
+	return ctx, cancel
+}
