@@ -1,6 +1,7 @@
 package message
 
 import (
+	"slices"
 	"strconv"
 	"strings"
 	"time"
@@ -189,8 +190,11 @@ func withMediaType(attrs []node.Attr, m *wire.Message) []node.Attr {
 	return attrs
 }
 
-func OutgoingGroup(id string, group node.JID, m *wire.Message, addressingMode string, parts []Part, senderKeyMessage, deviceIdentity []byte) node.Node {
+func OutgoingGroup(id string, group node.JID, m *wire.Message, addressingMode, phash string, parts []Part, senderKeyMessage, deviceIdentity []byte) node.Node {
 	attrs := header(id, group, m)
+	if phash != "" {
+		attrs = slices.Insert(attrs, 2, node.Attr{Key: "phash", Value: node.Text(phash)})
+	}
 	if addressingMode != "" {
 		attrs = append(attrs, node.Attr{Key: "addressing_mode", Value: node.Text(addressingMode)})
 	}

@@ -2259,3 +2259,54 @@ func TestOurPhoneIsAskedForMessagesWeCouldNotRead(t *testing.T) {
 		}
 	})
 }
+
+func TestDeviceListsAreReusedUntilTheyChange(t *testing.T) {
+	synctest.Test(t, func(t *testing.T) {
+		r := newRig(t)
+		family := groups.Group{
+			JID: node.JID{User: "120363000000000009", Server: node.ServerGroup}, Subject: "Family", Created: time.Unix(1700000000, 0),
+			Participants: []groups.Participant{{JID: r.account, Admin: true}, {JID: r.bob}},
+		}
+		r.server.Groups = fakegroups.New(family)
+		r.server.Members = func(node.JID) []node.JID { return []node.JID{r.bob, r.account, r.world.Phone.JID} }
+		c := r.connect()
+		queries := func() int { synctest.Wait(); return r.devices.Queries() }
+		start := queries()
+		for _, text := range []string{"one", "two"} {
+			if _, err := c.Send(t.Context(), r.bob, &wire.Message{Conversation: new(text)}); err != nil {
+				t.Fatal(err)
+			}
+		}
+		if got := queries() - start; got != 1 {
+			t.Fatalf("two messages to bob asked for his devices %d times", got)
+		}
+		r.server.Inbox <- node.Node{Tag: "notification", Attrs: []node.Attr{
+			{Key: "from", Value: node.Address(r.bob)}, {Key: "type", Value: node.Text("devices")}, {Key: "id", Value: node.Text("D1")},
+		}, Children: []node.Node{{Tag: "add", Children: []node.Node{{Tag: "device", Attrs: []node.Attr{{Key: "jid", Value: node.Address(node.JID{User: r.bob.User, Device: 4, Server: r.bob.Server})}}}}}}}
+		before := queries()
+		if _, err := c.Send(t.Context(), r.bob, &wire.Message{Conversation: new("three")}); err != nil {
+			t.Fatal(err)
+		}
+		if got := queries() - before; got != 1 {
+			t.Fatalf("after bob's devices changed: %d device queries, want a fresh one", got)
+		}
+
+		if _, err := c.SendGroup(t.Context(), family, &wire.Message{Conversation: new("hello family")}); err != nil {
+			t.Fatal(err)
+		}
+		r.devices.Set(r.bob, fakeusync.Device{ID: 0}, fakeusync.Device{ID: 5})
+		before = queries()
+		if _, err := c.SendGroup(t.Context(), family, &wire.Message{Conversation: new("from memory")}); err != nil {
+			t.Fatal(err)
+		}
+		if got := queries() - before; got != 0 {
+			t.Fatalf("a group send with fresh device lists asked %d times", got)
+		}
+		if _, err := c.SendGroup(t.Context(), family, &wire.Message{Conversation: new("after the server said otherwise")}); err != nil {
+			t.Fatal(err)
+		}
+		if got := queries() - before; got != 1 {
+			t.Fatalf("after WhatsApp's phash differed: %d device queries, want one", got)
+		}
+	})
+}

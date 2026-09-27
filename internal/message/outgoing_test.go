@@ -2,6 +2,8 @@ package message_test
 
 import (
 	"bytes"
+	"crypto/sha256"
+	"encoding/base64"
 	"slices"
 	"strconv"
 	"strings"
@@ -213,7 +215,7 @@ func TestOutgoingActionsAreMarkedLikeWhatsAppWeb(t *testing.T) {
 			}
 			direct := message.Outgoing("3EB0AA", bob, tt.msg, part, []byte("id"))
 			checkStanza(t, direct, wantAttrs, wantChildren, tt.wantPoll)
-			group := message.OutgoingGroup("3EB0AA", family, tt.msg, "lid", part, []byte{9}, []byte("id"))
+			group := message.OutgoingGroup("3EB0AA", family, tt.msg, "lid", "", part, []byte{9}, []byte("id"))
 			wantAttrs[1] = "to=" + family.String()
 			checkStanza(t, group, append(wantAttrs, "addressing_mode=lid"), slices.Insert(wantChildren, 1, "enc"), tt.wantPoll)
 		})
@@ -224,7 +226,7 @@ func TestGroupMessagesWithoutPairwiseParts(t *testing.T) {
 	t.Parallel()
 	family := node.JID{User: "120363000000000021", Server: node.ServerGroup}
 	hi := &wire.Message{Conversation: new("hi")}
-	out := message.OutgoingGroup("3EB0AA", family, hi, "", nil, []byte{9}, []byte("id"))
+	out := message.OutgoingGroup("3EB0AA", family, hi, "", "", nil, []byte{9}, []byte("id"))
 	checkStanza(t, out, []string{"id=3EB0AA", "to=" + family.String(), "type=text"}, []string{"enc"}, "")
 	if enc, _ := out.Child("enc"); enc.Attr("type").String() != "skmsg" || !bytes.Equal(enc.Bytes, []byte{9}) {
 		t.Fatalf("sender key message = %s", enc)
@@ -249,5 +251,19 @@ func checkStanza(t *testing.T, n node.Node, attrs, children []string, poll strin
 	}
 	if m, ok := n.Child("meta"); poll != "" && (!ok || len(m.Attrs) != 1 || m.Attr("polltype").String() != poll) {
 		t.Fatalf("meta = %s", m)
+	}
+}
+
+func TestPhashFollowsTheSortedFullDeviceList(t *testing.T) {
+	a := node.JID{User: "40722222222", Device: 3, Server: node.ServerUser}
+	b := node.JID{User: "99001", Server: node.ServerLID}
+	sum := sha256.Sum256([]byte("40722222222.0:3@s.whatsapp.net99001.0:0@lid"))
+	want := "2:" + base64.StdEncoding.EncodeToString(sum[:6])
+	if got := message.Phash([]node.JID{b, a}); got != want || message.Phash([]node.JID{a, b}) != want || len(got) != 10 {
+		t.Fatalf("Phash = %q, want %q", got, want)
+	}
+	out := message.OutgoingGroup("3EB0AA", node.JID{User: "120363000000000031", Server: node.ServerGroup}, &wire.Message{Conversation: new("hi")}, "", want, nil, []byte{9}, nil)
+	if out.Attrs[2].Key != "phash" || out.Attrs[2].Value.String() != want {
+		t.Fatalf("group stanza attrs = %s", out)
 	}
 }

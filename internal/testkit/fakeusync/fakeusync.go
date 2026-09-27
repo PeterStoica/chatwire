@@ -17,10 +17,11 @@ type Device struct {
 }
 
 type Server struct {
-	mu     sync.Mutex
-	users  map[node.JID][]Device
-	lids   map[node.JID]node.JID
-	abouts map[node.JID]string
+	queries int
+	mu      sync.Mutex
+	users   map[node.JID][]Device
+	lids    map[node.JID]node.JID
+	abouts  map[node.JID]string
 }
 
 func (s *Server) Profile(user, lid node.JID, about string) {
@@ -45,6 +46,7 @@ func (s *Server) Handle(request node.Node) node.Node {
 	query, _ := request.Child("usync")
 	requested, _ := query.Child("list")
 	users := make([]node.Node, 0, len(requested.Children))
+	s.queries++
 	if protocols, _ := query.Child("query"); len(protocols.Children) > 0 && protocols.Children[0].Tag == "contact" {
 		return s.contacts(request, query, requested)
 	}
@@ -114,4 +116,22 @@ func (s *Server) contacts(request, query, requested node.Node) node.Node {
 		},
 		Children: []node.Node{{Tag: "usync", Attrs: query.Attrs, Children: []node.Node{{Tag: "list", Children: users}}}},
 	}
+}
+
+func (s *Server) Queries() int {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	return s.queries
+}
+
+func (s *Server) DevicesOf(users ...node.JID) []node.JID {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	var out []node.JID
+	for _, u := range users {
+		for _, d := range s.users[u.WithoutDevice()] {
+			out = append(out, node.JID{User: u.User, Device: d.ID, Server: u.Server})
+		}
+	}
+	return out
 }

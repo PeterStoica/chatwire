@@ -14,6 +14,7 @@ import (
 	"github.com/PeterStoica/chatwire/internal/cert"
 	"github.com/PeterStoica/chatwire/internal/curve"
 	"github.com/PeterStoica/chatwire/internal/frame"
+	"github.com/PeterStoica/chatwire/internal/message"
 	"github.com/PeterStoica/chatwire/internal/node"
 	"github.com/PeterStoica/chatwire/internal/signon"
 	"github.com/PeterStoica/chatwire/internal/testkit/fakeappstate"
@@ -456,6 +457,36 @@ func (w *World) answer(c *Conn, s *Server, n node.Node) {
 		for device, stanza := range deliveries {
 			s.Deliver(device, stanza)
 		}
-		c.Send(node.Node{Tag: "ack", Attrs: []node.Attr{{Key: "class", Value: node.Text("message")}, {Key: "id", Value: n.Attr("id")}, {Key: "t", Value: node.Text(strconv.FormatInt(time.Now().Unix(), 10))}}})
+		ack := node.Node{Tag: "ack", Attrs: []node.Attr{{Key: "class", Value: node.Text("message")}, {Key: "id", Value: n.Attr("id")}, {Key: "t", Value: node.Text(strconv.FormatInt(time.Now().Unix(), 10))}}}
+		if theirs, ours := n.Attr("phash").String(), w.phash(s, n); theirs != "" && ours != "" && theirs != ours {
+			ack.Attrs = append(ack.Attrs, node.Attr{Key: "phash", Value: node.Text(ours)})
+		}
+		c.Send(ack)
 	}
+}
+
+func (w *World) phash(s *Server, n node.Node) string {
+	to, _ := n.Attr("to").JID()
+	if to.Server != node.ServerGroup || s.Groups == nil || s.Devices == nil {
+		return ""
+	}
+	g, ok := s.Groups.Group(to)
+	if !ok {
+		return ""
+	}
+	users := make([]node.JID, 0, len(g.Participants))
+	for _, p := range g.Participants {
+		users = append(users, p.JID)
+	}
+	var devices []node.JID
+	for _, d := range s.Devices.DevicesOf(users...) {
+		if d != w.Phone.JID {
+			devices = append(devices, d)
+		}
+	}
+	own := w.Phone.JID
+	if w.Phone.LID.Server == node.ServerLID {
+		own = node.JID{User: w.Phone.LID.User, Device: w.Phone.JID.Device, Server: node.ServerLID}
+	}
+	return message.Phash(append(devices, own))
 }

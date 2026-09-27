@@ -29,7 +29,13 @@ func (c *Client) encryptNotice(n node.Node) {
 
 func (c *Client) devicesNotice(n node.Node) {
 	from, ok := n.Attr("from").JID()
-	if !ok || c.mine(from) {
+	if !ok {
+		return
+	}
+	c.mu.Lock()
+	c.forgetDevicesLocked(from)
+	c.mu.Unlock()
+	if c.mine(from) {
 		return
 	}
 	removed := map[uint8]bool{}
@@ -53,6 +59,7 @@ func (c *Client) devicesNotice(n node.Node) {
 }
 
 func (c *Client) forgetLocked(user node.JID, only map[uint8]bool) {
+	c.forgetDevicesLocked(user)
 	whose := c.addressLocked(user.WithoutDevice())
 	matches := func(a address) bool {
 		return a.User == whose.User && a.Server == whose.Server && (only == nil || only[a.Device])
