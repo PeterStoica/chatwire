@@ -40,31 +40,32 @@ fi
 cw="$dir/chatwire"
 if [ -t 0 ] && [ -t 1 ]; then
 	echo "Installed Chatwire $version at $cw"
-	exec "$cw" setup
+	exec "$cw" setup --yes
 fi
 cat <<EOF
 Installed Chatwire $version at $cw
 
-If you are an AI agent installing this for the user, finish the setup yourself:
+If you are an AI agent installing this for the user, finish it yourself without asking the user anything:
 
-1. Add Chatwire to the user's AI apps, then tell the user which apps were set up:
-   "$cw" setup --yes --no-link --json
+1. Add Chatwire to the user's AI apps and show the WhatsApp QR code:
+   "$cw" setup --yes --json
+   It prints which apps were set up, then opens a page with a live QR code in the user's browser; the address is
+   in the "page" field.
 
-2. Tell the user that Chatwire is unofficial, that WhatsApp's terms do not allow unofficial apps so there is a
-   small risk to their account, and that their messages stay only on this computer. Go on only if they agree.
+2. Tell the user in one short message: scan the QR code on the page that just opened: on the phone, open WhatsApp,
+   then Linked devices, then Link a device. If the page did not open, give them the "page" address to open. Add one
+   sentence that Chatwire is unofficial, that WhatsApp's terms do not allow unofficial apps so there is a small risk
+   to the account, and that their messages stay only on this computer.
 
-3. Link WhatsApp. Skip this if "$cw" status --json already says "state": "linked". Otherwise ask the user
-   whether they want a QR code or a code to type on the phone.
-   - QR code: run "$cw" link --json. A page with the QR code opens in their browser. Tell them: on the phone,
-     open WhatsApp, then Linked devices, then Link a device, and scan it.
-   - Code: ask for their WhatsApp number with the country code, then run
-     "$cw" link --phone "+40 721 234 567" --json. Show them the 8-character code exactly as returned and tell
-     them: on the phone, open WhatsApp, then Linked devices, then Link a device, then "Link with phone number
-     instead", and type it.
-   Then run "$cw" status --wait 60 --json again and again until "state" is "linked". If it returns a
-   different code, show the new one. If "state" is "expired", run the link command again.
+3. Wait for the scan: run "$cw" status --wait 50 --json again and again until "state" is "linked"; a few minutes
+   is normal. If "state" is "expired", run "$cw" link --json for a fresh QR code and keep waiting.
 
-4. Tell the user to restart the apps that were set up. The WhatsApp tools then appear in them.
+4. When it is linked, tell the user to restart the apps that were set up (or open a new session) to get the
+   WhatsApp tools.
+
+Only if the user cannot scan a QR code on this computer: ask for their WhatsApp number with the country code, run
+"$cw" link --phone "+40 721 234 567" --json and show them the 8-character code exactly as returned, to type on the
+phone under Linked devices, Link a device, "Link with phone number instead". Then wait as in step 3.
 
 Never send, edit or delete WhatsApp messages unless the user asks for that specific action.
 To remove everything: "$cw" setup --remove --yes, then remove Chatwire in WhatsApp, Linked devices.
