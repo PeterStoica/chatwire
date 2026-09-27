@@ -57,7 +57,8 @@ Then wait for them:
 chatwire status --wait 60 --json
 ```
 
-Repeat until `state` is `linked`. If a code or QR expires, run the link command again.
+Repeat until `state` is `linked`. An unused code is replaced every few minutes: when status returns a different `code`,
+show the user the new one. If `state` is `expired`, run the link command again.
 
 ## 4. Finish
 

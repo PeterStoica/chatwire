@@ -135,13 +135,17 @@ func (c cli) link(phone string, wait time.Duration) error {
 		return nil
 	}
 	deadline := time.Now().Add(wait)
-	for time.Now().Before(deadline) {
+	for shown := report.Code; time.Now().Before(deadline); {
 		report, err = call[mcptools.Report](c.ctx, s, "whatsapp_status", map[string]any{"wait_seconds": int(min(time.Until(deadline), maxWaitStep).Seconds())})
 		if err != nil {
 			return err
 		}
 		if !linking(report.State) {
 			break
+		}
+		if report.Code != "" && report.Code != shown && !c.asJSON {
+			shown = report.Code
+			_, _ = fmt.Fprintln(c.out, "\nThat code expired. "+linkText(report))
 		}
 	}
 	c.print(report, report.Detail)

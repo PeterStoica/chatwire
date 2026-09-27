@@ -285,6 +285,29 @@ func TestWaitingGivesUpAfterTheRequestedTime(t *testing.T) {
 	})
 }
 
+func TestWaitingEndsWhenTheCodeIsReplaced(t *testing.T) {
+	synctest.Test(t, func(t *testing.T) {
+		w, err := fakeworld.New(35)
+		if err != nil {
+			t.Fatal(err)
+		}
+		w.Script(func(fc *fakeworld.Conn) {
+			w.OfferPairing(fc)
+			for {
+				w.AnswerHello(fc)
+			}
+		})
+		c, _ := connect(t, w)
+		first, _ := c.call("link_whatsapp", map[string]any{"phone_number": "+40 700 000 000"})
+		start := time.Now()
+		c.call("whatsapp_status", map[string]any{"wait_seconds": 120})
+		report, _ := c.call("whatsapp_status", map[string]any{"wait_seconds": 120})
+		if time.Since(start) != 195*time.Second || report.Code == first.Code || !strings.Contains(report.Detail, "NEW linking code: "+report.Code) {
+			t.Fatalf("after %s: %+v", time.Since(start), report)
+		}
+	})
+}
+
 func TestInvalidPhoneNumberAsksForTheInternationalForm(t *testing.T) {
 	synctest.Test(t, func(t *testing.T) {
 		w, err := fakeworld.New(34)

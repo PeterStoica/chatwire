@@ -190,15 +190,17 @@ func flipInContainer(success *node.Node, offset int) {
 func TestCodePairingEndToEnd(t *testing.T) {
 	c, random := companion(t, 4)
 	p := phone(t, random, false)
-	request, hello, err := pairing.StartCode(random, "40700000000", c, pairing.ClientOtherWeb, "Chrome (Linux)")
+	request, hello, err := pairing.StartCode(random, "40700000000", c, pairing.ClientChrome, "Chrome (Linux)", true)
 	if err != nil {
 		t.Fatal(err)
 	}
 	if len(request.Display()) != 9 || request.Display()[4] != '-' || request.JID.User != "40700000000" {
 		t.Fatalf("code %q for %v", request.Display(), request.JID)
 	}
-	if reg, ok := hello.Child("link_code_companion_reg"); !ok || reg.Attr("should_show_push_notification").String() != "false" {
-		t.Fatalf("the phone must not be pushed a notification; the code is typed in Linked devices: %s", hello)
+	reg, _ := hello.Child("link_code_companion_reg")
+	platform, _ := reg.Child("companion_platform_id")
+	if reg.Attr("should_show_push_notification").String() != "true" || string(platform.Bytes) != "1" {
+		t.Fatalf("the first code must push a notification to the phone and name the Chrome platform: %s", hello)
 	}
 	response, err := p.ReceiveHello(hello)
 	if err != nil {
@@ -239,7 +241,7 @@ func TestCodePairingEndToEnd(t *testing.T) {
 func TestCodePairingFailsWhenPhoneTypesAnotherCode(t *testing.T) {
 	c, random := companion(t, 5)
 	p := phone(t, random, false)
-	request, hello, err := pairing.StartCode(random, "40700000000", c, pairing.ClientOtherWeb, "Chrome")
+	request, hello, err := pairing.StartCode(random, "40700000000", c, pairing.ClientChrome, "Chrome", false)
 	if err != nil {
 		t.Fatal(err)
 	}

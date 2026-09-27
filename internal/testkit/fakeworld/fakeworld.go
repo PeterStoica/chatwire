@@ -260,11 +260,39 @@ func (c *Conn) WaitForHangUp() {
 	}
 }
 
-func (w *World) offerPairing(c *Conn) {
+func (w *World) OfferPairing(c *Conn) {
 	c.Send(fakephone.PairDevice("p1", refsPerPairDevice))
 	if ack := c.Receive(); ack.Tag != "iq" {
 		panic("expected an ack for pair-device, got " + ack.String())
 	}
+}
+
+func (w *World) AnswerHello(c *Conn) node.Node {
+	hello := c.Receive()
+	response, err := w.Phone.ReceiveHello(hello)
+	if err != nil {
+		panic(err)
+	}
+	c.Send(response)
+	return hello
+}
+
+func (w *World) EnterCode(c *Conn, code string) {
+	notification, err := w.Phone.TypeCode(code)
+	if err != nil {
+		panic(err)
+	}
+	c.Send(notification)
+	if ack := c.Receive(); ack.Tag != "ack" {
+		panic("expected an ack for the notification, got " + ack.String())
+	}
+	finish := c.Receive()
+	advSecret, companion, err := w.Phone.CompanionFinish(finish)
+	if err != nil {
+		panic(err)
+	}
+	c.Send(fakephone.Result(finish))
+	w.FinishPairing(c, companion, advSecret)
 }
 
 func (w *World) FinishPairing(c *Conn, companion curve.PublicKey, advSecret []byte) {
@@ -282,7 +310,7 @@ func (w *World) FinishPairing(c *Conn, companion curve.PublicKey, advSecret []by
 
 func (w *World) QRPairing(scanAfter time.Duration) Script {
 	return func(c *Conn) {
-		w.offerPairing(c)
+		w.OfferPairing(c)
 		synctest.Sleep(scanAfter)
 		scan, err := fakephone.ParseQR(w.Screen())
 		if err != nil {
@@ -294,14 +322,14 @@ func (w *World) QRPairing(scanAfter time.Duration) Script {
 
 func (w *World) Unscanned() Script {
 	return func(c *Conn) {
-		w.offerPairing(c)
+		w.OfferPairing(c)
 		c.WaitForHangUp()
 	}
 }
 
 func (w *World) CodePairing() Script {
 	return func(c *Conn) {
-		w.offerPairing(c)
+		w.OfferPairing(c)
 		hello := c.Receive()
 		response, err := w.Phone.ReceiveHello(hello)
 		if err != nil {
@@ -317,21 +345,7 @@ func (w *World) CodePairing() Script {
 		case <-c.hungUp:
 			return
 		}
-		notification, err := w.Phone.TypeCode(code)
-		if err != nil {
-			panic(err)
-		}
-		c.Send(notification)
-		if ack := c.Receive(); ack.Tag != "ack" {
-			panic("expected an ack for the notification, got " + ack.String())
-		}
-		finish := c.Receive()
-		advSecret, companion, err := w.Phone.CompanionFinish(finish)
-		if err != nil {
-			panic(err)
-		}
-		c.Send(fakephone.Result(finish))
-		w.FinishPairing(c, companion, advSecret)
+		w.EnterCode(c, code)
 	}
 }
 

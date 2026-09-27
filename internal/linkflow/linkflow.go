@@ -5,6 +5,7 @@ import (
 	"errors"
 	"fmt"
 	"io"
+	"runtime"
 	"strconv"
 	"strings"
 	"time"
@@ -22,11 +23,15 @@ import (
 const (
 	firstQRLifetime = 60 * time.Second
 	nextQRLifetime  = 20 * time.Second
+	codeLifetime    = 195 * time.Second
+	typedCodeWait   = time.Minute
+	maxNewCodes     = 5
 	tagStreamError  = "stream:error"
 )
 
 var (
 	ErrQRExpired     = errors.New("linkflow: every QR code expired before it was scanned")
+	ErrCodeExpired   = errors.New("linkflow: every linking code expired before it was typed")
 	ErrLoginRejected = errors.New("linkflow: WhatsApp rejected the login")
 	ErrLoggedOut     = errors.New("linkflow: WhatsApp logged this device out")
 	ErrReplaced      = errors.New("linkflow: another connection took over this linked device")
@@ -75,10 +80,13 @@ type link struct {
 	companion pairing.Companion
 	session   *live.Session
 	code      *pairing.CodeRequest
-	qr        *time.Timer
+	newCodes  int
 	refs      [][]byte
 	shown     int
-	qrTick    chan struct{}
+	timer     *time.Timer
+	tick      chan struct{}
+	account   pairing.Account
+	paired    bool
 }
 
 func Link(ctx context.Context, cfg Config) (Linked, error) {
@@ -91,7 +99,7 @@ func Link(ctx context.Context, cfg Config) (Linked, error) {
 		return Linked{}, err
 	}
 	l := &link{
-		cfg: cfg, identity: identity, qrTick: make(chan struct{}, 1),
+		cfg: cfg, identity: identity, tick: make(chan struct{}, 1),
 		companion: pairing.Companion{Noise: identity.NoiseKey(), Identity: identity.IdentityKey(), AdvSecret: secret},
 	}
 	registration := signon.EncodeRegistration(cfg.Version(), identity.Registration(device.Props()))
@@ -133,42 +141,35 @@ func connect(ctx context.Context, cfg Config, identity device.Identity, payload 
 }
 
 func (l *link) pair(ctx context.Context) (pairing.Account, error) {
-	defer func() {
-		if l.qr != nil {
-			l.qr.Stop()
-		}
-	}()
-	var account pairing.Account
-	paired := false
+	defer l.stopTimer()
 	for {
 		select {
-		case <-l.qrTick:
-			if !l.showNextQR() {
-				return pairing.Account{}, ErrQRExpired
+		case <-l.tick:
+			if err := l.timeUp(ctx); err != nil {
+				return pairing.Account{}, err
 			}
 		case <-ctx.Done():
 			return pairing.Account{}, ctx.Err()
 		case n, open := <-l.session.Events():
 			if !open {
-				if paired {
-					return account, nil
+				if l.paired {
+					return l.account, nil
 				}
 				return pairing.Account{}, fmt.Errorf("%w: %w", ErrEnded, l.session.Err())
 			}
-			done, err := l.handle(ctx, n, &account, &paired)
+			done, err := l.handle(ctx, n)
 			if err != nil || done {
-				return account, err
+				return l.account, err
 			}
 		}
 	}
 }
 
-func (l *link) handle(ctx context.Context, n node.Node, account *pairing.Account, paired *bool) (bool, error) {
-	kind, _ := n.Attr("type").Text()
+func (l *link) handle(ctx context.Context, n node.Node) (bool, error) {
 	switch {
 	case n.Tag == tagStreamError:
 		code, _ := n.Attr("code").Text()
-		if *paired && code == "515" {
+		if l.paired && code == "515" {
 			return true, nil
 		}
 		return false, fmt.Errorf("linkflow: stream error %s", n)
@@ -177,11 +178,6 @@ func (l *link) handle(ctx context.Context, n node.Node, account *pairing.Account
 			return false, err
 		}
 		return false, l.offer(ctx, pairing.Refs(n))
-	case n.Tag == "notification" && kind == "link_code_companion_reg":
-		if err := l.session.Send(ctx, live.Ack(n)); err != nil {
-			return false, err
-		}
-		return false, l.finishCode(ctx, n)
 	case n.Tag == "iq" && hasChild(n, "pair-success"):
 		reply, linked, err := pairing.HandlePairSuccess(n, l.companion, l.cfg.Random)
 		if sendErr := l.session.Send(ctx, reply); sendErr != nil {
@@ -190,11 +186,48 @@ func (l *link) handle(ctx context.Context, n node.Node, account *pairing.Account
 		if err != nil {
 			return false, err
 		}
-		*account, *paired = linked, true
+		l.stopTimer()
+		l.account, l.paired = linked, true
 		return false, nil
-	default:
-		return false, nil
+	case n.Tag == "notification":
+		if err := l.session.Send(ctx, live.Ack(n)); err != nil {
+			return false, err
+		}
+		return false, l.notified(ctx, n)
 	}
+	return false, nil
+}
+
+func (l *link) notified(ctx context.Context, n node.Node) error {
+	if l.paired {
+		return nil
+	}
+	switch kind, _ := n.Attr("type").Text(); kind {
+	case "link_code_companion_reg":
+		return l.codeNotice(ctx, n)
+	case "companion_reg_refresh":
+		return l.newSecret()
+	}
+	return nil
+}
+
+func (l *link) codeNotice(ctx context.Context, n node.Node) error {
+	reg, _ := n.Child("link_code_companion_reg")
+	ref, _ := reg.Child("link_code_pairing_ref")
+	if l.code == nil || !l.code.Answers(ref.Bytes) {
+		return nil
+	}
+	switch stage, _ := reg.Attr("stage").Text(); stage {
+	case "primary_hello":
+		l.after(typedCodeWait)
+		return l.finishCode(ctx, n)
+	case "refresh_code":
+		if forced, _ := reg.Attr("force_manual_refresh").Text(); forced == "true" {
+			return ErrCodeExpired
+		}
+		return l.newCode(ctx)
+	}
+	return nil
 }
 
 func (l *link) offer(ctx context.Context, refs [][]byte) error {
@@ -208,19 +241,16 @@ func (l *link) offer(ctx context.Context, refs [][]byte) error {
 	if l.code != nil {
 		return nil
 	}
-	request, hello, err := pairing.StartCode(l.cfg.Random, l.cfg.Phone, l.companion, pairing.ClientOtherWeb, "Chatwire")
-	if err != nil {
-		return err
+	return l.startCode(ctx, true)
+}
+
+func (l *link) timeUp(ctx context.Context) error {
+	if l.cfg.Phone != "" {
+		return l.newCode(ctx)
 	}
-	response, err := l.session.Query(ctx, hello)
-	if err != nil {
-		return err
+	if !l.showNextQR() {
+		return ErrQRExpired
 	}
-	if err := request.AcceptRef(response); err != nil {
-		return err
-	}
-	l.code = request
-	l.cfg.ShowCode(request.Display())
 	return nil
 }
 
@@ -234,22 +264,52 @@ func (l *link) showNextQR() bool {
 		lifetime = firstQRLifetime
 	}
 	l.shown++
-	if l.qr != nil {
-		l.qr.Stop()
-	}
-	l.qr = time.AfterFunc(lifetime, func() {
-		select {
-		case l.qrTick <- struct{}{}:
-		default:
-		}
-	})
+	l.after(lifetime)
 	return true
 }
 
-func (l *link) finishCode(ctx context.Context, notification node.Node) error {
-	if l.code == nil {
-		return fmt.Errorf("linkflow: code notification without a pending code")
+func (l *link) newSecret() error {
+	if l.cfg.Phone != "" {
+		return nil
 	}
+	secret, err := pairing.NewAdvSecret(l.cfg.Random)
+	if err != nil {
+		return err
+	}
+	l.companion.AdvSecret = secret
+	if l.shown > 0 {
+		l.cfg.ShowQR(pairing.QRData(l.refs[l.shown-1], l.companion, pairing.ClientOtherWeb))
+	}
+	return nil
+}
+
+func (l *link) newCode(ctx context.Context) error {
+	if l.newCodes >= maxNewCodes {
+		return ErrCodeExpired
+	}
+	l.newCodes++
+	return l.startCode(ctx, false)
+}
+
+func (l *link) startCode(ctx context.Context, push bool) error {
+	request, hello, err := pairing.StartCode(l.cfg.Random, l.cfg.Phone, l.companion, pairing.ClientChrome, pairing.ChromeOn(runtime.GOOS), push)
+	if err != nil {
+		return err
+	}
+	response, err := l.session.Query(ctx, hello)
+	if err != nil {
+		return err
+	}
+	if err := request.AcceptRef(response); err != nil {
+		return err
+	}
+	l.code = request
+	l.cfg.ShowCode(request.Display())
+	l.after(codeLifetime)
+	return nil
+}
+
+func (l *link) finishCode(ctx context.Context, notification node.Node) error {
 	finish, secret, err := l.code.Finish(notification, l.companion, l.cfg.Random)
 	if err != nil {
 		return err
@@ -257,6 +317,26 @@ func (l *link) finishCode(ctx context.Context, notification node.Node) error {
 	l.companion.AdvSecret = secret
 	_, err = l.session.Query(ctx, finish)
 	return err
+}
+
+func (l *link) after(d time.Duration) {
+	l.stopTimer()
+	select {
+	case <-l.tick:
+	default:
+	}
+	l.timer = time.AfterFunc(d, func() {
+		select {
+		case l.tick <- struct{}{}:
+		default:
+		}
+	})
+}
+
+func (l *link) stopTimer() {
+	if l.timer != nil {
+		l.timer.Stop()
+	}
 }
 
 type Online struct {

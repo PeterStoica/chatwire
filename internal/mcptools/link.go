@@ -64,8 +64,8 @@ func status(l Linker, s Sender, opts Options) mcp.ToolHandlerFor[StatusInput, Re
 			wait := time.Duration(max(0, in.WaitSeconds)) * time.Second
 			waitCtx, cancel := context.WithTimeout(ctx, min(wait, maxWait))
 			defer cancel()
-			start := st.Phase
-			st, _ = l.Await(waitCtx, func(s linker.Status) bool { return s.Phase != start })
+			start := st
+			st, _ = l.Await(waitCtx, func(s linker.Status) bool { return s.Phase != start.Phase || s.Code != start.Code })
 		}
 		report := describe(st)
 		if st.Phase == linker.Linked {
@@ -116,11 +116,15 @@ const manyFailures = 10
 func describe(st linker.Status) Report {
 	switch st.Phase {
 	case linker.ShowingCode:
+		intro := "Linking code: %s\n\nWhatsApp on the phone with number +%s shows a notification to link a device; tapping it opens the place to type the code. Without it, open WhatsApp's Linked devices screen:\n"
+		if st.Renewed {
+			intro = "The earlier code expired, so there is a NEW linking code: %s\n\nShow the user this one instead. On the phone with number +%s, open WhatsApp's Linked devices screen:\n"
+		}
 		return Report{State: "waiting_for_code", Code: st.Code, Detail: fmt.Sprintf(
-			"Linking code: %s\n\nOn the phone with number +%s, open WhatsApp's Linked devices screen:\n"+
+			intro+
 				"- iPhone: Settings > Linked Devices > Link a Device\n"+
 				"- Android: the three-dot menu > Linked devices > Link a device\n"+
-				"Then tap \"Link with phone number instead\" and type this code. If it expires, call link_whatsapp again for a new one.",
+				"Then tap \"Link with phone number instead\" and type this code. Chatwire replaces an unused code every few minutes; status shows the current one.",
 			st.Code, st.Phone)}
 	case linker.ShowingQR:
 		return Report{State: "waiting_for_scan", Detail: "Show the user this QR code. " + scanSteps + " " +

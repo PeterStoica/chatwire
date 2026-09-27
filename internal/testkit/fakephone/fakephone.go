@@ -199,15 +199,35 @@ func (p *Phone) TypeCode(typed string) (node.Node, error) {
 		return node.Node{}, err
 	}
 	accountKey := p.Account.Public()
-	return node.Node{Tag: "notification", Attrs: []node.Attr{
-		{Key: attrType, Value: node.Text("link_code_companion_reg")},
-		{Key: "id", Value: node.Text("n1")},
-		{Key: attrFrom, Value: node.Address(node.JID{Server: node.ServerUser})},
-	}, Children: []node.Node{{Tag: "link_code_companion_reg", Attrs: []node.Attr{{Key: "stage", Value: node.Text("primary_hello")}}, Children: []node.Node{
+	return Notification("n1", "link_code_companion_reg", node.Node{Tag: "link_code_companion_reg", Attrs: []node.Attr{{Key: "stage", Value: node.Text("primary_hello")}}, Children: []node.Node{
 		{Tag: "link_code_pairing_ref", Bytes: p.ref},
 		{Tag: "link_code_pairing_wrapped_primary_ephemeral_pub", Bytes: primaryWrapped},
 		{Tag: "primary_identity_pub", Bytes: accountKey[:]},
-	}}}}, nil
+	}}), nil
+}
+
+func (p *Phone) Ref() []byte {
+	return p.ref
+}
+
+func Notification(id, kind string, children ...node.Node) node.Node {
+	return node.Node{Tag: "notification", Attrs: []node.Attr{
+		{Key: attrType, Value: node.Text(kind)},
+		{Key: "id", Value: node.Text(id)},
+		{Key: attrFrom, Value: node.Address(node.JID{Server: node.ServerUser})},
+	}, Children: children}
+}
+
+func RefreshCode(id string, ref []byte, forced bool) node.Node {
+	attrs := []node.Attr{{Key: "stage", Value: node.Text("refresh_code")}}
+	if forced {
+		attrs = append(attrs, node.Attr{Key: "force_manual_refresh", Value: node.Text("true")})
+	}
+	return Notification(id, "link_code_companion_reg", node.Node{Tag: "link_code_companion_reg", Attrs: attrs, Children: []node.Node{{Tag: "link_code_pairing_ref", Bytes: ref}}})
+}
+
+func RotateQR(id string) node.Node {
+	return Notification(id, "companion_reg_refresh", node.Node{Tag: "pair-device-rotate-qr"})
 }
 
 func (p *Phone) CompanionFinish(finish node.Node) ([]byte, curve.PublicKey, error) {

@@ -175,6 +175,136 @@ func TestTamperedPairSuccessIsRefused(t *testing.T) {
 	})
 }
 
+func pushes(hello node.Node) string {
+	reg, _ := hello.Child("link_code_companion_reg")
+	return reg.Attr("should_show_push_notification").String()
+}
+
+func codeConfig(w *fakeworld.World, codes chan string) linkflow.Config {
+	cfg := config(w, "40700000000", &disk{})
+	cfg.ShowCode = func(code string) { codes <- code }
+	return cfg
+}
+
+func TestAnUntypedCodeIsReplacedThenExpires(t *testing.T) {
+	synctest.Test(t, func(t *testing.T) {
+		w := world(t)
+		var pushed []string
+		w.Script(func(c *fakeworld.Conn) {
+			w.OfferPairing(c)
+			for {
+				pushed = append(pushed, pushes(w.AnswerHello(c)))
+			}
+		})
+		codes := make(chan string, 10)
+		start := time.Now()
+		_, err := linkflow.Link(t.Context(), codeConfig(w, codes))
+		if !errors.Is(err, linkflow.ErrCodeExpired) {
+			t.Fatalf("Link() error = %v, want %v", err, linkflow.ErrCodeExpired)
+		}
+		if waited := time.Since(start); waited != 6*195*time.Second {
+			t.Fatalf("gave up after %s, want six codes of 3m15s", waited)
+		}
+		synctest.Wait()
+		if want := []string{"true", "false", "false", "false", "false", "false"}; !reflect.DeepEqual(pushed, want) {
+			t.Fatalf("push notification per code = %v, want %v (only the first code rings the phone)", pushed, want)
+		}
+		if len(codes) != 6 {
+			t.Fatalf("showed %d codes, want 6", len(codes))
+		}
+	})
+}
+
+func TestTheServerCanAskForAFreshCode(t *testing.T) {
+	synctest.Test(t, func(t *testing.T) {
+		w := world(t)
+		codes := make(chan string, 10)
+		var first, second string
+		w.Script(func(c *fakeworld.Conn) {
+			w.OfferPairing(c)
+			w.AnswerHello(c)
+			first = <-codes
+			c.Send(fakephone.RefreshCode("r1", []byte("someone else's ref"), false))
+			if ack := c.Receive(); ack.Tag != "ack" {
+				panic("expected an ack for a stray refresh, got " + ack.String())
+			}
+			c.Send(fakephone.Notification("x1", "something_new"))
+			if ack := c.Receive(); ack.Tag != "ack" {
+				panic("expected an ack for an unknown notification, got " + ack.String())
+			}
+			c.Send(fakephone.RefreshCode("r2", w.Phone.Ref(), false))
+			if ack := c.Receive(); ack.Tag != "ack" {
+				panic("expected an ack for the refresh, got " + ack.String())
+			}
+			w.AnswerHello(c)
+			second = <-codes
+			w.EnterCode(c, second)
+		}, w.Login(fakeworld.Success()))
+		linked, err := linkflow.Link(t.Context(), codeConfig(w, codes))
+		if err != nil {
+			t.Fatal(err)
+		}
+		if first == second || linked.Account.JID != w.Phone.JID {
+			t.Fatalf("codes %q then %q, linked %+v", first, second, linked.Account)
+		}
+	})
+}
+
+func TestAForcedRefreshEndsTheCode(t *testing.T) {
+	synctest.Test(t, func(t *testing.T) {
+		w := world(t)
+		w.Script(func(c *fakeworld.Conn) {
+			w.OfferPairing(c)
+			w.AnswerHello(c)
+			c.Send(fakephone.RefreshCode("r1", w.Phone.Ref(), true))
+			c.WaitForHangUp()
+		})
+		_, err := linkflow.Link(t.Context(), codeConfig(w, make(chan string, 10)))
+		if !errors.Is(err, linkflow.ErrCodeExpired) {
+			t.Fatalf("Link() error = %v, want %v", err, linkflow.ErrCodeExpired)
+		}
+	})
+}
+
+func TestARotatedQRSecretIsShownAtOnce(t *testing.T) {
+	synctest.Test(t, func(t *testing.T) {
+		w := world(t)
+		var ack node.Node
+		w.Script(func(c *fakeworld.Conn) {
+			w.OfferPairing(c)
+			synctest.Sleep(time.Second)
+			c.Send(fakephone.RotateQR("q1"))
+			ack = c.Receive()
+			synctest.Sleep(time.Second)
+			scan, err := fakephone.ParseQR(w.Screen())
+			if err != nil {
+				panic(err)
+			}
+			w.FinishPairing(c, scan.Identity, scan.AdvSecret)
+		}, w.Login(fakeworld.Success()))
+		d := &disk{}
+		linked, err := linkflow.Link(t.Context(), config(w, "", d))
+		if err != nil {
+			t.Fatal(err)
+		}
+		shown := w.ShownQR()
+		if len(shown) != 2 {
+			t.Fatalf("showed %d QR codes, want the first and its rotation", len(shown))
+		}
+		before, _ := fakephone.ParseQR(shown[0])
+		after, _ := fakephone.ParseQR(shown[1])
+		if string(before.Ref) != string(after.Ref) || string(before.AdvSecret) == string(after.AdvSecret) {
+			t.Fatalf("rotation kept ref %v -> %v and secret changed %v", before.Ref, after.Ref, string(before.AdvSecret) != string(after.AdvSecret))
+		}
+		if kind, _ := ack.Attr("type").Text(); ack.Tag != "ack" || kind != "companion_reg_refresh" {
+			t.Fatalf("answered the rotation with %s", ack)
+		}
+		if string(linked.AdvSecret) != string(after.AdvSecret) {
+			t.Fatal("the linked device kept the secret from before the rotation")
+		}
+	})
+}
+
 type refusing struct {
 	closed bool
 }

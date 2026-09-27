@@ -11,6 +11,7 @@ import (
 	"errors"
 	"fmt"
 	"io"
+	"strconv"
 	"strings"
 
 	"github.com/PeterStoica/chatwire/internal/curve"
@@ -111,7 +112,7 @@ func ParsePhone(s string) (Phone, error) {
 	return Phone(digits), nil
 }
 
-func StartCode(random io.Reader, phone Phone, c Companion, client ClientType, display string) (*CodeRequest, node.Node, error) {
+func StartCode(random io.Reader, phone Phone, c Companion, client ClientType, display string, push bool) (*CodeRequest, node.Node, error) {
 	ephemeral, err := curve.NewKeyPair(random)
 	if err != nil {
 		return nil, node.Node{}, err
@@ -131,7 +132,7 @@ func StartCode(random io.Reader, phone Phone, c Companion, client ClientType, di
 		Tag: "link_code_companion_reg",
 		Attrs: []node.Attr{
 			{Key: "stage", Value: node.Text("companion_hello")},
-			{Key: "should_show_push_notification", Value: node.Text("false")},
+			{Key: "should_show_push_notification", Value: node.Text(strconv.FormatBool(push))},
 			{Key: "jid", Value: node.Address(request.JID)},
 		},
 		Children: []node.Node{
@@ -147,6 +148,10 @@ func StartCode(random io.Reader, phone Phone, c Companion, client ClientType, di
 
 func (r *CodeRequest) Display() string {
 	return r.Code[:4] + "-" + r.Code[4:]
+}
+
+func (r *CodeRequest) Answers(ref []byte) bool {
+	return len(r.ref) > 0 && bytes.Equal(ref, r.ref)
 }
 
 func (r *CodeRequest) AcceptRef(response node.Node) error {
