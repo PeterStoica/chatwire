@@ -51,38 +51,48 @@ func (s State) clone() State {
 
 type KeyFor func(id []byte) (Keys, bool)
 
-func (s State) ApplySnapshot(name string, snapshot *wire.SyncdSnapshot, keyFor KeyFor) (State, []Mutation, error) {
+func (s State) ApplySnapshot(name string, snapshot *wire.SyncdSnapshot, keyFor KeyFor) (State, []Mutation, int, error) {
+	keys, ok := keyFor(snapshot.GetKeyId().GetId())
+	if !ok {
+		return s, nil, 0, ErrMissingKey
+	}
 	next := State{Version: snapshot.GetVersion().GetVersion(), MACs: map[string][]byte{}}
 	mutations := make([]Mutation, 0, len(snapshot.GetRecords()))
+	skipped := 0
 	for _, record := range snapshot.GetRecords() {
-		m, err := decrypt(wire.SyncdMutation_SET, record, keyFor)
+		m, readable, err := open(wire.SyncdMutation_SET, record, keyFor)
 		if err != nil {
-			return s, nil, err
+			return s, nil, 0, err
 		}
 		if err := set(&next, m); err != nil {
-			return s, nil, err
+			return s, nil, 0, err
+		}
+		if !readable {
+			skipped++
+			continue
 		}
 		mutations = append(mutations, m)
 	}
-	keys, ok := keyFor(snapshot.GetKeyId().GetId())
-	if !ok {
-		return s, nil, ErrMissingKey
-	}
 	if !hmac.Equal(SnapshotMAC(keys, next.Hash, next.Version, name), snapshot.GetMac()) {
-		return s, nil, fmt.Errorf("%w: %s v%d", ErrSnapshotMAC, name, next.Version)
+		return s, nil, 0, fmt.Errorf("%w: %s v%d", ErrSnapshotMAC, name, next.Version)
 	}
-	return next, mutations, nil
+	return next, mutations, skipped, nil
 }
 
-func (s State) ApplyPatch(name string, patch *wire.SyncdPatch, keyFor KeyFor) (State, []Mutation, error) {
+func (s State) ApplyPatch(name string, patch *wire.SyncdPatch, keyFor KeyFor) (State, []Mutation, int, error) {
+	keys, ok := keyFor(patch.GetKeyId().GetId())
+	if !ok {
+		return s, nil, 0, ErrMissingKey
+	}
 	next := s.clone()
 	next.Version = patch.GetVersion().GetVersion()
 	mutations := make([]Mutation, 0, len(patch.GetMutations()))
 	valueMACs := make([][]byte, 0, len(patch.GetMutations()))
+	skipped := 0
 	for _, pm := range patch.GetMutations() {
-		m, err := decrypt(pm.GetOperation(), pm.GetRecord(), keyFor)
+		m, readable, err := open(pm.GetOperation(), pm.GetRecord(), keyFor)
 		if err != nil {
-			return s, nil, err
+			return s, nil, 0, err
 		}
 		if m.Operation == wire.SyncdMutation_REMOVE {
 			err = remove(&next, m)
@@ -90,30 +100,42 @@ func (s State) ApplyPatch(name string, patch *wire.SyncdPatch, keyFor KeyFor) (S
 			err = set(&next, m)
 		}
 		if err != nil {
-			return s, nil, err
+			return s, nil, 0, err
+		}
+		valueMACs = append(valueMACs, m.ValueMAC)
+		if !readable {
+			skipped++
+			continue
 		}
 		mutations = append(mutations, m)
-		valueMACs = append(valueMACs, m.ValueMAC)
-	}
-	keys, ok := keyFor(patch.GetKeyId().GetId())
-	if !ok {
-		return s, nil, ErrMissingKey
 	}
 	if !hmac.Equal(SnapshotMAC(keys, next.Hash, next.Version, name), patch.GetSnapshotMac()) {
-		return s, nil, fmt.Errorf("%w: %s after patch v%d", ErrSnapshotMAC, name, next.Version)
+		return s, nil, 0, fmt.Errorf("%w: %s after patch v%d", ErrSnapshotMAC, name, next.Version)
 	}
 	if !hmac.Equal(PatchMAC(keys, patch.GetSnapshotMac(), valueMACs, next.Version, name), patch.GetPatchMac()) {
-		return s, nil, fmt.Errorf("%w: %s v%d", ErrPatchMAC, name, next.Version)
+		return s, nil, 0, fmt.Errorf("%w: %s v%d", ErrPatchMAC, name, next.Version)
 	}
-	return next, mutations, nil
+	return next, mutations, skipped, nil
 }
 
-func decrypt(op wire.SyncdMutation_SyncdOperation, record *wire.SyncdRecord, keyFor KeyFor) (Mutation, error) {
+func open(op wire.SyncdMutation_SyncdOperation, record *wire.SyncdRecord, keyFor KeyFor) (Mutation, bool, error) {
+	blob := record.GetValue().GetBlob()
+	folded := Mutation{Operation: op, IndexMAC: record.GetIndex().GetBlob()}
+	if len(blob) >= macSize {
+		folded.ValueMAC = blob[len(blob)-macSize:]
+	}
+	if len(folded.IndexMAC) == 0 || len(folded.ValueMAC) != macSize {
+		return Mutation{}, false, fmt.Errorf("%w: a record without its index or value mac", ErrMalformed)
+	}
 	keys, ok := keyFor(record.GetKeyId().GetId())
 	if !ok {
-		return Mutation{}, ErrMissingKey
+		return folded, false, nil
 	}
-	return Decrypt(op, record, keys)
+	m, err := Decrypt(op, record, keys)
+	if err != nil {
+		return folded, false, nil
+	}
+	return m, true, nil
 }
 
 func set(s *State, m Mutation) error {

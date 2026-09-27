@@ -188,10 +188,11 @@ func (c *Client) applySync(ctx context.Context, r appstate.Response, st appstate
 		if err := c.downloadBlob(ctx, r.Snapshot, &snapshot); err != nil {
 			return st, nil, err
 		}
-		next, mutations, err := st.ApplySnapshot(r.Name, &snapshot, c.syncKey)
+		next, mutations, skipped, err := st.ApplySnapshot(r.Name, &snapshot, c.syncKey)
 		if err != nil {
 			return st, nil, err
 		}
+		c.unreadable(r.Name, skipped)
 		st, all = next, mutations
 	}
 	for _, patch := range r.Patches {
@@ -202,13 +203,20 @@ func (c *Client) applySync(ctx context.Context, r appstate.Response, st appstate
 			}
 			patch.Mutations = mutations.GetMutations()
 		}
-		next, mutations, err := st.ApplyPatch(r.Name, patch, c.syncKey)
+		next, mutations, skipped, err := st.ApplyPatch(r.Name, patch, c.syncKey)
 		if err != nil {
 			return st, nil, err
 		}
+		c.unreadable(r.Name, skipped)
 		st, all = next, append(all, mutations...)
 	}
 	return st, all, nil
+}
+
+func (c *Client) unreadable(collection string, skipped int) {
+	if skipped > 0 && c.cfg.Problem != nil {
+		c.cfg.Problem(fmt.Errorf("client: app state %s: skipped %d records that could not be read", collection, skipped))
+	}
 }
 
 func (c *Client) downloadBlob(ctx context.Context, ref *wire.ExternalBlobReference, into proto.Message) error {
