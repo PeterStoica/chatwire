@@ -2185,3 +2185,65 @@ func TestPeerMessagesReachOurPhoneAlone(t *testing.T) {
 		}
 	})
 }
+
+func TestOurPhoneIsAskedForMessagesWeCouldNotRead(t *testing.T) {
+	synctest.Test(t, func(t *testing.T) {
+		r := newRig(t)
+		r.connect()
+		companion := r.world.Phone.JID
+		unreadable := func(id string) node.Node {
+			return node.Node{Tag: "message", Attrs: []node.Attr{
+				{Key: "from", Value: node.Address(r.bob)}, {Key: "type", Value: node.Text("text")},
+				{Key: "id", Value: node.Text(id)}, {Key: "t", Value: node.Text("1790000000")},
+			}, Children: []node.Node{{Tag: "enc", Attrs: []node.Attr{{Key: "v", Value: node.Text("2")}, {Key: "type", Value: node.Text("msg")}}, Bytes: []byte{0x33, 1, 2, 3, 4, 5, 6, 7, 8, 9}}}}
+		}
+		r.server.Inbox <- unreadable("3EB0LATE")
+		synctest.Wait()
+		resent, err := r.bobPhone.Send(r.keys, r.devices, r.account, &wire.Message{Conversation: new("sent again")})
+		if err != nil {
+			t.Fatal(err)
+		}
+		resent = resent.With("id", node.Text("3EB0LATE"))
+		r.server.Inbox <- fakerelay.Deliver(r.bob, "Bob", time.Now(), resent)[companion]
+		if got := <-r.received; got.ID != "3EB0LATE" || got.Message.GetConversation() != "sent again" {
+			t.Fatalf("received %+v", got)
+		}
+		r.server.Inbox <- unreadable("3EB0LOST")
+		time.Sleep(10 * time.Second)
+		synctest.Wait()
+		toPhone := r.deliveredTo(r.account)
+		if len(toPhone) != 1 {
+			t.Fatalf("%d messages to our phone, want one resend request for the message nobody resent", len(toPhone))
+		}
+		_, request, err := r.ourPhone.Receive(toPhone[0])
+		wanted := request.GetProtocolMessage().GetPeerDataOperationRequestMessage().GetPlaceholderMessageResendRequest()
+		if err != nil || len(wanted) != 1 || wanted[0].GetMessageKey().GetId() != "3EB0LOST" || wanted[0].GetMessageKey().GetRemoteJid() != r.bob.String() {
+			t.Fatalf("our phone got %v: %v", request, err)
+		}
+		info, err := proto.Marshal(&wire.MessageInfo{
+			Key:     &wire.MessageKey{RemoteJid: new(r.bob.String()), FromMe: new(false), Id: new("3EB0LOST")},
+			Message: &wire.Message{Conversation: new("the lost one")}, MessageTimestamp: new(uint64(1790000000)), PushName: new("Bob"),
+		})
+		if err != nil {
+			t.Fatal(err)
+		}
+		answer := &wire.Message{ProtocolMessage: &wire.Message_ProtocolMessage{
+			Type: wire.Message_ProtocolMessage_PEER_DATA_OPERATION_REQUEST_RESPONSE_MESSAGE.Enum(),
+			PeerDataOperationRequestResponseMessage: &wire.Message_PeerDataOperationRequestResponseMessage{
+				PeerDataOperationRequestType: wire.Message_PLACEHOLDER_MESSAGE_RESEND.Enum(),
+				PeerDataOperationResult: []*wire.Message_PeerDataOperationRequestResponseMessage_PeerDataOperationResult{{
+					PlaceholderMessageResendResponse: &wire.Message_PeerDataOperationRequestResponseMessage_PeerDataOperationResult_PlaceholderMessageResendResponse{WebMessageInfoBytes: info},
+				}},
+			},
+		}}
+		out, err := r.ourPhone.SendPeer(r.keys, companion, answer)
+		if err != nil {
+			t.Fatal(err)
+		}
+		r.server.Inbox <- fakerelay.DeliverPeer(r.ourPhone.JID, time.Now(), out)
+		got := <-r.received
+		if got.ID != "3EB0LOST" || got.Chat != r.bob || got.Author != r.bob || got.Message.GetConversation() != "the lost one" || !got.Time.Equal(time.Unix(1790000000, 0)) {
+			t.Fatalf("recovered %+v", got)
+		}
+	})
+}

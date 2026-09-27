@@ -43,6 +43,7 @@ func (c *Client) enqueue(job func(context.Context)) bool {
 }
 
 func (c *Client) fromOurPhone(in message.Incoming, p *wire.Message_ProtocolMessage) bool {
+	c.resent(p)
 	if share := p.GetAppStateSyncKeyShare(); share != nil {
 		c.addSyncKeys(share)
 		c.queueAppStateSync(nil)

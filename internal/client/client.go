@@ -161,6 +161,7 @@ type Client struct {
 	recreated   map[address]time.Time
 	given       map[node.JID]time.Time
 	askedKeys   map[string]time.Time
+	awaiting    map[string]*wire.MessageKey
 	unacked     int
 	groups      map[senderName]*signal.SenderKeys
 	ownKeys     map[node.JID]*signal.SenderKey
@@ -190,7 +191,7 @@ func Connect(ctx context.Context, cfg Config, state State) (*Client, error) {
 		cfg: cfg, identity: identity, done: make(chan struct{}), state: state,
 		sessions: map[address]*signal.Session{}, lids: map[string]string{}, groups: map[senderName]*signal.SenderKeys{}, acks: map[string]chan node.Node{}, retries: map[string]chan mediaretry.Notification{},
 		ownKeys: map[node.JID]*signal.SenderKey{}, holders: map[node.JID]map[address]bool{},
-		recent: map[string]sentMessage{}, resends: map[string]int{}, recreated: map[address]time.Time{}, given: map[node.JID]time.Time{}, askedKeys: map[string]time.Time{},
+		recent: map[string]sentMessage{}, resends: map[string]int{}, recreated: map[address]time.Time{}, given: map[node.JID]time.Time{}, askedKeys: map[string]time.Time{}, awaiting: map[string]*wire.MessageKey{},
 	}
 	account := state.Linked.Account
 	pairs := map[node.JID]node.JID{account.LID.WithoutDevice(): account.JID.WithoutDevice()}
@@ -475,6 +476,7 @@ func (c *Client) open(ctx context.Context, n node.Node, in message.Incoming) (no
 			}
 			return live.Nack(n, live.AlreadySeen), true
 		case err != nil:
+			c.expectResend(in)
 			return c.retry(in, enc)
 		}
 		decoded, err := message.Decode(plaintext)
@@ -490,6 +492,7 @@ func (c *Client) open(ctx context.Context, n node.Node, in message.Incoming) (no
 			deferred = c.fromOurPhone(in, decoded.GetProtocolMessage()) || deferred
 		}
 		if c.cfg.Receive != nil && hasContent(decoded) {
+			c.readable(in.ID)
 			c.cfg.Receive(Received{ID: in.ID, Chat: in.Chat, Author: in.Author, Time: in.Timestamp, Name: in.PushName, Edit: in.Edit, Message: decoded, Pairs: in.Pairs})
 		}
 	}
