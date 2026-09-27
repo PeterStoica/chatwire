@@ -107,6 +107,26 @@ func DeliverPeer(sender node.JID, at time.Time, out node.Node) node.Node {
 	}, Children: children}
 }
 
+func DeliverReceipt(sender node.JID, out node.Node) node.Node {
+	to, _ := out.Attr("to").JID()
+	group := to.Server == node.ServerGroup || to.Server == node.ServerBroadcast
+	attrs := make([]node.Attr, 0, len(out.Attrs))
+	for _, a := range out.Attrs {
+		switch {
+		case a.Key == "to" && group:
+			attrs = append(attrs, node.Attr{Key: attrFrom, Value: a.Value})
+		case a.Key == "to":
+			attrs = append(attrs, node.Attr{Key: attrFrom, Value: node.Device(sender)})
+		case a.Key == "participant":
+			attrs = append(attrs, node.Attr{Key: "participant", Value: node.Device(sender)})
+		default:
+			attrs = append(attrs, a)
+		}
+	}
+	out.Attrs = attrs
+	return out
+}
+
 func passThrough(out, in node.Node) node.Node {
 	if edit, ok := out.Attr("edit").Text(); ok {
 		in.Attrs = append(in.Attrs, node.Attr{Key: "edit", Value: node.Text(edit)})

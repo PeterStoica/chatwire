@@ -203,6 +203,20 @@ func TestOnlyOwnRecentMessagesChange(t *testing.T) {
 			t.Errorf("own(%s, %s) error = %v, want %v", tt.id, tt.window, err, tt.wantErr)
 		}
 	}
+	for _, tt := range []struct {
+		id   string
+		want string
+	}{
+		{id: "fresh", want: "hi"},
+		{id: "bobs"},
+		{id: "gone"},
+		{id: "missing"},
+	} {
+		sent, ok := m.sentMessage(ctx, bob, tt.id)
+		if ok != (tt.want != "") || sent.GetConversation() != tt.want {
+			t.Errorf("sentMessage(%s) = %v, %v; only our own undeleted messages are sent again", tt.id, sent, ok)
+		}
+	}
 	if _, key, err := m.target(ctx, "theirs"); err != nil || key.GetParticipant() != bob.String() || key.GetFromMe() || key.GetRemoteJid() != family.String() || key.GetId() != "theirs" {
 		t.Fatalf("someone else's group message: %v, %v", key, err)
 	}

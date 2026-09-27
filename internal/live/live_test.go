@@ -4,6 +4,7 @@ import (
 	"bytes"
 	"crypto/rand"
 	"errors"
+	"fmt"
 	"sync"
 	"sync/atomic"
 	"testing"
@@ -127,4 +128,86 @@ func TestEventsQueriesAndHangUp(t *testing.T) {
 			t.Fatal("Err() is nil after the connection ended")
 		}
 	})
+}
+
+func TestQueriesAreAnsweredWhileEventsPileUp(t *testing.T) {
+	synctest.Test(t, func(t *testing.T) {
+		w, err := fakeworld.New(73)
+		if err != nil {
+			t.Fatal(err)
+		}
+		const flood = 500
+		w.Script(func(c *fakeworld.Conn) {
+			query := c.Receive()
+			for i := range flood {
+				c.Send(node.Node{Tag: "message", Attrs: []node.Attr{{Key: "id", Value: node.Text(fmt.Sprint("m", i))}}})
+			}
+			c.Send(node.Node{Tag: "iq", Attrs: []node.Attr{{Key: "type", Value: node.Text("result")}, {Key: "id", Value: query.Attr("id")}}})
+		})
+		session := dialLive(t, w)
+		query := node.Node{Tag: "iq", Attrs: []node.Attr{{Key: "id", Value: node.Value{}}, {Key: "type", Value: node.Text("get")}}}
+		if _, err := session.Query(t.Context(), query); err != nil {
+			t.Fatalf("Query() behind %d unread events: %v", flood, err)
+		}
+		for i := range flood {
+			if event := <-session.Events(); event.Attr("id").String() != fmt.Sprint("m", i) {
+				t.Fatalf("event %d = %s", i, event)
+			}
+		}
+		if _, open := <-session.Events(); open {
+			t.Fatal("events still open after the server hung up")
+		}
+	})
+}
+
+func TestAcksAndRefusals(t *testing.T) {
+	text := func(k, v string) node.Attr { return node.Attr{Key: k, Value: node.Text(v)} }
+	from := func(j string) node.Attr { return node.Attr{Key: "from", Value: node.Text(j)} }
+	render := func(n node.Node) string {
+		out := n.Tag
+		for _, a := range n.Attrs {
+			out += " " + a.Key + "=" + a.Value.String()
+		}
+		return out
+	}
+	for _, tt := range []struct {
+		name   string
+		stanza node.Node
+		ack    string
+		nack   string
+	}{
+		{
+			name:   "a message",
+			stanza: node.Node{Tag: "message", Attrs: []node.Attr{from("40722222222@s.whatsapp.net"), text("id", "M1"), text("type", "text")}},
+			ack:    "ack to=40722222222@s.whatsapp.net id=M1 class=message",
+			nack:   "ack to=40722222222@s.whatsapp.net id=M1 class=message type=text error=487",
+		},
+		{
+			name:   "a group receipt",
+			stanza: node.Node{Tag: "receipt", Attrs: []node.Attr{from("120363000000000000@g.us"), text("id", "R1"), text("type", "read"), text("participant", "40722222222:3@s.whatsapp.net")}},
+			ack:    "ack to=120363000000000000@g.us id=R1 class=receipt type=read participant=40722222222:3@s.whatsapp.net",
+			nack:   "ack to=120363000000000000@g.us id=R1 class=receipt type=read participant=40722222222:3@s.whatsapp.net error=487",
+		},
+		{
+			name:   "a receipt whose participant is the sender",
+			stanza: node.Node{Tag: "receipt", Attrs: []node.Attr{from("40722222222@s.whatsapp.net"), text("id", "R2"), text("participant", "40722222222@s.whatsapp.net")}},
+			ack:    "ack to=40722222222@s.whatsapp.net id=R2 class=receipt",
+			nack:   "ack to=40722222222@s.whatsapp.net id=R2 class=receipt participant=40722222222@s.whatsapp.net error=487",
+		},
+		{
+			name:   "a call",
+			stanza: node.Node{Tag: "call", Attrs: []node.Attr{from("40722222222@s.whatsapp.net"), text("id", "C1")}},
+			ack:    "ack to=40722222222@s.whatsapp.net id=C1 class=call",
+			nack:   "ack to=40722222222@s.whatsapp.net id=C1 class=call error=487",
+		},
+	} {
+		t.Run(tt.name, func(t *testing.T) {
+			if got := render(live.Ack(tt.stanza)); got != tt.ack {
+				t.Errorf("Ack\n got %s\nwant %s", got, tt.ack)
+			}
+			if got := render(live.Nack(tt.stanza, live.Unparsable)); got != tt.nack {
+				t.Errorf("Nack\n got %s\nwant %s", got, tt.nack)
+			}
+		})
+	}
 }

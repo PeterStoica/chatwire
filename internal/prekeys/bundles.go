@@ -98,3 +98,8 @@ func parseBundle(device node.JID, user node.Node) (Bundle, error) {
 	}
 	return b, nil
 }
+
+func RetryBundle(device node.JID, registration []byte, keys node.Node) (Bundle, error) {
+	user := node.Node{Tag: "user", Children: append([]node.Node{{Tag: "registration", Bytes: registration}}, keys.Children...)}
+	return parseBundle(device, user)
+}

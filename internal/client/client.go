@@ -10,6 +10,7 @@ import (
 	"io"
 	"maps"
 	"net/http"
+	"runtime/debug"
 	"slices"
 	"sync"
 	"time"
@@ -29,6 +30,7 @@ import (
 	"github.com/PeterStoica/chatwire/internal/message"
 	"github.com/PeterStoica/chatwire/internal/node"
 	"github.com/PeterStoica/chatwire/internal/prekeys"
+	"github.com/PeterStoica/chatwire/internal/queue"
 	"github.com/PeterStoica/chatwire/internal/signal"
 	"github.com/PeterStoica/chatwire/internal/usync"
 	"github.com/PeterStoica/chatwire/internal/wire"
@@ -38,7 +40,6 @@ const (
 	MaxDownload = 100 << 20
 	ackTimeout  = 30 * time.Second
 	typeGroup   = "skmsg"
-	jobQueue    = 16
 	attrType    = "type"
 	pingEvery   = 20 * time.Second
 	pingWait    = 20 * time.Second
@@ -101,6 +102,9 @@ type Config struct {
 	Receive  func(Received)
 	History  func(history.Chunk)
 	Receipt  func(message.Receipt)
+	Sent     func(ctx context.Context, chat node.JID, id string) (*wire.Message, bool)
+	Seen     func(ctx context.Context, chat node.JID, id string) bool
+	Problem  func(error)
 	AppState AppStateStore
 	HTTP     *http.Client
 }
@@ -110,22 +114,27 @@ type Client struct {
 	identity device.Identity
 	online   *linkflow.Online
 	done     chan struct{}
-	jobs     chan func(context.Context)
+	jobs     *queue.Queue[func(context.Context)]
 	life     context.Context
 	stop     context.CancelFunc
 	syncKeys map[string]appstate.Keys
 
 	mu       sync.Mutex
 	state    State
-	sessions map[node.JID]*signal.Session
+	sessions map[address]*signal.Session
 	lids     map[string]string
-	groups   map[senderName]*signal.SenderKeys
-	ownKeys  map[node.JID]*signal.SenderKey
-	holders  map[node.JID]map[node.JID]bool
-	acks     map[string]chan node.Node
-	retries  map[string]chan mediaretry.Notification
-	media    media.Conn
-	err      error
+
+	recent      map[string]sentMessage
+	recentOrder []string
+	resends     map[string]int
+	recreated   map[address]time.Time
+	groups      map[senderName]*signal.SenderKeys
+	ownKeys     map[node.JID]*signal.SenderKey
+	holders     map[node.JID]map[address]bool
+	acks        map[string]chan node.Node
+	retries     map[string]chan mediaretry.Notification
+	media       media.Conn
+	err         error
 }
 
 func Connect(ctx context.Context, cfg Config, state State) (*Client, error) {
@@ -145,19 +154,21 @@ func Connect(ctx context.Context, cfg Config, state State) (*Client, error) {
 	}
 	c := &Client{
 		cfg: cfg, identity: identity, done: make(chan struct{}), state: state,
-		sessions: map[node.JID]*signal.Session{}, lids: map[string]string{}, groups: map[senderName]*signal.SenderKeys{}, acks: map[string]chan node.Node{}, retries: map[string]chan mediaretry.Notification{},
-		ownKeys: map[node.JID]*signal.SenderKey{}, holders: map[node.JID]map[node.JID]bool{},
+		sessions: map[address]*signal.Session{}, lids: map[string]string{}, groups: map[senderName]*signal.SenderKeys{}, acks: map[string]chan node.Node{}, retries: map[string]chan mediaretry.Notification{},
+		ownKeys: map[node.JID]*signal.SenderKey{}, holders: map[node.JID]map[address]bool{},
+		recent: map[string]sentMessage{}, resends: map[string]int{}, recreated: map[address]time.Time{},
 	}
+	account := state.Linked.Account
+	pairs := map[node.JID]node.JID{account.LID.WithoutDevice(): account.JID.WithoutDevice()}
+	maps.Copy(pairs, cfg.LIDs)
+	c.learnLocked(pairs)
 	if err := c.restore(); err != nil {
 		_ = online.Close()
 		return nil, err
 	}
-	account := state.Linked.Account
-	c.learnLocked(map[node.JID]node.JID{account.LID.WithoutDevice(): account.JID.WithoutDevice()})
-	c.learnLocked(cfg.LIDs)
 	c.online = online
 	c.life, c.stop = context.WithCancel(context.WithoutCancel(ctx))
-	c.jobs = make(chan func(context.Context), jobQueue)
+	c.jobs = queue.New[func(context.Context)]()
 	workerDone := make(chan struct{})
 	go func() {
 		defer close(workerDone)
@@ -305,27 +316,7 @@ func (c *Client) loop(ctx context.Context, workerDone <-chan struct{}) {
 		close(c.done)
 	}()
 	for n := range c.online.Session.Events() {
-		switch n.Tag {
-		case "message":
-			c.receive(ctx, n)
-		case "receipt":
-			_ = c.online.Session.Send(ctx, live.Ack(n))
-			if r, err := message.ParseReceipt(n); err == nil && c.cfg.Receipt != nil {
-				c.cfg.Receipt(r)
-			}
-		case "notification":
-			_ = c.online.Session.Send(ctx, live.Ack(n))
-			c.notified(n)
-		case "ack":
-			c.acked(n)
-		case "iq":
-			if pong, ok := Pong(n); ok {
-				_ = c.online.Session.Send(ctx, pong)
-			}
-		case "stream:error", "failure":
-			c.fail(fmt.Errorf("%w: %s", linkflow.Classify(n, ErrClosed), n))
-			_ = c.online.Close()
-		}
+		c.handle(ctx, n)
 	}
 	c.fail(fmt.Errorf("%w: %w", ErrClosed, c.online.Session.Err()))
 	c.mu.Lock()
@@ -333,6 +324,52 @@ func (c *Client) loop(ctx context.Context, workerDone <-chan struct{}) {
 	for id, waiter := range c.acks {
 		close(waiter)
 		delete(c.acks, id)
+	}
+}
+
+func (c *Client) handle(ctx context.Context, n node.Node) {
+	defer func() {
+		if r := recover(); r != nil {
+			c.problem(n.Tag+" "+n.Attr("id").String(), r)
+			if n.Tag == "message" {
+				_ = c.online.Session.Send(ctx, live.Nack(n, live.HandlerCrash))
+			}
+		}
+	}()
+	switch n.Tag {
+	case "message":
+		c.receive(ctx, n)
+	case "receipt":
+		_ = c.online.Session.Send(ctx, live.Ack(n))
+		if req, err := message.ParseRetryRequest(n); err == nil {
+			c.enqueue(func(ctx context.Context) { _ = c.resend(ctx, req) })
+			return
+		}
+		if r, err := message.ParseReceipt(n); err == nil && c.cfg.Receipt != nil {
+			c.cfg.Receipt(r)
+		}
+	case "notification":
+		_ = c.online.Session.Send(ctx, live.Ack(n))
+		c.notified(n)
+	case "call":
+		_ = c.online.Session.Send(ctx, live.Ack(n))
+	case "status":
+		_ = c.online.Session.Send(ctx, live.Nack(n, live.Unsupported))
+	case "ack":
+		c.acked(n)
+	case "iq":
+		if pong, ok := Pong(n); ok {
+			_ = c.online.Session.Send(ctx, pong)
+		}
+	case "stream:error", "failure":
+		c.fail(fmt.Errorf("%w: %s", linkflow.Classify(n, ErrClosed), n))
+		_ = c.online.Close()
+	}
+}
+
+func (c *Client) problem(what string, r any) {
+	if c.cfg.Problem != nil {
+		c.cfg.Problem(fmt.Errorf("client: %s crashed: %v\n%s", what, r, debug.Stack()))
 	}
 }
 
@@ -358,23 +395,37 @@ func (c *Client) acked(n node.Node) {
 func (c *Client) receive(ctx context.Context, n node.Node) {
 	in, err := message.ParseIncoming(c.mine, n)
 	if err != nil {
-		_ = c.online.Session.Send(ctx, live.Ack(n))
+		_ = c.online.Session.Send(ctx, live.Nack(n, live.Unparsable))
 		return
 	}
-	deferred := false
+	reply, ok := c.open(ctx, n, in)
+	c.keep()
+	if ok {
+		_ = c.online.Session.Send(ctx, reply)
+	}
+}
+
+func (c *Client) open(ctx context.Context, n node.Node, in message.Incoming) (node.Node, bool) {
+	deferred, readable, unreadable := false, false, false
 	for _, enc := range pairwiseFirst(in.Encs) {
 		plaintext, err := c.decrypt(in, enc)
-		if errors.Is(err, errUnsupported) {
+		switch {
+		case errors.Is(err, errUnsupported):
 			continue
-		}
-		if err != nil {
-			c.retry(ctx, in, enc)
-			return
+		case errors.Is(err, signal.ErrDuplicate):
+			if c.cfg.Seen != nil && c.cfg.Seen(ctx, in.Chat, in.ID) {
+				return message.DeliveryReceipt(c.mine, in), true
+			}
+			return live.Nack(n, live.AlreadySeen), true
+		case err != nil:
+			return c.retry(in, enc)
 		}
 		decoded, err := message.Decode(plaintext)
 		if err != nil {
+			unreadable = true
 			continue
 		}
+		readable = true
 		if distribution := decoded.GetSenderKeyDistributionMessage(); distribution != nil {
 			c.distribute(in, distribution.GetAxolotlSenderKeyDistributionMessage())
 		}
@@ -385,17 +436,20 @@ func (c *Client) receive(ctx context.Context, n node.Node) {
 			c.cfg.Receive(Received{ID: in.ID, Chat: in.Chat, Author: in.Author, Time: in.Timestamp, Name: in.PushName, Edit: in.Edit, Message: decoded, Pairs: in.Pairs})
 		}
 	}
-	c.keep()
-	if !deferred {
-		_ = c.online.Session.Send(ctx, message.DeliveryReceipt(c.mine, in))
+	switch {
+	case unreadable && !readable:
+		return live.Nack(n, live.BadContent), true
+	case deferred:
+		return node.Node{}, false
 	}
+	return message.DeliveryReceipt(c.mine, in), true
 }
 
 var errUnsupported = errors.New("client: unsupported encryption")
 
 type senderName struct {
 	group  node.JID
-	sender node.JID
+	sender address
 }
 
 func pairwiseFirst(encs []message.Enc) []message.Enc {
@@ -464,7 +518,7 @@ func (c *Client) decrypt(in message.Incoming, enc message.Enc) ([]byte, error) {
 	}
 }
 
-func (c *Client) retry(ctx context.Context, in message.Incoming, enc message.Enc) {
+func (c *Client) retry(in message.Incoming, enc message.Enc) (node.Node, bool) {
 	c.mu.Lock()
 	keys, next, err := prekeys.Generate(c.cfg.Link.Random, c.state.NextPreKeyID, 1)
 	if err == nil {
@@ -474,45 +528,31 @@ func (c *Client) retry(ctx context.Context, in message.Incoming, enc message.Enc
 	}
 	c.mu.Unlock()
 	if err != nil {
-		return
+		return node.Node{}, false
 	}
 	receipt, err := message.RetryReceipt(c.mine, in, message.Retry{
 		Count: enc.Retry + 1, Registration: c.identity.Registration(device.Props()), PreKey: keys[0], DeviceIdentity: c.state.Linked.Account.SignedIdentity,
 	})
-	if err == nil {
-		_ = c.online.Session.Send(ctx, receipt)
-	}
+	return receipt, err == nil
 }
 
 func (c *Client) Send(ctx context.Context, to node.JID, m *wire.Message) (string, error) {
-	self := node.JID{User: c.Self().User, Server: c.Self().Server}
+	self := c.Self().WithoutDevice()
 	users := []node.JID{to}
 	if to != self {
 		users = append(users, self)
 	}
-	reply, err := c.online.Session.Query(ctx, usync.DevicesRequest(c.online.Session.NewID(), usync.ContextMessage, users))
-	if err != nil {
-		return "", fmt.Errorf("client: devices: %w", err)
-	}
-	listed, err := usync.ParseDevices(reply)
+	targets, err := c.devices(ctx, users)
 	if err != nil {
 		return "", err
 	}
-	var targets []node.JID
-	for _, user := range listed {
-		for _, d := range user.Devices {
-			if d.JID != c.Self() {
-				targets = append(targets, d.JID)
-			}
-		}
-	}
-	if len(targets) == 0 {
+	if to != self && !slices.ContainsFunc(targets, func(d node.JID) bool { return d.User == to.User }) {
 		return "", fmt.Errorf("%w: %s", ErrNoTarget, to)
 	}
 	if err := c.startSessions(ctx, targets); err != nil {
 		return "", err
 	}
-	parts, err := c.encrypt(to, self, targets, m)
+	parts, err := c.encrypt(to, targets, m)
 	if err != nil {
 		return "", err
 	}
@@ -520,8 +560,31 @@ func (c *Client) Send(ctx context.Context, to node.JID, m *wire.Message) (string
 	if err != nil {
 		return "", err
 	}
+	c.mu.Lock()
+	c.rememberLocked(id, to, m)
+	c.mu.Unlock()
 	c.keep()
 	return id, c.deliver(ctx, message.Outgoing(id, to, m, parts, c.state.Linked.Account.SignedIdentity))
+}
+
+func (c *Client) devices(ctx context.Context, users []node.JID) ([]node.JID, error) {
+	reply, err := c.online.Session.Query(ctx, usync.DevicesRequest(c.online.Session.NewID(), usync.ContextMessage, users))
+	if err != nil {
+		return nil, fmt.Errorf("client: devices: %w", err)
+	}
+	listed, err := usync.ParseDevices(reply)
+	if err != nil {
+		return nil, err
+	}
+	var out []node.JID
+	for _, user := range listed {
+		for _, d := range user.Devices {
+			if d.JID != c.Self() {
+				out = append(out, d.JID)
+			}
+		}
+	}
+	return out, nil
 }
 
 func (c *Client) startSessions(ctx context.Context, targets []node.JID) error {
@@ -536,41 +599,32 @@ func (c *Client) startSessions(ctx context.Context, targets []node.JID) error {
 	if len(missing) == 0 {
 		return nil
 	}
-	reply, err := c.online.Session.Query(ctx, prekeys.FetchRequest(missing))
-	if err != nil {
-		return fmt.Errorf("client: key bundles: %w", err)
-	}
-	bundles, _, err := prekeys.ParseBundles(reply)
-	if err != nil {
-		return err
-	}
-	c.mu.Lock()
-	defer c.mu.Unlock()
-	for _, b := range bundles {
-		address := c.addressLocked(b.Device)
-		session, err := signal.Initiate(c.cfg.Link.Random, c.identity.Signal(), c.sessions[address], b.Keys)
-		if err != nil {
-			return fmt.Errorf("client: session with %s: %w", b.Device, err)
-		}
-		c.sessions[address] = session
-	}
-	return nil
+	return c.fetchSessions(ctx, missing)
 }
 
-func (c *Client) encrypt(to, self node.JID, targets []node.JID, m *wire.Message) ([]message.Part, error) {
+func (c *Client) encrypt(to node.JID, targets []node.JID, m *wire.Message) ([]message.Part, error) {
 	c.mu.Lock()
 	defer c.mu.Unlock()
-	parts := make([]message.Part, 0, len(targets))
-	for _, target := range targets {
-		session := c.sessions[c.addressLocked(target)]
+	parts, err := c.sealLocked(targets, func(target node.JID) ([]byte, error) {
+		if c.mine(target) {
+			return message.Encode(c.cfg.Link.Random, message.SentByUs(to, m))
+		}
+		return message.Encode(c.cfg.Link.Random, m)
+	})
+	if err == nil && len(parts) == 0 {
+		err = fmt.Errorf("%w: no device accepted a session", ErrNoTarget)
+	}
+	return parts, err
+}
+
+func (c *Client) sealLocked(devices []node.JID, payload func(node.JID) ([]byte, error)) ([]message.Part, error) {
+	parts := make([]message.Part, 0, len(devices))
+	for _, device := range devices {
+		session := c.sessions[c.addressLocked(device)]
 		if session == nil {
 			continue
 		}
-		payload := m
-		if target.User == self.User && target.Server == self.Server {
-			payload = message.SentByUs(to, m)
-		}
-		padded, err := message.Encode(c.cfg.Link.Random, payload)
+		padded, err := payload(device)
 		if err != nil {
 			return nil, err
 		}
@@ -578,10 +632,7 @@ func (c *Client) encrypt(to, self node.JID, targets []node.JID, m *wire.Message)
 		if err != nil {
 			return nil, err
 		}
-		parts = append(parts, message.Part{Device: target, Ciphertext: ciphertext})
-	}
-	if len(parts) == 0 {
-		return nil, fmt.Errorf("%w: no device accepted a session", ErrNoTarget)
+		parts = append(parts, message.Part{Device: device, Ciphertext: ciphertext})
 	}
 	return parts, nil
 }
@@ -629,21 +680,9 @@ func (c *Client) SendGroup(ctx context.Context, g groups.Group, m *wire.Message)
 	for _, p := range g.Participants {
 		users = append(users, p.JID.WithoutDevice())
 	}
-	reply, err := c.online.Session.Query(ctx, usync.DevicesRequest(c.online.Session.NewID(), usync.ContextMessage, users))
-	if err != nil {
-		return "", fmt.Errorf("client: group devices: %w", err)
-	}
-	listed, err := usync.ParseDevices(reply)
+	members, err := c.devices(ctx, users)
 	if err != nil {
 		return "", err
-	}
-	var members []node.JID
-	for _, user := range listed {
-		for _, d := range user.Devices {
-			if d.JID != c.Self() {
-				members = append(members, d.JID)
-			}
-		}
 	}
 	key, needing, err := c.senderKeyFor(g.JID, members)
 	if err != nil {
@@ -653,7 +692,7 @@ func (c *Client) SendGroup(ctx context.Context, g groups.Group, m *wire.Message)
 	if err != nil {
 		return "", err
 	}
-	id, err := message.NewID(c.cfg.Link.Now(), node.JID{User: c.Self().User, Server: c.Self().Server}, c.cfg.Link.Random)
+	id, err := message.NewID(c.cfg.Link.Now(), c.Self().WithoutDevice(), c.cfg.Link.Random)
 	if err != nil {
 		return "", err
 	}
@@ -670,6 +709,7 @@ func (c *Client) SendGroup(ctx context.Context, g groups.Group, m *wire.Message)
 	for _, part := range parts {
 		c.holders[g.JID][c.addressLocked(part.Device)] = true
 	}
+	c.rememberLocked(id, g.JID, m)
 	return id, c.keepLocked()
 }
 
@@ -683,7 +723,7 @@ func (c *Client) senderKeyFor(group node.JID, members []node.JID) (*signal.Sende
 			return nil, nil, err
 		}
 		key = created
-		c.ownKeys[group], c.holders[group] = key, map[node.JID]bool{}
+		c.ownKeys[group], c.holders[group] = key, map[address]bool{}
 	}
 	var needing []node.JID
 	for _, member := range members {
@@ -711,19 +751,7 @@ func (c *Client) distributeKey(ctx context.Context, group node.JID, key *signal.
 	if err != nil {
 		return nil, err
 	}
-	parts := make([]message.Part, 0, len(needing))
-	for _, device := range needing {
-		session := c.sessions[c.addressLocked(device)]
-		if session == nil {
-			continue
-		}
-		ciphertext, err := session.Encrypt(padded)
-		if err != nil {
-			return nil, err
-		}
-		parts = append(parts, message.Part{Device: device, Ciphertext: ciphertext})
-	}
-	return parts, nil
+	return c.sealLocked(needing, func(node.JID) ([]byte, error) { return padded, nil })
 }
 
 func (c *Client) encryptForGroup(key *signal.SenderKey, m *wire.Message) ([]byte, error) {
@@ -742,23 +770,27 @@ func (c *Client) restore() error {
 		if err := session.UnmarshalBinary(entry.Record); err != nil {
 			return fmt.Errorf("client: session with %s: %w", entry.Device, err)
 		}
-		c.sessions[entry.Device] = session
+		to := c.addressLocked(entry.Device)
+		c.sessions[to] = c.sessions[to].Merge(session)
 	}
 	for _, entry := range c.state.SenderKeys {
 		keys := &signal.SenderKeys{}
 		if err := keys.UnmarshalBinary(entry.Record); err != nil {
 			return fmt.Errorf("client: sender key of %s in %s: %w", entry.Sender, entry.Group, err)
 		}
-		c.groups[senderName{group: entry.Group, sender: entry.Sender}] = keys
+		name := senderName{group: entry.Group, sender: c.addressLocked(entry.Sender)}
+		if c.groups[name] == nil {
+			c.groups[name] = keys
+		}
 	}
 	for _, entry := range c.state.OwnSenderKeys {
 		key := &signal.SenderKey{}
 		if err := key.UnmarshalBinary(entry.Record); err != nil {
 			return fmt.Errorf("client: our sender key in %s: %w", entry.Group, err)
 		}
-		c.ownKeys[entry.Group], c.holders[entry.Group] = key, map[node.JID]bool{}
+		c.ownKeys[entry.Group], c.holders[entry.Group] = key, map[address]bool{}
 		for _, holder := range entry.Holders {
-			c.holders[entry.Group][holder] = true
+			c.holders[entry.Group][c.addressLocked(holder)] = true
 		}
 	}
 	return nil
@@ -771,7 +803,7 @@ func (c *Client) keepLocked() error {
 		if err != nil {
 			return err
 		}
-		c.state.Sessions = append(c.state.Sessions, SessionEntry{Device: device, Record: record})
+		c.state.Sessions = append(c.state.Sessions, SessionEntry{Device: node.JID(device), Record: record})
 	}
 	c.state.SenderKeys = nil
 	for name, keys := range c.groups {
@@ -779,7 +811,7 @@ func (c *Client) keepLocked() error {
 		if err != nil {
 			return err
 		}
-		c.state.SenderKeys = append(c.state.SenderKeys, SenderKeyEntry{Group: name.group, Sender: name.sender, Record: record})
+		c.state.SenderKeys = append(c.state.SenderKeys, SenderKeyEntry{Group: name.group, Sender: node.JID(name.sender), Record: record})
 	}
 	c.state.OwnSenderKeys = nil
 	for group, key := range c.ownKeys {
@@ -789,7 +821,7 @@ func (c *Client) keepLocked() error {
 		}
 		entry := OwnSenderKeyEntry{Group: group, Record: record}
 		for holder := range c.holders[group] {
-			entry.Holders = append(entry.Holders, holder)
+			entry.Holders = append(entry.Holders, node.JID(holder))
 		}
 		c.state.OwnSenderKeys = append(c.state.OwnSenderKeys, entry)
 	}

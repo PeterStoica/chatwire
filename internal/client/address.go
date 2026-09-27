@@ -2,14 +2,20 @@ package client
 
 import "github.com/PeterStoica/chatwire/internal/node"
 
-func (c *Client) addressLocked(j node.JID) node.JID {
+type address node.JID
+
+func (a address) String() string {
+	return node.JID(a).String()
+}
+
+func (c *Client) addressLocked(j node.JID) address {
 	if j.Server != node.ServerUser {
-		return j
+		return address(j)
 	}
 	if lid, ok := c.lids[j.User]; ok {
-		return node.JID{User: lid, Device: j.Device, Server: node.ServerLID}
+		return address{User: lid, Device: j.Device, Server: node.ServerLID}
 	}
-	return j
+	return address(j)
 }
 
 func (c *Client) Learn(pairs map[node.JID]node.JID) {
@@ -36,14 +42,14 @@ func (c *Client) learnLocked(pairs map[node.JID]node.JID) bool {
 }
 
 func (c *Client) readdressLocked() {
-	for device, session := range c.sessions {
-		if to := c.addressLocked(device); to != device {
-			delete(c.sessions, device)
+	for from, session := range c.sessions {
+		if to := c.addressLocked(node.JID(from)); to != from {
+			delete(c.sessions, from)
 			c.sessions[to] = c.sessions[to].Merge(session)
 		}
 	}
 	for name, keys := range c.groups {
-		to := senderName{group: name.group, sender: c.addressLocked(name.sender)}
+		to := senderName{group: name.group, sender: c.addressLocked(node.JID(name.sender))}
 		if to == name {
 			continue
 		}
@@ -52,13 +58,12 @@ func (c *Client) readdressLocked() {
 			c.groups[to] = keys
 		}
 	}
-	for group, holders := range c.holders {
+	for _, holders := range c.holders {
 		for holder := range holders {
-			if to := c.addressLocked(holder); to != holder {
+			if to := c.addressLocked(node.JID(holder)); to != holder {
 				delete(holders, holder)
 				holders[to] = true
 			}
 		}
-		c.holders[group] = holders
 	}
 }

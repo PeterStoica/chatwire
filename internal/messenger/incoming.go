@@ -196,9 +196,24 @@ func (m *Messenger) addresses(ctx context.Context, j node.JID) ([]node.JID, erro
 	return out, nil
 }
 
+func (m *Messenger) sentMessage(ctx context.Context, chat node.JID, id string) (*wire.Message, bool) {
+	found, ok, err := m.store.MessageIn(ctx, chat, id)
+	if err != nil || !ok || !found.FromMe || found.Revoked {
+		return nil, false
+	}
+	return found.Message, true
+}
+
+func (m *Messenger) seen(ctx context.Context, chat node.JID, id string) bool {
+	_, ok, err := m.store.MessageIn(ctx, chat, id)
+	return err == nil && ok
+}
+
 func (m *Messenger) receipt(r message.Receipt) {
 	var changes store.Changes
 	switch {
+	case r.Ack == message.AckRetry:
+		return
 	case r.Self && (r.Ack == message.AckRead || r.Ack == message.AckPlayed):
 		changes.Seen = []node.JID{r.From.WithoutDevice()}
 	case r.Self || r.From.Server == node.ServerGroup || r.From.Server == node.ServerBroadcast:

@@ -14,6 +14,7 @@ import (
 
 	"github.com/PeterStoica/chatwire/internal/handshake"
 	"github.com/PeterStoica/chatwire/internal/node"
+	"github.com/PeterStoica/chatwire/internal/queue"
 )
 
 var ErrClosed = errors.New("live: session closed")
@@ -43,6 +44,7 @@ type Session struct {
 	writing    sync.Mutex
 	mu         sync.Mutex
 	waiting    map[string]chan node.Node
+	inbox      *queue.Queue[node.Node]
 	events     chan node.Node
 	done       chan struct{}
 	err        error
@@ -55,12 +57,13 @@ func Start(ctx context.Context, conn *handshake.Conn, dictionary node.Dictionary
 	}
 	s := &Session{
 		conn: conn, dictionary: dictionary, ids: ids,
-		waiting: map[string]chan node.Node{}, events: make(chan node.Node, 64), done: make(chan struct{}),
+		waiting: map[string]chan node.Node{}, inbox: queue.New[node.Node](), events: make(chan node.Node), done: make(chan struct{}),
 	}
 	if os.Getenv("CHATWIRE_TRACE") != "" {
 		s.trace = os.Stderr
 	}
 	go s.read(ctx)
+	go s.pump(ctx)
 	return s, nil
 }
 
@@ -79,7 +82,6 @@ func (s *Session) Err() error {
 
 func (s *Session) read(ctx context.Context) {
 	defer close(s.done)
-	defer close(s.events)
 	for {
 		plaintext, err := s.conn.Read(ctx)
 		if err != nil {
@@ -95,13 +97,31 @@ func (s *Session) read(ctx context.Context) {
 			return
 		}
 		s.log("<-", n)
-		if s.deliver(n) {
-			continue
+		if !s.deliver(n) {
+			s.inbox.Push(n)
 		}
+	}
+}
+
+func (s *Session) pump(ctx context.Context) {
+	defer close(s.events)
+	hand := func() bool {
+		for _, n := range s.inbox.Take() {
+			select {
+			case s.events <- n:
+			case <-ctx.Done():
+				return false
+			}
+		}
+		return true
+	}
+	for hand() {
 		select {
-		case s.events <- n:
+		case <-s.inbox.Ready():
+		case <-s.done:
+			hand()
+			return
 		case <-ctx.Done():
-			s.err = ctx.Err()
 			return
 		}
 	}
@@ -162,11 +182,37 @@ func (s *Session) Query(ctx context.Context, request node.Node) (node.Node, erro
 	}
 }
 
+type Refusal int
+
+const (
+	Unsupported  Refusal = 415
+	Unparsable   Refusal = 487
+	UnknownKind  Refusal = 488
+	BadContent   Refusal = 491
+	AlreadySeen  Refusal = 496
+	HandlerCrash Refusal = 500
+)
+
 func Ack(n node.Node) node.Node {
 	attrs := []node.Attr{{Key: "to", Value: n.Attr("from")}, {Key: "id", Value: n.Attr("id")}, {Key: "class", Value: node.Text(n.Tag)}}
 	if kind := n.Attr("type"); !kind.IsZero() && n.Tag != "message" {
 		attrs = append(attrs, node.Attr{Key: "type", Value: kind})
 	}
+	if participant := n.Attr("participant"); !participant.IsZero() && participant.String() != n.Attr("from").String() {
+		attrs = append(attrs, node.Attr{Key: "participant", Value: participant})
+	}
+	return node.Node{Tag: "ack", Attrs: attrs}
+}
+
+func Nack(n node.Node, why Refusal) node.Node {
+	attrs := []node.Attr{{Key: "to", Value: n.Attr("from")}, {Key: "id", Value: n.Attr("id")}, {Key: "class", Value: node.Text(n.Tag)}}
+	if kind := n.Attr("type"); !kind.IsZero() {
+		attrs = append(attrs, node.Attr{Key: "type", Value: kind})
+	}
+	if participant := n.Attr("participant"); !participant.IsZero() {
+		attrs = append(attrs, node.Attr{Key: "participant", Value: participant})
+	}
+	attrs = append(attrs, node.Attr{Key: "error", Value: node.Text(strconv.Itoa(int(why)))})
 	return node.Node{Tag: "ack", Attrs: attrs}
 }
 

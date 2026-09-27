@@ -5,6 +5,7 @@ import (
 	"errors"
 	"fmt"
 	"net/http"
+	"os"
 	"sync"
 	"time"
 
@@ -85,7 +86,7 @@ func (m *Messenger) keepConnected(ctx context.Context) {
 		state := *m.state
 		m.mu.Unlock()
 		lids, _ := m.store.LIDs(ctx)
-		c, err := client.Connect(ctx, client.Config{LIDs: lids, Link: m.link, HTTP: m.http, Persist: m.save, Receive: m.received, History: m.history, Receipt: m.receipt, AppState: m}, state)
+		c, err := client.Connect(ctx, client.Config{LIDs: lids, Link: m.link, HTTP: m.http, Persist: m.save, Receive: m.received, History: m.history, Receipt: m.receipt, Sent: m.sentMessage, Seen: m.seen, Problem: problem, AppState: m}, state)
 		if errors.Is(err, linkflow.ErrLoggedOut) {
 			m.loggedOut(err)
 			return
@@ -303,4 +304,8 @@ func (m *Messenger) Close() {
 		cancel()
 		<-running
 	}
+}
+
+func problem(err error) {
+	_, _ = fmt.Fprintf(os.Stderr, "%s %v\n", time.Now().Format(time.DateTime), err)
 }

@@ -3,6 +3,7 @@ package message
 import (
 	"strconv"
 	"strings"
+	"time"
 
 	"google.golang.org/protobuf/proto"
 
@@ -147,6 +148,22 @@ func Outgoing(id string, to node.JID, m *wire.Message, parts []Part, deviceIdent
 		out.Children = []node.Node{{Tag: "participants", Children: targets}}
 	}
 	if prekey && deviceIdentity != nil {
+		out.Children = append(out.Children, node.Node{Tag: tagIdentity, Bytes: deviceIdentity})
+	}
+	out.Children = append(out.Children, meta(m)...)
+	return out
+}
+
+func Resend(r RetryRequest, m *wire.Message, part Part, deviceIdentity []byte, at time.Time) node.Node {
+	attrs := []node.Attr{{Key: "id", Value: node.Text(r.ID)}, {Key: attrType, Value: node.Text(TypeOf(m))}, {Key: "t", Value: node.Text(strconv.FormatInt(at.Unix(), 10))}}
+	attrs = append(attrs, r.echo...)
+	if !r.Group() {
+		attrs = append(attrs, node.Attr{Key: "device_fanout", Value: node.Text("false")})
+	}
+	enc := encNode(part.Ciphertext, m)
+	enc.Attrs = append(enc.Attrs, node.Attr{Key: "count", Value: node.Text(strconv.Itoa(r.Count))})
+	out := node.Node{Tag: tagMessage, Attrs: attrs, Children: []node.Node{enc}}
+	if part.Ciphertext.Type == signal.TypePreKeyMessage && deviceIdentity != nil {
 		out.Children = append(out.Children, node.Node{Tag: tagIdentity, Bytes: deviceIdentity})
 	}
 	out.Children = append(out.Children, meta(m)...)

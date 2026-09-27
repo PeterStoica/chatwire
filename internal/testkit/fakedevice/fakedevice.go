@@ -24,6 +24,7 @@ type Device struct {
 	JID      node.JID
 	Identity device.Identity
 	random   io.Reader
+	next     uint32
 	oneTime  map[uint32]curve.KeyPair
 	sessions map[node.JID]*signal.Session
 	groups   map[[2]node.JID]*signal.SenderKeys
@@ -34,18 +35,35 @@ func New(random io.Reader, jid node.JID) (*Device, error) {
 	if err != nil {
 		return nil, err
 	}
-	return &Device{JID: jid, Identity: identity, random: random, oneTime: map[uint32]curve.KeyPair{}, sessions: map[node.JID]*signal.Session{}, groups: map[[2]node.JID]*signal.SenderKeys{}}, nil
+	return &Device{JID: jid, Identity: identity, random: random, next: 1, oneTime: map[uint32]curve.KeyPair{}, sessions: map[node.JID]*signal.Session{}, groups: map[[2]node.JID]*signal.SenderKeys{}}, nil
 }
 
 func (d *Device) Upload(keys *fakekeys.Server, count int) error {
-	generated, _, err := prekeys.Generate(d.random, 1, count)
+	generated, next, err := prekeys.Generate(d.random, d.next, count)
 	if err != nil {
 		return err
 	}
+	d.next = next
 	for _, k := range generated {
 		d.oneTime[k.ID] = k.Key
 	}
 	return prekeys.Result(keys.Handle(d.JID, prekeys.Upload(d.Identity.Registration(device.Props()), generated)))
+}
+
+func (d *Device) AskAgain(stanza node.Node, count int) (node.Node, error) {
+	in, err := message.ParseIncoming(d.mine, stanza)
+	if err != nil {
+		return node.Node{}, err
+	}
+	fresh, next, err := prekeys.Generate(d.random, d.next, 1)
+	if err != nil {
+		return node.Node{}, err
+	}
+	d.next = next
+	d.oneTime[fresh[0].ID] = fresh[0].Key
+	return message.RetryReceipt(d.mine, in, message.Retry{
+		Count: count, Registration: d.Identity.Registration(device.Props()), PreKey: fresh[0], DeviceIdentity: []byte("simulated device identity"),
+	})
 }
 
 func (d *Device) PreKey(id uint32) (curve.KeyPair, bool) {
@@ -227,11 +245,19 @@ func (d *Device) EncryptFor(keys *fakekeys.Server, target node.JID, m *wire.Mess
 }
 
 func (d *Device) SendPeer(keys *fakekeys.Server, target node.JID, m *wire.Message) (node.Node, error) {
-	if err := d.startSessions(keys, []node.JID{target}); err != nil {
-		return node.Node{}, err
-	}
 	padded, err := message.Encode(d.random, m)
 	if err != nil {
+		return node.Node{}, err
+	}
+	return d.sendPadded(keys, target, m, padded)
+}
+
+func (d *Device) SendUnreadable(keys *fakekeys.Server, target node.JID) (node.Node, error) {
+	return d.sendPadded(keys, target, &wire.Message{Conversation: new("")}, []byte{0x0a, 0xff, 0x01, 0x01})
+}
+
+func (d *Device) sendPadded(keys *fakekeys.Server, target node.JID, m *wire.Message, padded []byte) (node.Node, error) {
+	if err := d.startSessions(keys, []node.JID{target}); err != nil {
 		return node.Node{}, err
 	}
 	ciphertext, err := d.sessions[target].Encrypt(padded)
