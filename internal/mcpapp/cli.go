@@ -165,8 +165,6 @@ func linking(state string) bool {
 	return state == "waiting_for_scan" || state == "waiting_for_code" || state == "starting"
 }
 
-const riskNote = "Chatwire is unofficial: WhatsApp's terms do not allow unofficial apps, so there is a small risk to your account. Your messages stay only on this computer."
-
 type linkReport struct {
 	mcptools.Report
 	Say string `json:"say,omitempty"`
@@ -175,9 +173,9 @@ type linkReport struct {
 func say(r mcptools.Report) string {
 	switch {
 	case r.Code != "":
-		return fmt.Sprintf("Your linking code: %s\n\nOn your phone, open WhatsApp, then Linked devices, then Link a device, then \"Link with phone number instead\", and type this code.\n\n%s", r.Code, riskNote)
+		return fmt.Sprintf("Your linking code: %s\n\nOn your phone, open WhatsApp, then Linked devices, then Link a device, then \"Link with phone number instead\", and type this code.\n\n%s", r.Code, mcptools.RiskNote)
 	case r.Page != "":
-		return "Scan the QR code on this page to link your WhatsApp: " + r.Page + " (it may already be open in your browser).\n\nOn your phone, open WhatsApp, then Linked devices, then Link a device, and point it at the code.\n\n" + riskNote
+		return "Scan the QR code on this page to link your WhatsApp: " + r.Page + " (it may already be open in your browser).\n\nOn your phone, open WhatsApp, then Linked devices, then Link a device, and point it at the code.\n\n" + mcptools.RiskNote
 	}
 	return ""
 }
