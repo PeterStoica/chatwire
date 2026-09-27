@@ -342,6 +342,7 @@ func TestClassifyingHowWhatsAppEndsASession(t *testing.T) {
 	}{
 		{name: "device removed", n: node.Node{Tag: "stream:error", Attrs: attr("code", "401"), Children: conflict("device_removed")}, want: linkflow.ErrLoggedOut},
 		{name: "401 alone", n: node.Node{Tag: "stream:error", Attrs: attr("code", "401")}, want: linkflow.ErrLoggedOut},
+		{name: "forced logout", n: node.Node{Tag: "stream:error", Attrs: attr("code", "516")}, want: linkflow.ErrLoggedOut},
 		{name: "replaced", n: node.Node{Tag: "stream:error", Children: conflict("replaced")}, want: linkflow.ErrReplaced},
 		{name: "restart", n: node.Node{Tag: "stream:error", Attrs: attr("code", "515")}, want: other},
 		{name: "unavailable", n: node.Node{Tag: "stream:error", Attrs: attr("code", "503")}, want: other},

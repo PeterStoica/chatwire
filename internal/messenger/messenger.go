@@ -44,6 +44,7 @@ const (
 	restrictedFor = 24 * time.Hour
 	groupsFresh   = 5 * time.Minute
 	olderWait     = 15 * time.Second
+	reconnectWait = 30 * time.Second
 	olderCount    = 50
 )
 

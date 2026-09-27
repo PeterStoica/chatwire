@@ -160,6 +160,8 @@ func deliver(ctx context.Context, s Sender, to string, timeout time.Duration, no
 func stopped(err error) (state, detail string, ok bool) {
 	var rejected client.Rejection
 	switch {
+	case errors.Is(err, client.ErrUnconfirmed):
+		return "unconfirmed", "WhatsApp did not confirm this message before the connection dropped, and sending it again after reconnecting did not work. It may still have arrived: ask the user to check on the phone before sending it again.", true
 	case errors.Is(err, messenger.ErrTooFast):
 		return "slow_down", fmt.Sprintf("Nothing was sent: at most %d messages go out a minute, so WhatsApp does not take the account for a spammer. Wait a minute, then send the rest.", messenger.MaxPerMinute), true
 	case errors.Is(err, messenger.ErrNewChats):

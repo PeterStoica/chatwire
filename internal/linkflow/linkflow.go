@@ -412,7 +412,7 @@ func Classify(n node.Node, otherwise error) error {
 	case failure && reason == "409":
 		return ErrClient
 	case failure && (reason == "401" || reason == "403" || reason == "406" || reason == "411"),
-		n.Tag == tagStreamError && (code == "401" || kind == "device_removed"):
+		n.Tag == tagStreamError && (code == "401" || code == "516" || kind == "device_removed"):
 		return loggedOut(n)
 	case n.Tag == tagStreamError && kind == "replaced":
 		return ErrReplaced

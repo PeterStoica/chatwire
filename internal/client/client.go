@@ -53,9 +53,10 @@ const (
 )
 
 var (
-	ErrClosed   = errors.New("client: connection closed")
-	ErrRejected = errors.New("client: WhatsApp refused the message")
-	ErrNoTarget = errors.New("client: the recipient has no devices")
+	ErrClosed      = errors.New("client: connection closed")
+	ErrUnconfirmed = errors.New("client: WhatsApp did not confirm the message")
+	ErrRejected    = errors.New("client: WhatsApp refused the message")
+	ErrNoTarget    = errors.New("client: the recipient has no devices")
 )
 
 const (
@@ -620,6 +621,10 @@ func (c *Client) retry(in message.Incoming, enc message.Enc) (node.Node, bool) {
 }
 
 func (c *Client) Send(ctx context.Context, to node.JID, m *wire.Message) (string, error) {
+	return c.SendWithID(ctx, to, "", m)
+}
+
+func (c *Client) SendWithID(ctx context.Context, to node.JID, id string, m *wire.Message) (string, error) {
 	self, toSelf := c.Self().WithoutDevice(), c.mine(to)
 	theirs := func(d node.JID) bool { return !c.mine(d) }
 	users := []node.JID{to}
@@ -643,7 +648,7 @@ func (c *Client) Send(ctx context.Context, to node.JID, m *wire.Message) (string
 	if !toSelf && !slices.ContainsFunc(parts, func(p message.Part) bool { return theirs(p.Device) }) {
 		return "", fmt.Errorf("%w: no session could be started with any device of %s", ErrNoTarget, to)
 	}
-	id, err := message.NewID(c.cfg.Link.Now(), self, c.cfg.Link.Random)
+	id, err = c.idFor(id)
 	if err != nil {
 		return "", err
 	}
@@ -835,6 +840,7 @@ func (c *Client) deliverAck(ctx context.Context, stanza node.Node) (node.Node, e
 	if err := c.online.Session.Send(ctx, stanza); err != nil {
 		if ctx.Err() == nil {
 			c.broken(fmt.Errorf("%w: writing %s failed: %w", ErrClosed, id, err))
+			return node.Node{}, fmt.Errorf("%w: %w: %w", ErrUnconfirmed, ErrClosed, err)
 		}
 		return node.Node{}, err
 	}
@@ -843,7 +849,7 @@ func (c *Client) deliverAck(ctx context.Context, stanza node.Node) (node.Node, e
 	select {
 	case ack, open := <-waiter:
 		if !open {
-			return node.Node{}, ErrClosed
+			return node.Node{}, fmt.Errorf("%w: %w", ErrUnconfirmed, ErrClosed)
 		}
 		c.mu.Lock()
 		c.unacked = 0
@@ -864,9 +870,10 @@ func (c *Client) deliverAck(ctx context.Context, stanza node.Node) (node.Node, e
 			c.mu.Unlock()
 			if stuck {
 				c.broken(fmt.Errorf("%w: WhatsApp acknowledged none of the last %d messages", ErrClosed, maxUnacked))
+				return node.Node{}, fmt.Errorf("%w: %w: no acknowledgement for %s", ErrUnconfirmed, ErrClosed, id)
 			}
 		}
-		return node.Node{}, fmt.Errorf("client: no acknowledgement for %s: %w", id, timeout.Err())
+		return node.Node{}, fmt.Errorf("%w: no acknowledgement for %s: %w", ErrUnconfirmed, id, timeout.Err())
 	}
 }
 
@@ -924,6 +931,17 @@ func (c *Client) Group(ctx context.Context, jid node.JID) (groups.Group, bool, e
 }
 
 func (c *Client) SendGroup(ctx context.Context, g groups.Group, m *wire.Message) (string, error) {
+	return c.SendGroupWithID(ctx, g, "", m)
+}
+
+func (c *Client) idFor(id string) (string, error) {
+	if id != "" {
+		return id, nil
+	}
+	return message.NewID(c.cfg.Link.Now(), c.Self().WithoutDevice(), c.cfg.Link.Random)
+}
+
+func (c *Client) SendGroupWithID(ctx context.Context, g groups.Group, id string, m *wire.Message) (string, error) {
 	users := make([]node.JID, 0, len(g.Participants))
 	for _, p := range g.Participants {
 		users = append(users, p.JID.WithoutDevice())
@@ -940,7 +958,7 @@ func (c *Client) SendGroup(ctx context.Context, g groups.Group, m *wire.Message)
 	if err != nil {
 		return "", err
 	}
-	id, err := message.NewID(c.cfg.Link.Now(), c.Self().WithoutDevice(), c.cfg.Link.Random)
+	id, err = c.idFor(id)
 	if err != nil {
 		return "", err
 	}
@@ -957,7 +975,7 @@ func (c *Client) SendGroup(ctx context.Context, g groups.Group, m *wire.Message)
 		c.mu.Unlock()
 	}
 	if err != nil {
-		return "", err
+		return id, err
 	}
 	c.mu.Lock()
 	defer c.mu.Unlock()

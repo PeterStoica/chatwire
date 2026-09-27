@@ -26,6 +26,7 @@ func TestWhatsAppRefusalsBecomeNextSteps(t *testing.T) {
 		{err: client.Rejection{Code: 599}, wantState: "rejected", wantText: "error 599"},
 		{err: fmt.Errorf("%w until tomorrow", messenger.ErrRestricted), wantState: "restricted", wantText: "held for 24 hours"},
 		{err: messenger.ErrTooFast, wantState: "slow_down", wantText: "a minute"},
+		{err: fmt.Errorf("%w; sending it again after reconnecting: %w", client.ErrUnconfirmed, client.Rejection{Code: 463}), wantState: "unconfirmed", wantText: "check on the phone"},
 	} {
 		state, detail, ok := stopped(tt.err)
 		if !ok || state != tt.wantState || !strings.Contains(detail, tt.wantText) {

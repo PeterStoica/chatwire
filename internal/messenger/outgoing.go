@@ -102,11 +102,21 @@ func (m *Messenger) send(ctx context.Context, to node.JID, build func(*client.Cl
 		}
 		msg = message.WithSecret(msg, secret)
 	}
-	var id string
-	if group != nil {
-		id, err = c.SendGroup(ctx, *group, msg)
-	} else {
-		id, err = c.Send(ctx, to, msg)
+	deliver := func(c *client.Client, id string) (string, error) {
+		if group != nil {
+			return c.SendGroupWithID(ctx, *group, id, msg)
+		}
+		return c.SendWithID(ctx, to, id, msg)
+	}
+	id, err := deliver(c, "")
+	if id != "" && errors.Is(err, client.ErrClosed) {
+		if next, ok := m.replacement(ctx, c); ok {
+			if _, again := deliver(next, id); again != nil {
+				err = fmt.Errorf("%w; sending it again after reconnecting: %w", err, again)
+			} else {
+				err = nil
+			}
+		}
 	}
 	if err == nil {
 		m.sent(ctx, to, id, msg)
@@ -117,6 +127,18 @@ func (m *Messenger) send(ctx context.Context, to node.JID, build func(*client.Cl
 		m.mu.Unlock()
 	}
 	return id, err
+}
+
+func (m *Messenger) replacement(ctx context.Context, old *client.Client) (*client.Client, bool) {
+	ctx, cancel := context.WithTimeout(ctx, reconnectWait)
+	defer cancel()
+	select {
+	case <-old.Done():
+	case <-ctx.Done():
+		return nil, false
+	}
+	next, err := m.connected(ctx)
+	return next, err == nil && next != old
 }
 
 func (m *Messenger) group(ctx context.Context, c *client.Client, jid node.JID) (groups.Group, error) {
