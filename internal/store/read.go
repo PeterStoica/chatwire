@@ -181,11 +181,12 @@ func (s *Store) messages(ctx context.Context, query string, args ...any) ([]Mess
 func (s *Store) addOns(ctx context.Context, messages []Message) error {
 	at := make(map[[2]string]int, len(messages))
 	placeholders := make([]string, 0, len(messages))
-	args := make([]any, 0, len(messages))
+	args := make([]any, 0, 2*len(messages))
 	for i, m := range messages {
-		at[[2]string{m.Chat.String(), m.ID}] = i
+		chat := m.Chat.String()
+		at[[2]string{chat, m.ID}] = i
 		placeholders = append(placeholders, "(?, ?)")
-		args = append(args, m.Chat.String(), m.ID)
+		args = append(args, chat, m.ID)
 	}
 	keys := `(chat, message_id) IN (VALUES ` + strings.Join(placeholders, ", ") + `)`
 	err := s.each(ctx, "reactions", `SELECT chat, message_id, reactor, emoji, t FROM reactions WHERE `+keys+` ORDER BY t, reactor`, args, func(rows *sql.Rows) error {

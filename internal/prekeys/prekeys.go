@@ -108,3 +108,14 @@ func Result(reply node.Node) error {
 		return fmt.Errorf("%w: error %d %s", ErrReply, code, text)
 	}
 }
+
+func fieldBytes(n node.Node, path ...string) []byte {
+	for _, tag := range path {
+		child, ok := n.Child(tag)
+		if !ok {
+			return nil
+		}
+		n = child
+	}
+	return n.Bytes
+}

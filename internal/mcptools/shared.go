@@ -39,8 +39,9 @@ func sharedContent(dir directory, stored store.Message, m *wire.Message) (kind, 
 func tally(dir directory, poll *wire.Message_PollCreationMessage, votes []store.Vote) string {
 	voters := make(map[string][]string, len(poll.GetOptions()))
 	for _, v := range votes {
+		who := dir.who(v.By)
 		for _, option := range v.Options {
-			voters[option] = append(voters[option], dir.who(v.By))
+			voters[option] = append(voters[option], who)
 		}
 	}
 	options := make([]string, 0, len(poll.GetOptions()))

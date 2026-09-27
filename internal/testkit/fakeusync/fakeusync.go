@@ -45,11 +45,11 @@ func (s *Server) Handle(request node.Node) node.Node {
 	defer s.mu.Unlock()
 	query, _ := request.Child("usync")
 	requested, _ := query.Child("list")
-	users := make([]node.Node, 0, len(requested.Children))
 	s.queries++
 	if protocols, _ := query.Child("query"); len(protocols.Children) > 0 && protocols.Children[0].Tag == "contact" {
 		return s.contacts(request, query, requested)
 	}
+	users := make([]node.Node, 0, len(requested.Children))
 	for _, entry := range requested.Children {
 		jid, _ := entry.Attr("jid").JID()
 		users = append(users, node.Node{Tag: "user", Attrs: []node.Attr{{Key: "jid", Value: node.Address(jid)}}, Children: []node.Node{s.devices(jid)}})

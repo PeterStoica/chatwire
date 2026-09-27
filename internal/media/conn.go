@@ -107,7 +107,7 @@ func DownloadURL(hostname, directPath string, fileEncSHA256 []byte, t Type) (str
 }
 
 func UploadURL(hostname string, t Type, fileEncSHA256 []byte, auth string, mediaID uint64) string {
-	hash := strings.NewReplacer("+", "-", "/", "_").Replace(base64.StdEncoding.EncodeToString(fileEncSHA256))
+	hash := base64.URLEncoding.EncodeToString(fileEncSHA256)
 	query := "auth=" + formEncode(auth) + "&token=" + formEncode(hash) + "&media_id=" + strconv.FormatUint(mediaID, 10)
 	return "https://" + hostname + "/mms/" + string(t) + "/" + hash + "?" + query
 }

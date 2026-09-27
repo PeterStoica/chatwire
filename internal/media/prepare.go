@@ -35,9 +35,9 @@ var (
 func Prepare(mimetype string, data []byte) (string, []byte, Type) {
 	switch Essence(mimetype) {
 	case "image/jpeg":
-		if orientation(data) != uprightRotation {
+		if rotation := orientation(data); rotation != uprightRotation {
 			if picture, err := jpeg.Decode(bytes.NewReader(data)); err == nil {
-				if out, ok := encodeJPEG(oriented(picture, orientation(data))); ok {
+				if out, ok := encodeJPEG(oriented(picture, rotation)); ok {
 					return "image/jpeg", out, Image
 				}
 			}

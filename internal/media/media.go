@@ -101,7 +101,11 @@ func Encrypt(mediaKey []byte, t Type, plaintext []byte) (Encrypted, error) {
 		return Encrypted{}, fmt.Errorf("media: cipher: %w", err)
 	}
 	pad := aes.BlockSize - len(plaintext)%aes.BlockSize
-	file := append(bytes.Clone(plaintext), bytes.Repeat([]byte{byte(pad)}, pad)...)
+	file := make([]byte, len(plaintext)+pad, len(plaintext)+pad+macSize)
+	copy(file, plaintext)
+	for i := len(plaintext); i < len(file); i++ {
+		file[i] = byte(pad)
+	}
 	cipher.NewCBCEncrypter(block, keys.IV[:]).CryptBlocks(file, file)
 	file = append(file, sign(keys, file)...)
 	return Encrypted{File: file, FileSHA256: sha256.Sum256(plaintext), FileEncSHA256: sha256.Sum256(file), FileLength: len(plaintext)}, nil

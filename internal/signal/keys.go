@@ -1,7 +1,6 @@
 package signal
 
 import (
-	"bytes"
 	"crypto/aes"
 	"crypto/cipher"
 	"crypto/hkdf"
@@ -141,7 +140,11 @@ func encryptCBC(keys messageKeys, plaintext []byte) ([]byte, error) {
 		return nil, err
 	}
 	padding := aes.BlockSize - len(plaintext)%aes.BlockSize
-	padded := append(bytes.Clone(plaintext), bytes.Repeat([]byte{byte(padding)}, padding)...)
+	padded := make([]byte, len(plaintext)+padding)
+	copy(padded, plaintext)
+	for i := len(plaintext); i < len(padded); i++ {
+		padded[i] = byte(padding)
+	}
 	cipher.NewCBCEncrypter(block, keys.iv[:]).CryptBlocks(padded, padded)
 	return padded, nil
 }

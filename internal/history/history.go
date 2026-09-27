@@ -222,7 +222,11 @@ func chatOf(jid node.JID, c *wire.Conversation) Chat {
 
 func messageOf(chat, self node.JID, info *wire.MessageInfo) (Message, bool) {
 	key := info.GetKey()
-	if key.GetId() == "" || !hasContent(info.GetMessage()) || media.Unwrap(info.GetMessage()).GetPollUpdateMessage() != nil {
+	if key.GetId() == "" || !hasContent(info.GetMessage()) {
+		return Message{}, false
+	}
+	content := media.Unwrap(info.GetMessage())
+	if content.GetPollUpdateMessage() != nil {
 		return Message{}, false
 	}
 	m := Message{
@@ -254,7 +258,7 @@ func messageOf(chat, self node.JID, info *wire.MessageInfo) (Message, bool) {
 			m.Reactions = append(m.Reactions, Reaction{By: by, Emoji: r.GetText(), Time: time.UnixMilli(max(r.GetSenderTimestampMs(), 0))})
 		}
 	}
-	if poll := message.PollOf(media.Unwrap(m.Message)); poll != nil {
+	if poll := message.PollOf(content); poll != nil {
 		m.Votes = votes(chat, self, info, poll)
 	}
 	if secret := info.GetMessageSecret(); len(secret) > 0 && len(m.Message.GetMessageContextInfo().GetMessageSecret()) == 0 {

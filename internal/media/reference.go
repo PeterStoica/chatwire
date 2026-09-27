@@ -90,8 +90,12 @@ func ReferenceOf(m *wire.Message) (Reference, bool) {
 	if len(src.GetMediaKey()) != KeySize {
 		return Reference{}, false
 	}
+	path := src.GetDirectPath()
+	if path == "" {
+		path = pathOf(src.GetUrl())
+	}
 	return Reference{
-		Type: kind, DirectPath: cmp.Or(src.GetDirectPath(), pathOf(src.GetUrl())), MediaKey: src.GetMediaKey(),
+		Type: kind, DirectPath: path, MediaKey: src.GetMediaKey(),
 		FileSHA256: src.GetFileSha256(), FileEncSHA256: src.GetFileEncSha256(),
 		Mimetype: src.GetMimetype(), Caption: caption, FileName: name, Length: src.GetFileLength(),
 	}, true

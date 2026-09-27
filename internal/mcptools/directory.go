@@ -37,17 +37,15 @@ func loadDirectory(ctx context.Context, s Sender) (directory, error) {
 	if err != nil {
 		return directory{}, err
 	}
+	d := directory{self: self, chats: chats, named: make(map[node.JID]string, len(chats)), names: names, lids: lids}
 	for i := range chats {
 		chats[i].Name = clean(chats[i].Name)
+		if c := chats[i]; c.Name != "" {
+			d.named[c.JID] = c.Name
+		}
 	}
 	for j, n := range names {
 		names[j] = store.Name{Contact: clean(n.Contact), First: clean(n.First), Push: clean(n.Push)}
-	}
-	d := directory{self: self, chats: chats, named: make(map[node.JID]string, len(chats)), names: names, lids: lids}
-	for _, c := range chats {
-		if c.Name != "" {
-			d.named[c.JID] = c.Name
-		}
 	}
 	return d, nil
 }
@@ -172,7 +170,7 @@ func (d directory) find(query string) []node.JID {
 	case len(exact) > 0:
 		return exact
 	case len(undecorated) > 0:
-		return slices.DeleteFunc(undecorated, func(j node.JID) bool { return seen[j] == inExact })
+		return undecorated
 	}
 	return slices.DeleteFunc(partial, func(j node.JID) bool { return seen[j] != inPartial })
 }

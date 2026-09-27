@@ -83,12 +83,14 @@ func timerOf(r client.Received, inner *wire.Message) (store.Timer, bool) {
 func (m *Messenger) history(chunk history.Chunk) {
 	m.progress(chunk.Type, chunk.Progress)
 	chats := make([]store.Chat, 0, len(chunk.Chats))
+	unread := make(map[node.JID]int, len(chunk.Chats))
 	var (
 		tokens []privacy.Token
 		timers []store.Timer
 	)
 	for _, c := range chunk.Chats {
 		chats = append(chats, store.Chat{JID: c.JID, Name: c.Name, LastMessage: c.LastMessage})
+		unread[c.JID] = int(c.Unread)
 		if !c.Token.Given.IsZero() || !c.Token.Ours.IsZero() {
 			tokens = append(tokens, c.Token)
 		}
@@ -122,10 +124,6 @@ func (m *Messenger) history(chunk history.Chunk) {
 				names[jid] = n
 			}
 		}
-	}
-	unread := make(map[node.JID]int, len(chunk.Chats))
-	for _, c := range chunk.Chats {
-		unread[c.JID] = int(c.Unread)
 	}
 	changes := store.Changes{Chats: chats, Messages: messages, Names: names, LIDs: chunk.LIDs, Reactions: reactions, Votes: votes, Unread: unread, Tokens: tokens, Timers: timers}
 	m.keep(context.Background(), func(ctx context.Context) error { return m.store.Apply(ctx, changes) })

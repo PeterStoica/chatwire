@@ -21,10 +21,8 @@ type Server struct {
 func (s *Server) Group(jid node.JID) (groups.Group, bool) {
 	s.mu.Lock()
 	defer s.mu.Unlock()
-	for _, g := range s.groups {
-		if g.JID == jid {
-			return g, true
-		}
+	if i := s.index(jid); i >= 0 {
+		return s.groups[i], true
 	}
 	return groups.Group{}, false
 }

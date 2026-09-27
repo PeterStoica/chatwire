@@ -118,14 +118,19 @@ func mention(people []mentionable, after []rune) (node.JID, int) {
 	words := wordsAt(after)
 	for k := min(len(words), maxMentionWords); k > 0; k-- {
 		want := fold(string(after[:words[k-1]]))
-		var found []mentionable
+		var found node.JID
+		matches := 0
 		for _, p := range people {
 			if slices.Contains(p.names, want) {
-				found = append(found, p)
+				found = p.address
+				matches++
+				if matches > 1 {
+					break
+				}
 			}
 		}
-		if len(found) == 1 {
-			return found[0].address, words[k-1]
+		if matches == 1 {
+			return found, words[k-1]
 		}
 	}
 	return node.JID{}, 0

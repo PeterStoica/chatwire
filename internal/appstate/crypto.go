@@ -1,7 +1,6 @@
 package appstate
 
 import (
-	"bytes"
 	"crypto/aes"
 	"crypto/cipher"
 	"crypto/hkdf"
@@ -216,15 +215,19 @@ func Encrypt(random io.Reader, op wire.SyncdMutation_SyncdOperation, index []str
 		return nil, err
 	}
 	pad := aes.BlockSize - len(plain)%aes.BlockSize
-	padded := slices.Concat(plain, bytes.Repeat([]byte{byte(pad)}, pad))
-	ciphertext := make([]byte, len(padded))
-	cipher.NewCBCEncrypter(block, iv).CryptBlocks(ciphertext, padded)
-	body := slices.Concat(iv, ciphertext)
+	body := make([]byte, ivSize+len(plain)+pad, ivSize+len(plain)+pad+macSize)
+	copy(body, iv)
+	ciphertext := body[ivSize:]
+	copy(ciphertext, plain)
+	for i := len(plain); i < len(ciphertext); i++ {
+		ciphertext[i] = byte(pad)
+	}
+	cipher.NewCBCEncrypter(block, iv).CryptBlocks(ciphertext, ciphertext)
 	indexMAC := hmac.New(sha256.New, keys.Index[:])
 	indexMAC.Write(rawIndex)
 	return &wire.SyncdRecord{
 		Index: &wire.SyncdIndex{Blob: indexMAC.Sum(nil)},
-		Value: &wire.SyncdValue{Blob: slices.Concat(body, valueMAC(keys.ValueMAC[:], opByte, keyID, body))},
+		Value: &wire.SyncdValue{Blob: append(body, valueMAC(keys.ValueMAC[:], opByte, keyID, body)...)},
 		KeyId: &wire.KeyId{Id: keyID},
 	}, nil
 }

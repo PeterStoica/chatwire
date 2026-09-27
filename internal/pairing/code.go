@@ -34,6 +34,8 @@ const (
 var (
 	ErrPhone        = errors.New("pairing: phone number must be international, digits only after the +")
 	ErrNotification = errors.New("pairing: malformed code pairing notification")
+	codeEncoding    = base32.NewEncoding(codeAlphabet).WithPadding(base32.NoPadding)
+	phoneFormatting = strings.NewReplacer(" ", "", "-", "", "(", "", ")", "")
 )
 
 type CodeRequest struct {
@@ -44,7 +46,7 @@ type CodeRequest struct {
 }
 
 func EncodeLinkingCode(raw []byte) string {
-	return base32.NewEncoding(codeAlphabet).WithPadding(base32.NoPadding).EncodeToString(raw)
+	return codeEncoding.EncodeToString(raw)
 }
 
 func LinkingKey(code string, salt []byte) ([]byte, error) {
@@ -105,7 +107,7 @@ func BundleKey(ephemeralShared, salt []byte) ([]byte, error) {
 type Phone string
 
 func ParsePhone(s string) (Phone, error) {
-	digits := strings.TrimPrefix(strings.NewReplacer(" ", "", "-", "", "(", "", ")", "").Replace(s), "+")
+	digits := strings.TrimPrefix(phoneFormatting.Replace(s), "+")
 	if len(digits) < minPhoneDigits || strings.HasPrefix(digits, "0") || strings.Trim(digits, "0123456789") != "" {
 		return "", fmt.Errorf("%w: %q", ErrPhone, s)
 	}

@@ -22,3 +22,20 @@ func TestAVoteThatIsNotAVoteIsRefused(t *testing.T) {
 		t.Fatalf("OpenVote() error = %v, want ErrVote", err)
 	}
 }
+
+func TestPollLengthCountsUTF16Words(t *testing.T) {
+	for _, tt := range []struct {
+		text string
+		want int
+	}{
+		{"", 0},
+		{"Lunch?", 6},
+		{"Mâncare", 7},
+		{"🍕 or 🍣", 8},
+		{"\xff\xed\xa0\x80", 4},
+	} {
+		if got := jsLength(tt.text); got != tt.want {
+			t.Errorf("jsLength(%q) = %d, want %d", tt.text, got, tt.want)
+		}
+	}
+}

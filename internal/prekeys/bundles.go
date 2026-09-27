@@ -64,19 +64,8 @@ func ParseBundles(reply node.Node) ([]Bundle, map[node.JID]error, error) {
 }
 
 func parseBundle(device node.JID, user node.Node) (Bundle, error) {
-	field := func(path ...string) []byte {
-		n := user
-		for _, tag := range path {
-			child, ok := n.Child(tag)
-			if !ok {
-				return nil
-			}
-			n = child
-		}
-		return n.Bytes
-	}
-	registration, identity := field("registration"), field("identity")
-	skeyID, skey, signature := field("skey", "id"), field("skey", "value"), field("skey", "signature")
+	registration, identity := fieldBytes(user, "registration"), fieldBytes(user, "identity")
+	skeyID, skey, signature := fieldBytes(user, "skey", "id"), fieldBytes(user, "skey", "value"), fieldBytes(user, "skey", "signature")
 	if keyType, ok := user.Child(attrType); ok && (len(keyType.Bytes) != 1 || keyType.Bytes[0] != curve.KeyType) {
 		return Bundle{}, fmt.Errorf("%w: %s key type %x", ErrBundle, device, keyType.Bytes)
 	}
@@ -88,7 +77,7 @@ func parseBundle(device node.JID, user node.Node) (Bundle, error) {
 		SignedPreKeyID: bigEndian(skeyID), SignedPreKey: curve.PublicKey(skey), SignedPreKeySignature: curve.Signature(signature),
 	}}
 	if _, ok := user.Child("key"); ok {
-		id, value := field("key", "id"), field("key", "value")
+		id, value := fieldBytes(user, "key", "id"), fieldBytes(user, "key", "value")
 		if len(id) != 3 || len(value) != curve.KeySize {
 			return Bundle{}, fmt.Errorf("%w: %s one-time prekey sizes", ErrBundle, device)
 		}

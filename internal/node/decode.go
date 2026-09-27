@@ -145,6 +145,9 @@ func (d *decoder) content(out *Node) error {
 		if err != nil {
 			return err
 		}
+		if size > 0 {
+			out.Children = make([]Node, 0, min(size, sizeHint))
+		}
 		for range size {
 			child, err := d.node()
 			if err != nil {

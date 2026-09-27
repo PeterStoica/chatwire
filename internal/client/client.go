@@ -164,7 +164,7 @@ type Client struct {
 	sessions map[address]*signal.Session
 	lids     map[string]string
 
-	recent       map[string]sentMessage
+	recent       map[string]*wire.Message
 	recentOrder  []string
 	resends      map[string]int
 	recreated    map[address]time.Time
@@ -201,7 +201,7 @@ func Connect(ctx context.Context, cfg Config, state State) (*Client, error) {
 		cfg: cfg, identity: identity, done: make(chan struct{}), state: state,
 		sessions: map[address]*signal.Session{}, lids: map[string]string{}, groups: map[senderName]*signal.SenderKeys{}, acks: map[string]chan node.Node{}, retries: map[string]chan mediaretry.Notification{},
 		ownKeys: map[node.JID]*signal.SenderKey{}, holders: map[node.JID]map[address]bool{},
-		recent: map[string]sentMessage{}, resends: map[string]int{}, recreated: map[address]time.Time{}, given: map[node.JID]time.Time{}, askedKeys: map[string]time.Time{}, knownDevices: map[node.JID]cachedDevices{}, awaiting: map[string]*wire.MessageKey{},
+		recent: map[string]*wire.Message{}, resends: map[string]int{}, recreated: map[address]time.Time{}, given: map[node.JID]time.Time{}, askedKeys: map[string]time.Time{}, knownDevices: map[node.JID]cachedDevices{}, awaiting: map[string]*wire.MessageKey{},
 	}
 	account := state.Linked.Account
 	pairs := map[node.JID]node.JID{account.LID.WithoutDevice(): account.JID.WithoutDevice()}
@@ -647,7 +647,7 @@ func (c *Client) SendWithID(ctx context.Context, to node.JID, id string, m *wire
 		return "", err
 	}
 	c.mu.Lock()
-	c.rememberLocked(id, to, m)
+	c.rememberLocked(id, m)
 	c.mu.Unlock()
 	c.keep()
 	token, personal := c.tokenFor(ctx, to)
@@ -980,7 +980,7 @@ func (c *Client) SendGroupWithID(ctx context.Context, g groups.Group, id string,
 	for _, part := range parts {
 		c.holders[g.JID][c.addressLocked(part.Device)] = true
 	}
-	c.rememberLocked(id, g.JID, m)
+	c.rememberLocked(id, m)
 	return id, c.keepLocked()
 }
 
@@ -1122,10 +1122,8 @@ func (c *Client) Download(ctx context.Context, ref media.Reference) ([]byte, err
 	if err != nil {
 		return nil, err
 	}
-	hosts := slices.Clone(conn.Hosts)
-	slices.SortStableFunc(hosts, func(a, b media.Host) int { return cmp.Compare(boolRank(a.Fallback), boolRank(b.Fallback)) })
-	failures := make([]error, 0, len(hosts))
-	for _, host := range hosts {
+	failures := make([]error, 0, len(conn.Hosts))
+	for _, host := range conn.Hosts {
 		address, err := media.DownloadURL(host.Hostname, ref.DirectPath, ref.FileEncSHA256, ref.Type)
 		if err != nil {
 			return nil, err
@@ -1164,6 +1162,7 @@ func (c *Client) mediaConn(ctx context.Context) (media.Conn, error) {
 	if err != nil {
 		return media.Conn{}, err
 	}
+	slices.SortStableFunc(conn.Hosts, func(a, b media.Host) int { return cmp.Compare(boolRank(a.Fallback), boolRank(b.Fallback)) })
 	c.mu.Lock()
 	c.media = conn
 	c.mu.Unlock()

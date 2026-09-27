@@ -182,7 +182,8 @@ func (p *Phone) ReceiveHello(hello node.Node) (node.Node, error) {
 }
 
 func (p *Phone) TypeCode(typed string) (node.Node, error) {
-	companionEphemeral, err := pairing.UnwrapWithCode(strings.ReplaceAll(typed, "-", ""), p.wrappedCompanion)
+	typed = strings.ReplaceAll(typed, "-", "")
+	companionEphemeral, err := pairing.UnwrapWithCode(typed, p.wrappedCompanion)
 	if err != nil {
 		return node.Node{}, err
 	}
@@ -194,7 +195,7 @@ func (p *Phone) TypeCode(typed string) (node.Node, error) {
 	if _, err := io.ReadFull(p.Random, material); err != nil {
 		return node.Node{}, err
 	}
-	primaryWrapped, err := pairing.WrapWithCode(strings.ReplaceAll(typed, "-", ""), p.ephemeral.Public(), material[:32], material[32:48])
+	primaryWrapped, err := pairing.WrapWithCode(typed, p.ephemeral.Public(), material[:32], material[32:48])
 	if err != nil {
 		return node.Node{}, err
 	}

@@ -137,12 +137,7 @@ func meta(m *wire.Message) []node.Node {
 
 func Outgoing(id string, to node.JID, m *wire.Message, parts []Part, deviceIdentity []byte) node.Node {
 	out := node.Node{Tag: tagMessage, Attrs: header(id, to, m)}
-	prekey := false
-	targets := make([]node.Node, len(parts))
-	for i, part := range parts {
-		prekey = prekey || part.Ciphertext.Type == signal.TypePreKeyMessage
-		targets[i] = node.Node{Tag: "to", Attrs: []node.Attr{{Key: "jid", Value: node.Device(part.Device)}}, Children: []node.Node{encNode(part.Ciphertext, m)}}
-	}
+	targets, prekey := encryptedTargets(parts, m)
 	if len(parts) == 1 && parts[0].Device.Device == 0 {
 		out.Children = targets[0].Children
 	} else {
@@ -153,6 +148,16 @@ func Outgoing(id string, to node.JID, m *wire.Message, parts []Part, deviceIdent
 	}
 	out.Children = append(out.Children, meta(m)...)
 	return out
+}
+
+func encryptedTargets(parts []Part, m *wire.Message) ([]node.Node, bool) {
+	prekey := false
+	targets := make([]node.Node, len(parts))
+	for i, part := range parts {
+		prekey = prekey || part.Ciphertext.Type == signal.TypePreKeyMessage
+		targets[i] = node.Node{Tag: "to", Attrs: []node.Attr{{Key: "jid", Value: node.Device(part.Device)}}, Children: []node.Node{encNode(part.Ciphertext, m)}}
+	}
+	return targets, prekey
 }
 
 func KnownAs(stanza node.Node, other node.JID) node.Node {
@@ -216,13 +221,8 @@ func OutgoingGroup(id string, group node.JID, m *wire.Message, addressingMode, p
 		attrs = append(attrs, node.Attr{Key: "addressing_mode", Value: node.Text(addressingMode)})
 	}
 	out := node.Node{Tag: tagMessage, Attrs: attrs}
-	prekey := false
+	targets, prekey := encryptedTargets(parts, m)
 	if len(parts) > 0 {
-		targets := make([]node.Node, len(parts))
-		for i, part := range parts {
-			prekey = prekey || part.Ciphertext.Type == signal.TypePreKeyMessage
-			targets[i] = node.Node{Tag: "to", Attrs: []node.Attr{{Key: "jid", Value: node.Device(part.Device)}}, Children: []node.Node{encNode(part.Ciphertext, m)}}
-		}
 		out.Children = append(out.Children, node.Node{Tag: "participants", Children: targets})
 	}
 	out.Children = append(out.Children, node.Node{Tag: "enc", Attrs: withMediaType([]node.Attr{{Key: "v", Value: node.Text(encVersion)}, {Key: attrType, Value: node.Text("skmsg")}}, m), Bytes: senderKeyMessage})

@@ -171,6 +171,7 @@ func TestMarshalErrors(t *testing.T) {
 		{name: "device on a group", node: iq(to(node.JID{User: user, Device: 1, Server: "g.us"})), want: node.ErrUnencodable},
 		{name: "second child unencodable", node: node.Node{Tag: "iq", Children: []node.Node{{Tag: "iq"}, iq(to(node.JID{User: user}))}}, want: node.ErrUnencodable},
 		{name: "attribute twice", node: iq([]node.Attr{{Key: "id", Value: node.Text("1")}, {Key: "id", Value: node.Text("2")}}), want: node.ErrUnencodable},
+		{name: "absent attribute still participates in duplicate detection", node: iq([]node.Attr{{Key: "id", Value: node.Value{}}, {Key: "id", Value: node.Text("2")}}), want: node.ErrUnencodable},
 	}
 	dict := dictionary(t)
 	for _, tt := range tests {

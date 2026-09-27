@@ -34,7 +34,7 @@ func (e *encoder) node(n Node) error {
 	if kinds > 1 {
 		return fmt.Errorf("%w: <%s>", ErrMixedContent, n.Tag)
 	}
-	attrs := make([]Attr, 0, len(n.Attrs))
+	attrs := 0
 	seen := make(map[string]struct{}, len(n.Attrs))
 	for _, a := range n.Attrs {
 		if _, duplicate := seen[a.Key]; duplicate {
@@ -42,16 +42,19 @@ func (e *encoder) node(n Node) error {
 		}
 		seen[a.Key] = struct{}{}
 		if !a.Value.IsZero() {
-			attrs = append(attrs, a)
+			attrs++
 		}
 	}
-	if err := e.listStart(1 + 2*len(attrs) + kinds); err != nil {
+	if err := e.listStart(1 + 2*attrs + kinds); err != nil {
 		return err
 	}
 	if err := e.text(n.Tag); err != nil {
 		return err
 	}
-	for _, a := range attrs {
+	for _, a := range n.Attrs {
+		if a.Value.IsZero() {
+			continue
+		}
 		if err := e.text(a.Key); err != nil {
 			return err
 		}
@@ -176,21 +179,18 @@ func (e *encoder) listStart(size int) error {
 }
 
 func (e *encoder) pack(s string, tag byte, alphabet string) {
-	e.out = append(e.out, tag, 0)
-	head := len(e.out) - 1
-	var pairs byte
+	pairs := byte((len(s) + 1) / 2)
+	if len(s)%2 == 1 {
+		pairs |= 0x80
+	}
+	e.out = append(e.out, tag, pairs)
 	for i := 0; i < len(s); i += 2 {
 		low := byte(paddingNibble)
 		if i+1 < len(s) {
 			low = byte(strings.IndexByte(alphabet, s[i+1]))
 		}
 		e.out = append(e.out, byte(strings.IndexByte(alphabet, s[i]))<<4|low)
-		pairs++
 	}
-	if len(s)%2 == 1 {
-		pairs |= 0x80
-	}
-	e.out[head] = pairs
 }
 
 func packable(s, alphabet string) bool {

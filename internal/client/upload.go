@@ -2,7 +2,6 @@ package client
 
 import (
 	"bytes"
-	"cmp"
 	"context"
 	"encoding/binary"
 	"encoding/json/v2"
@@ -10,7 +9,6 @@ import (
 	"fmt"
 	"io"
 	"net/http"
-	"slices"
 
 	"github.com/PeterStoica/chatwire/internal/dial"
 	"github.com/PeterStoica/chatwire/internal/media"
@@ -61,10 +59,8 @@ func (c *Client) Upload(ctx context.Context, t media.Type, data []byte) (Uploade
 		if err != nil {
 			return Uploaded{}, err
 		}
-		hosts := slices.Clone(conn.Hosts)
-		slices.SortStableFunc(hosts, func(a, b media.Host) int { return cmp.Compare(boolRank(a.Fallback), boolRank(b.Fallback)) })
 		refused := false
-		for _, host := range hosts {
+		for _, host := range conn.Hosts {
 			reply, err := c.post(ctx, media.UploadURL(host.Hostname, t, sealed.FileEncSHA256[:], conn.Auth, mediaID), sealed.File)
 			if err != nil {
 				failures = append(failures, err)

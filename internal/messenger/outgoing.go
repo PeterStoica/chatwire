@@ -235,7 +235,11 @@ type File struct {
 func fileMessage(ctx context.Context, c *client.Client, f File, now time.Time) (*wire.Message, error) {
 	mimetype, data, kind := media.Prepare(media.Sniff(f.Name, f.Data), f.Data)
 	f.Data = data
-	recording, opus := media.OggOpus(f.Data)
+	var recording media.Recording
+	var opus bool
+	if kind == media.Voice || kind == media.Audio {
+		recording, opus = media.OggOpus(f.Data)
+	}
 	if kind == media.Voice && !opus {
 		mimetype, kind = "audio/ogg", media.Audio
 	}
@@ -275,13 +279,12 @@ func fileMessage(ctx context.Context, c *client.Client, f File, now time.Time) (
 			Url: new(up.URL), DirectPath: new(up.DirectPath), MediaKey: up.MediaKey, Mimetype: new(mimetype),
 			FileEncSha256: up.FileEncSHA256, FileSha256: up.FileSHA256, FileLength: new(up.FileLength), MediaKeyTimestamp: new(stamp), Ptt: new(kind == media.Voice),
 		}
-		switch movie, isMP4 := media.MP4(f.Data); {
-		case opus:
+		if opus {
 			audio.Seconds = new(recording.Seconds)
 			if kind == media.Voice {
 				audio.Waveform = recording.Waveform
 			}
-		case isMP4:
+		} else if movie, ok := media.MP4(f.Data); ok {
 			audio.Seconds = new(movie.Seconds)
 		}
 		return &wire.Message{AudioMessage: audio}, nil

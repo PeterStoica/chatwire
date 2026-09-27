@@ -1,7 +1,6 @@
 package prekeys
 
 import (
-	"bytes"
 	"crypto/sha1"
 	"errors"
 	"fmt"
@@ -47,17 +46,8 @@ func ParseDigest(reply node.Node) (Digest, error) {
 	if !ok {
 		return Digest{}, fmt.Errorf("%w: no digest in %s", ErrDigest, reply)
 	}
-	field := func(path ...string) []byte {
-		n := digest
-		for _, tag := range path {
-			if n, ok = n.Child(tag); !ok {
-				return nil
-			}
-		}
-		return n.Bytes
-	}
-	registration, keyType, identity := field("registration"), field(attrType), field("identity")
-	skeyID, skey, signature, hash := field("skey", "id"), field("skey", "value"), field("skey", "signature"), field("hash")
+	registration, keyType, identity := fieldBytes(digest, "registration"), fieldBytes(digest, attrType), fieldBytes(digest, "identity")
+	skeyID, skey, signature, hash := fieldBytes(digest, "skey", "id"), fieldBytes(digest, "skey", "value"), fieldBytes(digest, "skey", "signature"), fieldBytes(digest, "hash")
 	if len(registration) != 4 || len(keyType) != 1 || len(identity) != curve.KeySize || len(skeyID) != 3 ||
 		len(skey) != curve.KeySize || len(signature) != curve.SignatureSize || len(hash) != sha1.Size {
 		return Digest{}, fmt.Errorf("%w: field sizes in %s", ErrDigest, reply)
@@ -91,15 +81,18 @@ func (d Digest) Verify(registration signon.Registration, lookup func(id uint32) 
 		return fmt.Errorf("%w: registration id %d, ours %d", ErrMismatch, d.RegistrationID, registration.RegistrationID)
 	}
 	identity, signed := registration.Identity, registration.SignedPreKey
-	material := bytes.Join([][]byte{identity[:], signed.Key[:], signed.Signature[:]}, nil)
+	hash := sha1.New()
+	hash.Write(identity[:])
+	hash.Write(signed.Key[:])
+	hash.Write(signed.Signature[:])
 	for _, id := range d.KeyIDs {
 		key, ok := lookup(id)
 		if !ok {
 			return fmt.Errorf("%w: WhatsApp lists prekey %d, which we do not hold", ErrMismatch, id)
 		}
-		material = append(material, key[:]...)
+		hash.Write(key[:])
 	}
-	if sha1.Sum(material) != d.Hash {
+	if [sha1.Size]byte(hash.Sum(nil)) != d.Hash {
 		return fmt.Errorf("%w: hash differs", ErrMismatch)
 	}
 	return nil

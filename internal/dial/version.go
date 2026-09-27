@@ -16,8 +16,9 @@ import (
 const (
 	fallbackRevision = 1047769893
 	maxPage          = 4 << 20
-	revisionPattern  = `"client_revision":(\d+),`
 )
+
+var revisionPattern = regexp.MustCompile(`"client_revision":(\d+),`)
 
 func LatestVersion(ctx context.Context, client *http.Client, page string) (signon.Version, string) {
 	revision, err := fetchRevision(ctx, client, page)
@@ -45,7 +46,7 @@ func fetchRevision(ctx context.Context, client *http.Client, page string) (uint3
 	if err != nil {
 		return 0, err
 	}
-	match := regexp.MustCompile(revisionPattern).FindSubmatch(body)
+	match := revisionPattern.FindSubmatch(body)
 	if match == nil {
 		return 0, fmt.Errorf("client_revision not in page, status %d", resp.StatusCode)
 	}

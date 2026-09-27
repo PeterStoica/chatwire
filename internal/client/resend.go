@@ -24,16 +24,11 @@ const (
 
 var ErrNotSentHere = errors.New("client: that message was not sent from here")
 
-type sentMessage struct {
-	chat    node.JID
-	message *wire.Message
-}
-
-func (c *Client) rememberLocked(id string, chat node.JID, m *wire.Message) {
+func (c *Client) rememberLocked(id string, m *wire.Message) {
 	if _, known := c.recent[id]; !known {
 		c.recentOrder = append(c.recentOrder, id)
 	}
-	c.recent[id] = sentMessage{chat: chat, message: m}
+	c.recent[id] = m
 	for len(c.recentOrder) > recentSends {
 		delete(c.recent, c.recentOrder[0])
 		c.recentOrder = c.recentOrder[1:]
@@ -55,7 +50,7 @@ func (c *Client) original(ctx context.Context, chat node.JID, id string) (*wire.
 	sent, ok := c.recent[id]
 	c.mu.Unlock()
 	if ok {
-		return sent.message, nil
+		return sent, nil
 	}
 	if c.cfg.Sent != nil {
 		if m, ok := c.cfg.Sent(ctx, chat, id); ok {

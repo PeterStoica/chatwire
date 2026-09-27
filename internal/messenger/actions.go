@@ -149,8 +149,9 @@ func choose(poll *wire.Message_PollCreationMessage, wanted []string) ([]string, 
 	var chosen []string
 	for _, w := range wanted {
 		found := ""
+		trimmed := strings.TrimSpace(w)
 		for _, o := range poll.GetOptions() {
-			if strings.EqualFold(strings.TrimSpace(w), strings.TrimSpace(o.GetOptionName())) {
+			if strings.EqualFold(trimmed, strings.TrimSpace(o.GetOptionName())) {
 				found = o.GetOptionName()
 				break
 			}

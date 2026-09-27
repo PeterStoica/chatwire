@@ -184,5 +184,9 @@ func CheckPoll(question string, options []string) (string, []string, error) {
 }
 
 func jsLength(s string) int {
-	return len(utf16.Encode([]rune(s)))
+	length := 0
+	for _, r := range s {
+		length += utf16.RuneLen(r)
+	}
+	return length
 }

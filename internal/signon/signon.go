@@ -240,19 +240,6 @@ func ParseCertificateDetails(raw []byte) (CertificateDetails, error) {
 }
 
 func EncodeRegistration(version Version, registration Registration) []byte {
-	osVersion := registration.Device.Version.String()
-	userAgent := appendVarint(nil, 1, platformWeb)
-	userAgent = appendBytes(userAgent, 2, encodeVersion(version))
-	userAgent = appendString(userAgent, 3, "000")
-	userAgent = appendString(userAgent, 4, "000")
-	userAgent = appendString(userAgent, 5, osVersion)
-	userAgent = appendString(userAgent, 6, "")
-	userAgent = appendString(userAgent, 7, "Desktop")
-	userAgent = appendString(userAgent, 8, osVersion)
-	userAgent = appendVarint(userAgent, 10, releaseChannelRelease)
-	userAgent = appendString(userAgent, 11, "en")
-	userAgent = appendString(userAgent, 12, "US")
-
 	buildHash := md5.Sum([]byte(version.String()))
 	preKey := registration.SignedPreKey
 	pairing := appendBytes(nil, 1, bigEndian(registration.RegistrationID, 4))
@@ -265,7 +252,7 @@ func EncodeRegistration(version Version, registration Registration) []byte {
 	pairing = appendBytes(pairing, 8, encodeDeviceProps(registration.Device))
 
 	payload := appendVarint(nil, 3, 0)
-	payload = appendBytes(payload, 5, userAgent)
+	payload = appendBytes(payload, 5, encodeUserAgent(version, registration.Device.Version))
 	payload = appendBytes(payload, 6, appendVarint(nil, 4, webSubPlatformBrowser))
 	payload = appendVarint(payload, 12, connectTypeWifi)
 	payload = appendVarint(payload, 13, connectReasonUser)
@@ -280,7 +267,20 @@ type Login struct {
 }
 
 func EncodeLogin(version Version, login Login) []byte {
-	osVersion := login.OS.String()
+	payload := appendVarint(nil, 1, login.Username)
+	payload = appendVarint(payload, 3, 1)
+	payload = appendBytes(payload, 5, encodeUserAgent(version, login.OS))
+	payload = appendBytes(payload, 6, appendVarint(nil, 4, webSubPlatformBrowser))
+	payload = appendVarint(payload, 12, connectTypeWifi)
+	payload = appendVarint(payload, 13, connectReasonUser)
+	payload = appendVarint(payload, 18, uint64(login.Device))
+	payload = appendVarint(payload, 24, 1)
+	payload = appendVarint(payload, 33, 1)
+	return appendVarint(payload, 41, 1)
+}
+
+func encodeUserAgent(version, os Version) []byte {
+	osVersion := os.String()
 	userAgent := appendVarint(nil, 1, platformWeb)
 	userAgent = appendBytes(userAgent, 2, encodeVersion(version))
 	userAgent = appendString(userAgent, 3, "000")
@@ -291,18 +291,7 @@ func EncodeLogin(version Version, login Login) []byte {
 	userAgent = appendString(userAgent, 8, osVersion)
 	userAgent = appendVarint(userAgent, 10, releaseChannelRelease)
 	userAgent = appendString(userAgent, 11, "en")
-	userAgent = appendString(userAgent, 12, "US")
-
-	payload := appendVarint(nil, 1, login.Username)
-	payload = appendVarint(payload, 3, 1)
-	payload = appendBytes(payload, 5, userAgent)
-	payload = appendBytes(payload, 6, appendVarint(nil, 4, webSubPlatformBrowser))
-	payload = appendVarint(payload, 12, connectTypeWifi)
-	payload = appendVarint(payload, 13, connectReasonUser)
-	payload = appendVarint(payload, 18, uint64(login.Device))
-	payload = appendVarint(payload, 24, 1)
-	payload = appendVarint(payload, 33, 1)
-	return appendVarint(payload, 41, 1)
+	return appendString(userAgent, 12, "US")
 }
 
 func encodeDeviceProps(props DeviceProps) []byte {

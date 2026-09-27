@@ -132,8 +132,11 @@ func (s *Session) pump(ctx context.Context) {
 }
 
 func (s *Session) deliver(n node.Node) bool {
+	if n.Tag != "iq" {
+		return false
+	}
 	kind, _ := n.Attr("type").Text()
-	if n.Tag != "iq" || kind != "result" && kind != "error" {
+	if kind != "result" && kind != "error" {
 		return false
 	}
 	id, _ := n.Attr("id").Text()
@@ -187,9 +190,12 @@ func (s *Session) Query(ctx context.Context, request node.Node) (node.Node, erro
 }
 
 func Pong(ping node.Node) (node.Node, bool) {
+	if ping.Tag != "iq" {
+		return node.Node{}, false
+	}
 	kind, _ := ping.Attr("type").Text()
 	xmlns, _ := ping.Attr("xmlns").Text()
-	if ping.Tag != "iq" || kind != "get" || xmlns != "urn:xmpp:ping" {
+	if kind != "get" || xmlns != "urn:xmpp:ping" {
 		return node.Node{}, false
 	}
 	var attrs []node.Attr

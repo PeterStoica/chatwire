@@ -93,11 +93,12 @@ func (w *World) Version() signon.Version {
 }
 
 func (w *World) lastShownQR() string {
-	shown := w.ShownQR()
-	if len(shown) == 0 {
+	w.mu.Lock()
+	defer w.mu.Unlock()
+	if len(w.shownQR) == 0 {
 		return ""
 	}
-	return shown[len(shown)-1]
+	return w.shownQR[len(w.shownQR)-1]
 }
 
 func (w *World) Script(scripts ...Script) {

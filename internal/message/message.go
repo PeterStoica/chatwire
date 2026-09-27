@@ -1,7 +1,6 @@
 package message
 
 import (
-	"bytes"
 	"errors"
 	"fmt"
 	"github.com/PeterStoica/chatwire/internal/wire"
@@ -18,7 +17,12 @@ func Pad(random io.Reader, plaintext []byte) ([]byte, error) {
 		return nil, fmt.Errorf("message: padding: %w", err)
 	}
 	size := seed[0]&15 + 1
-	return append(bytes.Clone(plaintext), bytes.Repeat([]byte{size}, int(size))...), nil
+	padded := make([]byte, len(plaintext)+int(size))
+	copy(padded, plaintext)
+	for i := len(plaintext); i < len(padded); i++ {
+		padded[i] = size
+	}
+	return padded, nil
 }
 
 func Unpad(padded []byte) ([]byte, error) {

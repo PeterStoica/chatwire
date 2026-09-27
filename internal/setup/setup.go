@@ -533,7 +533,7 @@ func editTOML(raw []byte, command string, remove bool) ([]byte, Outcome, error) 
 	case remove && start < 0:
 		return raw, Absent, nil
 	case remove:
-		kept := append(append([]string{}, lines[:start]...), lines[end:]...)
+		kept := slices.Concat(lines[:start], lines[end:])
 		return []byte(strings.Join(kept, "\n")), Removed, nil
 	case start < 0:
 		text := strings.TrimRight(string(raw), "\n")

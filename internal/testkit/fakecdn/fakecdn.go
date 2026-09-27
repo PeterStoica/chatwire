@@ -105,7 +105,7 @@ func (c *CDN) upload(w http.ResponseWriter, req *http.Request) {
 	}
 	record.Type = parts[1]
 	sum := sha256.Sum256(body)
-	hash := strings.NewReplacer("+", "-", "/", "_").Replace(base64.StdEncoding.EncodeToString(sum[:]))
+	hash := base64.URLEncoding.EncodeToString(sum[:])
 	query := req.URL.Query()
 	c.mu.Lock()
 	auth := c.auth
