@@ -50,7 +50,7 @@ func Main() int {
 	ctx, stop := signal.NotifyContext(context.Background(), os.Interrupt)
 	defer stop()
 	if err := run(ctx, os.Args[1:], os.Stdin, os.Stdout, os.Stderr); err != nil {
-		fmt.Fprintln(os.Stderr, "mcp:", err)
+		fmt.Fprintln(os.Stderr, "chatwire:", strings.TrimPrefix(err.Error(), "chatwire: "))
 		return 1
 	}
 	return 0
@@ -134,22 +134,29 @@ func waitFor(asked time.Duration, human bool) time.Duration {
 	return 0
 }
 
-func viaDaemon(ctx context.Context, state string, linger time.Duration, stdin io.Reader, stdout, stderr io.Writer) error {
+func launcher(state string, linger time.Duration) (shim.Launcher, error) {
 	executable, build, err := self()
 	if err != nil {
-		return err
+		return shim.Launcher{}, err
 	}
 	socket, err := socketPath(state)
 	if err != nil {
-		return err
+		return shim.Launcher{}, err
 	}
-	launcher := shim.Launcher{
+	return shim.Launcher{
 		Socket: socket, Log: filepath.Join(filepath.Dir(state), "daemon.log"), Build: build, Executable: executable,
 		DaemonArgs: []string{"daemon", "-state", state, "-linger", linger.String()},
+	}, nil
+}
+
+func viaDaemon(ctx context.Context, state string, linger time.Duration, stdin io.Reader, stdout, stderr io.Writer) error {
+	launcher, err := launcher(state, linger)
+	if err != nil {
+		return err
 	}
 	conn, err := launcher.Connect(ctx)
 	if err != nil {
-		fmt.Fprintf(stderr, "mcp: serving this window on its own, without the shared background process: %v\n", err)
+		fmt.Fprintf(stderr, "chatwire: serving this window on its own, without the shared background process: %v\n", err)
 		return serveAlone(ctx, state, stdin, stdout)
 	}
 	return shim.Pipe(ctx, conn, stdin, stdout)

@@ -3,12 +3,10 @@ package mcpapp
 import (
 	"context"
 	"encoding/json/v2"
-	"errors"
 	"flag"
 	"fmt"
 	"io"
 	"os"
-	"path/filepath"
 	"slices"
 	"strings"
 	"time"
@@ -17,7 +15,6 @@ import (
 
 	"github.com/PeterStoica/chatwire/internal/mcptools"
 	"github.com/PeterStoica/chatwire/internal/setup"
-	"github.com/PeterStoica/chatwire/internal/shim"
 )
 
 const (
@@ -58,17 +55,9 @@ func terminal(r io.Reader) bool {
 }
 
 func (c cli) session() (*mcp.ClientSession, error) {
-	executable, build, err := self()
+	launcher, err := launcher(c.state, c.linger)
 	if err != nil {
 		return nil, err
-	}
-	socket, err := socketPath(c.state)
-	if err != nil {
-		return nil, err
-	}
-	launcher := shim.Launcher{
-		Socket: socket, Log: filepath.Join(filepath.Dir(c.state), "daemon.log"), Build: build, Executable: executable,
-		DaemonArgs: []string{"daemon", "-state", c.state, "-linger", c.linger.String()},
 	}
 	conn, err := launcher.Connect(c.ctx)
 	if err != nil {
@@ -174,26 +163,27 @@ func linkText(r mcptools.Report) string {
 }
 
 func (c cli) setupCommand(args []string, in io.Reader) error {
+	env, err := setup.System()
+	if err != nil {
+		return err
+	}
+	all := setup.Clients(env)
 	flags := flag.NewFlagSet("setup", flag.ContinueOnError)
 	flags.SetOutput(c.out)
 	asJSON := flags.Bool("json", false, "print results as JSON")
 	yes := flags.Bool("yes", false, "do not ask before changing the apps' settings")
 	remove := flags.Bool("remove", false, "take Chatwire out of the apps instead")
-	only := flags.String("client", "", "only these apps, comma separated: "+strings.Join(clientIDs(), ", "))
+	only := flags.String("client", "", "only these apps, comma separated: "+strings.Join(idsOf(all), ", "))
 	noLink := flags.Bool("no-link", false, "do not link WhatsApp afterwards")
 	if err := flags.Parse(args); err != nil {
 		return err
 	}
 	c.asJSON = c.asJSON || *asJSON
-	env, err := setup.System()
-	if err != nil {
-		return err
-	}
 	executable, _, err := self()
 	if err != nil {
 		return err
 	}
-	chosen, err := choose(setup.Clients(env), *only)
+	chosen, err := choose(all, *only)
 	if err != nil {
 		return err
 	}
@@ -237,9 +227,9 @@ func (c cli) linkIfNeeded(wait time.Duration) error {
 	return c.link("", wait)
 }
 
-func clientIDs() []string {
-	var ids []string
-	for _, cl := range setup.Clients(setup.Env{LookPath: func(string) (string, error) { return "", errors.New("unused") }}) {
+func idsOf(all []setup.Client) []string {
+	ids := make([]string, 0, len(all))
+	for _, cl := range all {
 		ids = append(ids, cl.ID)
 	}
 	return ids
@@ -254,7 +244,7 @@ func choose(all []setup.Client, only string) ([]setup.Client, error) {
 		id = strings.TrimSpace(id)
 		i := slices.IndexFunc(all, func(cl setup.Client) bool { return cl.ID == id })
 		if i < 0 {
-			return nil, fmt.Errorf("chatwire: no app called %q; the apps are: %s", id, strings.Join(clientIDs(), ", "))
+			return nil, fmt.Errorf("chatwire: no app called %q; the apps are: %s", id, strings.Join(idsOf(all), ", "))
 		}
 		out = append(out, all[i])
 	}
