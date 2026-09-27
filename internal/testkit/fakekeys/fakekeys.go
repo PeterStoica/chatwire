@@ -14,6 +14,7 @@ type Server struct {
 	mu         sync.Mutex
 	devices    map[node.JID]*bundle
 	identities map[node.JID][]byte
+	aliases    map[node.JID]node.JID
 }
 
 type bundle struct {
@@ -23,7 +24,25 @@ type bundle struct {
 }
 
 func New() *Server {
-	return &Server{devices: map[node.JID]*bundle{}, identities: map[node.JID][]byte{}}
+	return &Server{devices: map[node.JID]*bundle{}, identities: map[node.JID][]byte{}, aliases: map[node.JID]node.JID{}}
+}
+
+func (s *Server) Alias(lid, pn node.JID) {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	s.aliases[lid.WithoutDevice()] = pn.WithoutDevice()
+}
+
+func (s *Server) known(device node.JID) (*bundle, bool) {
+	if b, ok := s.devices[device]; ok {
+		return b, true
+	}
+	pn, ok := s.aliases[device.WithoutDevice()]
+	if !ok {
+		return nil, false
+	}
+	b, ok := s.devices[node.JID{User: pn.User, Device: device.Device, Server: pn.Server}]
+	return b, ok
 }
 
 func (s *Server) Handle(from node.JID, request node.Node) node.Node {
@@ -117,7 +136,7 @@ func (s *Server) bundles(request node.Node) node.Node {
 	for _, user := range key.Children {
 		jid := user.Attr("jid")
 		device, _ := jid.JID()
-		b, ok := s.devices[device]
+		b, ok := s.known(device)
 		if !ok {
 			users = append(users, node.Node{Tag: "user", Attrs: []node.Attr{{Key: "jid", Value: jid}}, Children: []node.Node{
 				{Tag: "error", Attrs: []node.Attr{{Key: "code", Value: node.Text("500")}, {Key: "text", Value: node.Text("internal-server-error")}}},

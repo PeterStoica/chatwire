@@ -564,16 +564,17 @@ func (c *Client) retry(in message.Incoming, enc message.Enc) (node.Node, bool) {
 }
 
 func (c *Client) Send(ctx context.Context, to node.JID, m *wire.Message) (string, error) {
-	self := c.Self().WithoutDevice()
+	self, toSelf := c.Self().WithoutDevice(), c.mine(to)
+	theirs := func(d node.JID) bool { return !c.mine(d) }
 	users := []node.JID{to}
-	if to != self {
+	if !toSelf {
 		users = append(users, self)
 	}
 	targets, err := c.devices(ctx, users)
 	if err != nil {
 		return "", err
 	}
-	if to != self && !slices.ContainsFunc(targets, func(d node.JID) bool { return d.User == to.User }) {
+	if !toSelf && !slices.ContainsFunc(targets, theirs) {
 		return "", fmt.Errorf("%w: %s", ErrNoTarget, to)
 	}
 	if err := c.startSessions(ctx, targets); err != nil {
@@ -583,7 +584,7 @@ func (c *Client) Send(ctx context.Context, to node.JID, m *wire.Message) (string
 	if err != nil {
 		return "", err
 	}
-	if to != self && !slices.ContainsFunc(parts, func(p message.Part) bool { return !c.mine(p.Device) }) {
+	if !toSelf && !slices.ContainsFunc(parts, func(p message.Part) bool { return theirs(p.Device) }) {
 		return "", fmt.Errorf("%w: no session could be started with any device of %s", ErrNoTarget, to)
 	}
 	id, err := message.NewID(c.cfg.Link.Now(), self, c.cfg.Link.Random)
@@ -658,9 +659,13 @@ func (c *Client) devices(ctx context.Context, users []node.JID) ([]node.JID, err
 		return nil, err
 	}
 	var out []node.JID
+	c.mu.Lock()
+	defer c.mu.Unlock()
+	self, seen := c.addressLocked(c.Self()), map[address]bool{}
 	for _, user := range listed {
 		for _, d := range user.Devices {
-			if d.JID != c.Self() {
+			if at := c.addressLocked(d.JID); at != self && !seen[at] {
+				seen[at] = true
 				out = append(out, d.JID)
 			}
 		}

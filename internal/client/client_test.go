@@ -1942,3 +1942,30 @@ func TestPrivacyTokensTravelWithPersonalMessages(t *testing.T) {
 		}
 	})
 }
+
+func TestANoteToSelfByPrivateIDReachesEachDeviceOnce(t *testing.T) {
+	synctest.Test(t, func(t *testing.T) {
+		r := newRig(t)
+		ourLID := node.JID{User: r.world.Phone.LID.User, Server: node.ServerLID}
+		r.devices.Set(ourLID, fakeusync.Device{ID: 0}, fakeusync.Device{ID: r.world.Phone.JID.Device})
+		r.keys.Alias(ourLID, r.account)
+		c := r.connect()
+		id, err := c.Send(t.Context(), ourLID, &wire.Message{Conversation: new("note to self")})
+		if err != nil {
+			t.Fatal(err)
+		}
+		stanza := r.sentStanza(id)
+		envelopes := 0
+		for _, child := range stanza.Children {
+			switch child.Tag {
+			case "enc":
+				envelopes++
+			case "participants":
+				envelopes += len(child.Children)
+			}
+		}
+		if envelopes != 1 {
+			t.Fatalf("the note went out %d times: %s", envelopes, stanza)
+		}
+	})
+}
