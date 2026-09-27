@@ -65,7 +65,7 @@ func status(l Linker, s Sender, opts Options) mcp.ToolHandlerFor[StatusInput, Re
 			waitCtx, cancel := context.WithTimeout(ctx, min(wait, maxWait))
 			defer cancel()
 			start := st
-			st, _ = l.Await(waitCtx, func(s linker.Status) bool { return s.Phase != start.Phase || s.Code != start.Code })
+			st, _ = l.Await(waitCtx, func(s linker.Status) bool { return !s.Phase.InFlight() || s.Code != start.Code })
 		}
 		report := describe(st)
 		if st.Phase == linker.Linked {

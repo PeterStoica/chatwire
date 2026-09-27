@@ -268,6 +268,31 @@ func TestLinkingByQRFromClaudesSide(t *testing.T) {
 	})
 }
 
+func TestWaitingCarriesOnWhileTheQRRenews(t *testing.T) {
+	synctest.Test(t, func(t *testing.T) {
+		w, err := fakeworld.New(39)
+		if err != nil {
+			t.Fatal(err)
+		}
+		w.Script(w.Unscanned(), w.QRPairing(time.Second), w.Login(fakeworld.Success()))
+		c, l := connect(t, w)
+		l.KeepQRWhile(func() bool { return true })
+		report, _ := c.call("link_whatsapp", nil)
+		if report.State != "waiting_for_scan" {
+			t.Fatalf("link_whatsapp = %+v", report)
+		}
+		start := time.Now()
+		for range 5 {
+			if report, _ = c.call("whatsapp_status", map[string]any{"wait_seconds": 50}); report.State != "waiting_for_scan" {
+				break
+			}
+		}
+		if report.State != "linked" || time.Since(start) != 161*time.Second {
+			t.Fatalf("after %s: %+v; a fresh QR code is not the end of the wait", time.Since(start), report)
+		}
+	})
+}
+
 func TestReadOnlyLeavesOutEveryTool(t *testing.T) {
 	synctest.Test(t, func(t *testing.T) {
 		w, err := fakeworld.New(36)

@@ -139,29 +139,39 @@ func TestThePageFollowsTheLinker(t *testing.T) {
 	if st := state(t, p); st.Phase != "idle" {
 		t.Fatalf("before linking: %+v", st)
 	}
-	if r := get(t, p.URL+"qr.png"); r.code != http.StatusNotFound {
-		t.Fatalf("a QR image before there is one: %d", r.code)
+	if r := get(t, p.URL+"qr.json"); r.code != http.StatusNotFound {
+		t.Fatalf("a QR code before there is one: %d", r.code)
 	}
 	l.set(linker.Status{Phase: linker.ShowingQR, QR: "https://wa.me/settings/linked_devices#2@ref-1,abc"})
 	first := state(t, p)
 	if first.Phase != "qr" || len(first.QR) != 12 || state(t, p).QR != first.QR {
 		t.Fatalf("showing a QR: %+v", first)
 	}
-	image := get(t, p.URL+"qr.png")
+	image := get(t, p.URL+"qr.json")
+	var grid linkpage.Grid
+	if image.code != http.StatusOK || image.header.Get("Content-Type") != "application/json" || json.Unmarshal(image.body, &grid) != nil {
+		t.Fatalf("qr.json: %d %s %s", image.code, image.header.Get("Content-Type"), image.body)
+	}
 	want, err := qr.Encode("https://wa.me/settings/linked_devices#2@ref-1,abc", qr.M)
 	if err != nil {
 		t.Fatal(err)
 	}
-	want.Scale = 8
-	if image.code != http.StatusOK || image.header.Get("Content-Type") != "image/png" || !bytes.Equal(image.body, want.PNG()) {
-		t.Fatalf("qr.png: %d %s, %d bytes", image.code, image.header.Get("Content-Type"), len(image.body))
+	if grid.ID != first.QR || len(grid.Rows) != want.Size {
+		t.Fatalf("qr.json is %q with %d rows; want %q with %d", grid.ID, len(grid.Rows), first.QR, want.Size)
+	}
+	for y, row := range grid.Rows {
+		for x := range want.Size {
+			if len(row) != want.Size || (row[x] == '1') != want.Black(x, y) {
+				t.Fatalf("row %d differs from the QR code the phone scans: %s", y, row)
+			}
+		}
 	}
 	l.set(linker.Status{Phase: linker.ShowingQR, QR: "https://wa.me/settings/linked_devices#2@ref-2,abc"})
 	if next := state(t, p); next.QR == first.QR {
 		t.Fatalf("the QR rotated but its id did not: %+v", next)
 	}
-	if again := get(t, p.URL+"qr.png"); bytes.Equal(again.body, image.body) {
-		t.Fatal("the image did not follow the new QR")
+	if again := get(t, p.URL+"qr.json"); bytes.Equal(again.body, image.body) {
+		t.Fatal("the grid did not follow the new QR")
 	}
 	for _, tt := range []struct {
 		status linker.Status
@@ -212,5 +222,19 @@ func TestANewCodeOnlyWhenLinkingStopped(t *testing.T) {
 	}
 	if r := get(t, p.URL+"again"); r.code != http.StatusMethodNotAllowed {
 		t.Fatalf("GET again = %d", r.code)
+	}
+}
+
+func TestThePageKnowsWhenSomeoneIsLooking(t *testing.T) {
+	t.Parallel()
+	_, p := open(t)
+	if p.Open() || p.Seen() {
+		t.Fatal("a page nobody has loaded counts as open")
+	}
+	if r := get(t, p.URL+"state?visible=0"); r.code != http.StatusOK || !p.Open() || p.Seen() {
+		t.Fatalf("a page in a hidden tab: %d, open %v, seen %v", r.code, p.Open(), p.Seen())
+	}
+	if r := get(t, p.URL+"state?visible=1"); r.code != http.StatusOK || !p.Open() || !p.Seen() {
+		t.Fatalf("a page on screen: %d, open %v, seen %v", r.code, p.Open(), p.Seen())
 	}
 }
