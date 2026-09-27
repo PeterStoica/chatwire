@@ -318,8 +318,22 @@ func (m *Messenger) Groups(ctx context.Context) ([]groups.Group, error) {
 	for _, g := range listed {
 		chats = append(chats, store.Chat{JID: g.JID, Name: g.Subject})
 	}
-	m.keep(ctx, func(ctx context.Context) error { return m.store.Apply(ctx, store.Changes{Chats: chats}) })
+	pairs := pairsIn(listed...)
+	c.Learn(pairs)
+	m.keep(ctx, func(ctx context.Context) error { return m.store.Apply(ctx, store.Changes{Chats: chats, LIDs: pairs}) })
 	return listed, nil
+}
+
+func pairsIn(listed ...groups.Group) map[node.JID]node.JID {
+	pairs := map[node.JID]node.JID{}
+	for _, g := range listed {
+		for _, p := range g.Participants {
+			if lid, phone, ok := p.Pair(); ok {
+				pairs[lid] = phone
+			}
+		}
+	}
+	return pairs
 }
 
 func (m *Messenger) Media(ctx context.Context, id string) (media.Reference, []byte, error) {

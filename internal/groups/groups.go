@@ -14,7 +14,18 @@ var ErrReply = errors.New("groups: unexpected reply")
 type Participant struct {
 	JID   node.JID
 	LID   node.JID
+	Phone node.JID
 	Admin bool
+}
+
+func (p Participant) Pair() (lid, phone node.JID, ok bool) {
+	switch {
+	case p.JID.Server == node.ServerLID && p.Phone.Server == node.ServerUser:
+		return p.JID.WithoutDevice(), p.Phone.WithoutDevice(), true
+	case p.JID.Server == node.ServerUser && p.LID.Server == node.ServerLID:
+		return p.LID.WithoutDevice(), p.JID.WithoutDevice(), true
+	}
+	return node.JID{}, node.JID{}, false
 }
 
 type Group struct {
@@ -53,14 +64,14 @@ func InfoRequest(jids ...node.JID) node.Node {
 }
 
 func ParseParticipating(reply node.Node) ([]Group, error) {
-	return parseList(reply, false)
+	return parseList(reply)
 }
 
 func ParseInfo(reply node.Node) ([]Group, error) {
-	return parseList(reply, true)
+	return parseList(reply)
 }
 
-func parseList(reply node.Node, skipUnknown bool) ([]Group, error) {
+func parseList(reply node.Node) ([]Group, error) {
 	kind, _ := reply.Attr("type").Text()
 	list, ok := reply.Child("groups")
 	if reply.Tag != "iq" || kind != "result" || !ok {
@@ -71,38 +82,33 @@ func parseList(reply node.Node, skipUnknown bool) ([]Group, error) {
 		if entry.Tag != "group" {
 			continue
 		}
-		g, err := parseGroup(entry)
-		switch {
-		case err != nil && skipUnknown:
-			continue
-		case err != nil:
-			return nil, err
+		if g, err := parseGroup(entry); err == nil {
+			groups = append(groups, g)
 		}
-		groups = append(groups, g)
 	}
 	return groups, nil
 }
 
 func parseGroup(entry node.Node) (Group, error) {
 	id, _ := entry.Attr("id").Text()
-	created, err := strconv.ParseInt(text(entry, "creation"), 10, 64)
-	if id == "" || err != nil {
-		return Group{}, fmt.Errorf("%w: group without id or creation time: %s", ErrReply, entry)
+	if _, failed := entry.Child("error"); id == "" || failed {
+		return Group{}, fmt.Errorf("%w: group without id: %s", ErrReply, entry)
 	}
-	g := Group{
-		JID: node.JID{User: id, Server: node.ServerGroup}, Subject: text(entry, "subject"),
-		Created: time.Unix(created, 0), AddressingMode: text(entry, "addressing_mode"),
+	g := Group{JID: node.JID{User: id, Server: node.ServerGroup}, Subject: text(entry, "subject"), AddressingMode: text(entry, "addressing_mode")}
+	if created, err := strconv.ParseInt(text(entry, "creation"), 10, 64); err == nil && created > 0 {
+		g.Created = time.Unix(created, 0)
 	}
 	for _, child := range entry.Children {
 		switch child.Tag {
 		case "participant":
 			jid, ok := child.Attr("jid").JID()
 			if !ok {
-				return Group{}, fmt.Errorf("%w: participant without jid in %s", ErrReply, g.JID)
+				continue
 			}
 			lid, _ := child.Attr("lid").JID()
+			phone, _ := child.Attr("phone_number").JID()
 			role := text(child, "type")
-			g.Participants = append(g.Participants, Participant{JID: jid, LID: lid, Admin: role == "admin" || role == "superadmin"})
+			g.Participants = append(g.Participants, Participant{JID: jid, LID: lid, Phone: phone, Admin: role == "admin" || role == "superadmin"})
 		case "description":
 			if body, ok := child.Child("body"); ok {
 				g.Description = string(body.Bytes)

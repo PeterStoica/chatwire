@@ -78,15 +78,39 @@ func TestMalformedGroupLists(t *testing.T) {
 		{"error", node.Node{Tag: "iq", Attrs: []node.Attr{{Key: "type", Value: node.Text("error")}}, Children: []node.Node{{Tag: "groups"}}}},
 		{"not an iq", node.Node{Tag: "message", Attrs: result, Children: []node.Node{{Tag: "groups"}}}},
 		{"no groups", node.Node{Tag: "iq", Attrs: result}},
-		{"group without id", group([]node.Attr{creation})},
-		{"creation not a number", group([]node.Attr{id, {Key: "creation", Value: node.Text("soon")}})},
-		{"participant without jid", group([]node.Attr{id, creation}, node.Node{Tag: "participant"})},
 	} {
 		t.Run(tt.name, func(t *testing.T) {
 			if _, err := groups.ParseParticipating(tt.reply); !errors.Is(err, groups.ErrReply) {
 				t.Fatalf("ParseParticipating() = %v, want %v", err, groups.ErrReply)
 			}
 		})
+	}
+	for _, tt := range []struct {
+		name  string
+		reply node.Node
+		check func([]groups.Group) bool
+	}{
+		{"group without id", group([]node.Attr{creation}), func(g []groups.Group) bool { return len(g) == 0 }},
+		{"creation not a number", group([]node.Attr{id, {Key: "creation", Value: node.Text("soon")}}), func(g []groups.Group) bool { return len(g) == 1 && g[0].Created.IsZero() }},
+		{"community parent without creation", group([]node.Attr{id}), func(g []groups.Group) bool { return len(g) == 1 }},
+		{"participant without jid", group([]node.Attr{id, creation}, node.Node{Tag: "participant"}), func(g []groups.Group) bool { return len(g) == 1 && len(g[0].Participants) == 0 }},
+	} {
+		t.Run(tt.name, func(t *testing.T) {
+			if found, err := groups.ParseParticipating(tt.reply); err != nil || !tt.check(found) {
+				t.Fatalf("ParseParticipating() = %+v, %v", found, err)
+			}
+		})
+	}
+	lidMember := node.Node{Tag: "participant", Attrs: []node.Attr{
+		{Key: "jid", Value: node.Address(node.JID{User: "99001", Server: node.ServerLID})},
+		{Key: "phone_number", Value: node.Address(node.JID{User: "40722222222", Server: node.ServerUser})},
+	}}
+	found, err := groups.ParseParticipating(group([]node.Attr{id, creation, {Key: "addressing_mode", Value: node.Text("lid")}}, lidMember))
+	if err != nil || len(found) != 1 || len(found[0].Participants) != 1 {
+		t.Fatalf("a lid group: %+v, %v", found, err)
+	}
+	if lid, phone, ok := found[0].Participants[0].Pair(); !ok || lid.User != "99001" || phone.User != "40722222222" {
+		t.Fatalf("the member's pair: %v %v %v", lid, phone, ok)
 	}
 }
 
@@ -112,7 +136,7 @@ func TestLookingUpOneGroup(t *testing.T) {
 	if found, err := groups.ParseInfo(reply); err != nil || len(found) != 0 {
 		t.Fatalf("a group we are not in: %+v, %v", found, err)
 	}
-	if _, err := groups.ParseParticipating(reply); !errors.Is(err, groups.ErrReply) {
-		t.Fatalf("the full list still rejects it: %v", err)
+	if found, err := groups.ParseParticipating(reply); err != nil || len(found) != 0 {
+		t.Fatalf("the full list skips it too: %+v, %v", found, err)
 	}
 }

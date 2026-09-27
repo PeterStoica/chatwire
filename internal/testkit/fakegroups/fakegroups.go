@@ -61,6 +61,9 @@ func (s *Server) Handle(request node.Node) node.Node {
 			if p.LID.Server != "" {
 				pattrs = append(pattrs, node.Attr{Key: "lid", Value: node.Address(p.LID)})
 			}
+			if p.Phone.Server != "" {
+				pattrs = append(pattrs, node.Attr{Key: "phone_number", Value: node.Address(p.Phone)})
+			}
 			children = append(children, node.Node{Tag: "participant", Attrs: pattrs})
 		}
 		if g.Description != "" {

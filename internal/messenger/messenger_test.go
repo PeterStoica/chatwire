@@ -417,3 +417,22 @@ func TestSentMessagesCarryASecretForLaterEdits(t *testing.T) {
 		}
 	})
 }
+
+func TestListingAPrivateIDGroupLearnsItsMembersNumbers(t *testing.T) {
+	synctest.Test(t, func(t *testing.T) {
+		r := newRig(t)
+		bobLID := node.JID{User: "99001", Server: node.ServerLID}
+		family := groups.Group{JID: node.JID{User: "120363000000000041", Server: node.ServerGroup}, Subject: "Family", AddressingMode: "lid",
+			Participants: []groups.Participant{{JID: bobLID, Phone: r.bob}}}
+		r.server.Groups = fakegroups.New(family)
+		r.world.Script(r.world.Serve(r.server))
+		r.m.Start(t.Context(), r.state)
+		synctest.Wait()
+		if _, err := r.m.Groups(t.Context()); err != nil {
+			t.Fatal(err)
+		}
+		if got, err := r.store.Canonical(t.Context(), bobLID); err != nil || got != r.bob {
+			t.Fatalf("bob's private id resolves to %v, %v", got, err)
+		}
+	})
+}

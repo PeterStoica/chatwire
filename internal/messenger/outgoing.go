@@ -137,6 +137,10 @@ func (m *Messenger) group(ctx context.Context, c *client.Client, jid node.JID) (
 	m.mu.Lock()
 	m.known[jid] = cachedGroup{group: g, at: now}
 	m.mu.Unlock()
+	if pairs := pairsIn(g); len(pairs) > 0 {
+		c.Learn(pairs)
+		m.keep(ctx, func(ctx context.Context) error { return m.store.Apply(ctx, store.Changes{LIDs: pairs}) })
+	}
 	return g, nil
 }
 
