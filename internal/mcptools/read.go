@@ -22,7 +22,7 @@ type ReadInput struct {
 	From     string `json:"from,omitempty" jsonschema:"only messages sent by this person: a contact name, a mobile number with country code, or me"`
 	Query    string `json:"query,omitempty" jsonschema:"only messages containing all these words; case and accents do not matter"`
 	Limit    int    `json:"limit,omitempty" jsonschema:"how many messages to return, newest last (default 20, at most 200)"`
-	Before   string `json:"before,omitempty" jsonschema:"to page back: the id of the oldest message already shown, as the earlier result suggests; a time (RFC 3339) also works"`
+	Before   string `json:"before,omitempty" jsonschema:"to page back: the id of the oldest message already shown, as the earlier result suggests; a time (RFC 3339) also works. In one chat, when this computer has nothing older, the phone is asked for more (a few seconds)"`
 	Unread   bool   `json:"unread,omitempty" jsonschema:"only the unread messages, from every chat that has some (or only chat), in the order the phone lists the chats; answers what did I miss in one call"`
 	MarkRead bool   `json:"mark_read,omitempty" jsonschema:"also mark the returned messages as read on the user's phone, which shows the senders blue ticks; only when the user asks for it"`
 }
@@ -163,11 +163,25 @@ func read(s Sender) mcp.ToolHandlerFor[ReadInput, ReadReport] {
 		if err != nil {
 			return refuse(stateFailed, fmt.Sprintf("Could not read messages: %v", err))
 		}
+		fromPhone := -1
+		if pagingOneChat(in, q) && len(found) < q.Limit {
+			if fromPhone, err = s.Older(ctx, q.Chat); err == nil && fromPhone > 0 {
+				if more, err := s.Messages(ctx, q); err == nil {
+					found = more
+				}
+			}
+		}
 		messages := make([]ReceivedMessage, 0, len(found))
 		for _, m := range found {
 			messages = append(messages, describeMessage(dir, m))
 		}
 		report := ReadReport{State: "ok", Messages: messages, Detail: readDetail(in, q, messages)}
+		switch {
+		case fromPhone > 0:
+			report.Detail += fmt.Sprintf(" %d older message(s) were fetched from the phone.", fromPhone)
+		case fromPhone == 0:
+			report.Detail += " The phone was asked for older messages but sent none; it may be offline or keep nothing older for this chat."
+		}
 		if in.MarkRead && len(found) > 0 {
 			if err := s.MarkRead(ctx, found); err != nil {
 				report.Detail += fmt.Sprintf(" Could not mark them as read: %v.", err)
@@ -177,6 +191,10 @@ func read(s Sender) mcp.ToolHandlerFor[ReadInput, ReadReport] {
 		}
 		return nil, report, nil
 	}
+}
+
+func pagingOneChat(in ReadInput, q store.Query) bool {
+	return !in.Unread && q.Chat.Server != "" && strings.TrimSpace(in.Before) != "" && strings.TrimSpace(in.Query) == "" && len(q.From) == 0 && !q.Chat.IsStatus()
 }
 
 func fetch(ctx context.Context, s Sender, dir directory, q store.Query, unreadOnly bool) ([]store.Message, error) {

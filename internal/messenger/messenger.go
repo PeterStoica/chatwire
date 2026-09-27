@@ -43,6 +43,8 @@ var (
 const (
 	restrictedFor = 24 * time.Hour
 	groupsFresh   = 5 * time.Minute
+	olderWait     = 15 * time.Second
+	olderCount    = 50
 )
 
 type cachedGroup struct {
@@ -76,6 +78,7 @@ type Messenger struct {
 	outdated func()
 	saving   sync.Mutex
 	current  int
+	onDemand chan struct{}
 }
 
 type HistorySync struct {
@@ -84,7 +87,7 @@ type HistorySync struct {
 }
 
 func New(link linkflow.Config, httpClient *http.Client, persist func(client.State) error, messages *store.Store) *Messenger {
-	return &Messenger{link: link, http: httpClient, persist: persist, store: messages, ready: make(chan struct{}), failed: make(chan struct{}), known: map[node.JID]cachedGroup{}}
+	return &Messenger{link: link, http: httpClient, persist: persist, store: messages, ready: make(chan struct{}), failed: make(chan struct{}), known: map[node.JID]cachedGroup{}, onDemand: make(chan struct{})}
 }
 
 func (m *Messenger) Start(parent context.Context, state client.State) {

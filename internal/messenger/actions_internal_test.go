@@ -12,8 +12,10 @@ import (
 	"testing"
 	"time"
 
+	"fmt"
 	"github.com/PeterStoica/chatwire/internal/appstate"
 	"github.com/PeterStoica/chatwire/internal/client"
+	"github.com/PeterStoica/chatwire/internal/history"
 	"github.com/PeterStoica/chatwire/internal/linkflow"
 	"github.com/PeterStoica/chatwire/internal/message"
 	"github.com/PeterStoica/chatwire/internal/node"
@@ -508,5 +510,39 @@ func TestEncryptedEditsChangeTheOriginalInPlace(t *testing.T) {
 	}
 	if got := store.Text(all[0].Message); got != "see you at 8" || all[0].Edited.IsZero() {
 		t.Fatalf("after the encrypted edit: %q, edited %v", got, all[0].Edited)
+	}
+}
+
+func TestAskingThePhoneForOlderMessages(t *testing.T) {
+	t.Parallel()
+	now := time.Unix(1790000000, 0)
+	m, ctx := messenger(t, now, pairing.Account{JID: me, LID: myLID})
+	for i, text := range []string{"third", "fourth"} {
+		m.received(client.Received{ID: fmt.Sprint("3EB0N", i), Chat: bob, Author: bob, Time: now.Add(time.Duration(i) * time.Minute), Message: &wire.Message{Conversation: new(text)}})
+	}
+	var asked *wire.Message_PeerDataOperationRequestMessage_HistorySyncOnDemandRequest
+	n, err := m.older(ctx, bob, func(_ context.Context, request *wire.Message) error {
+		asked = request.GetProtocolMessage().GetPeerDataOperationRequestMessage().GetHistorySyncOnDemandRequest()
+		go m.history(history.Chunk{Type: wire.HistorySync_ON_DEMAND, Messages: []history.Message{
+			{ID: "3EB0O1", Chat: bob, Author: bob, Time: now.Add(-2 * time.Hour), Message: &wire.Message{Conversation: new("first")}},
+			{ID: "3EB0O2", Chat: bob, Author: me, FromMe: true, Time: now.Add(-time.Hour), Message: &wire.Message{Conversation: new("second")}},
+		}})
+		return nil
+	})
+	if err != nil || n != 2 {
+		t.Fatalf("older() = %d, %v; want the 2 messages the phone sent", n, err)
+	}
+	if asked.GetChatJid() != bob.String() || asked.GetOldestMsgId() != "3EB0N0" || asked.GetOldestMsgFromMe() || asked.GetOldestMsgTimestampMs() != now.UnixMilli() || asked.GetOnDemandMsgCount() != olderCount {
+		t.Fatalf("asked the phone for %v", asked)
+	}
+	all, err := m.store.Messages(ctx, store.Query{Chat: bob, Limit: 10})
+	if err != nil || len(all) != 4 || store.Text(all[0].Message) != "first" {
+		t.Fatalf("the chat now holds %d messages, %v", len(all), err)
+	}
+	start := time.Now()
+	short, cancel := context.WithTimeout(ctx, 50*time.Millisecond)
+	defer cancel()
+	if n, err := m.older(short, bob, func(context.Context, *wire.Message) error { return nil }); n != 0 || err != nil || time.Since(start) > time.Second {
+		t.Fatalf("a phone that never answers: %d, %v after %s", n, err, time.Since(start))
 	}
 }

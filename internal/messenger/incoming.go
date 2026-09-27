@@ -101,6 +101,12 @@ func (m *Messenger) history(chunk history.Chunk) {
 	}
 	changes := store.Changes{Chats: chats, Messages: messages, Names: names, LIDs: chunk.LIDs, Reactions: reactions, Votes: votes, Unread: unread, Tokens: tokens}
 	m.keep(context.Background(), func(ctx context.Context) error { return m.store.Apply(ctx, changes) })
+	if chunk.Type == wire.HistorySync_ON_DEMAND {
+		m.mu.Lock()
+		close(m.onDemand)
+		m.onDemand = make(chan struct{})
+		m.mu.Unlock()
+	}
 }
 
 func (m *Messenger) progress(kind wire.HistorySync_HistorySyncType, percent uint32) {

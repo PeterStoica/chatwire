@@ -37,6 +37,7 @@ type Sender interface {
 	Groups(ctx context.Context) ([]groups.Group, error)
 	Media(ctx context.Context, id string) (media.Reference, []byte, error)
 	Messages(ctx context.Context, q store.Query) ([]store.Message, error)
+	Older(ctx context.Context, chat node.JID) (int, error)
 	Chats(ctx context.Context, limit int) ([]store.Chat, error)
 	Names(ctx context.Context) (map[node.JID]store.Name, error)
 	LIDs(ctx context.Context) (map[node.JID]node.JID, error)

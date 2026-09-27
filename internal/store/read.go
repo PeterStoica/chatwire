@@ -99,6 +99,18 @@ func (s *Store) Token(ctx context.Context, contact node.JID) (privacy.Token, err
 	return t, nil
 }
 
+func (s *Store) Oldest(ctx context.Context, chat node.JID) (Message, bool, error) {
+	chat, err := s.canonical(ctx, chat)
+	if err != nil {
+		return Message{}, false, err
+	}
+	found, err := s.messages(ctx, `SELECT m.chat, m.id, m.author, m.from_me, m.t, m.push_name, m.raw, m.edited, m.revoked, m.status FROM messages m WHERE m.chat = ? ORDER BY m.key LIMIT 1`, chat.String())
+	if err != nil || len(found) == 0 {
+		return Message{}, false, err
+	}
+	return found[0], true, nil
+}
+
 func (s *Store) MessageIn(ctx context.Context, chat node.JID, id string) (Message, bool, error) {
 	chat, err := s.canonical(ctx, chat)
 	if err != nil {
