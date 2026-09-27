@@ -23,8 +23,9 @@ const (
 )
 
 var (
-	ErrUpload   = errors.New("client: upload failed")
-	ErrTooLarge = errors.New("client: file too large")
+	ErrUpload     = errors.New("client: upload failed")
+	errUploadAuth = errors.New("client: the media servers refused the upload key")
+	ErrTooLarge   = errors.New("client: file too large")
 )
 
 type Uploaded struct {
@@ -54,23 +55,33 @@ func (c *Client) Upload(ctx context.Context, t media.Type, data []byte) (Uploade
 	if err != nil {
 		return Uploaded{}, err
 	}
-	conn, err := c.mediaConn(ctx)
-	if err != nil {
-		return Uploaded{}, err
-	}
-	hosts := slices.Clone(conn.Hosts)
-	slices.SortStableFunc(hosts, func(a, b media.Host) int { return cmp.Compare(boolRank(a.Fallback), boolRank(b.Fallback)) })
-	failures := make([]error, 0, len(hosts))
-	for _, host := range hosts {
-		reply, err := c.post(ctx, media.UploadURL(host.Hostname, t, sealed.FileEncSHA256[:], conn.Auth, mediaID), sealed.File)
+	var failures []error
+	for range 2 {
+		conn, err := c.mediaConn(ctx)
 		if err != nil {
-			failures = append(failures, err)
-			continue
+			return Uploaded{}, err
 		}
-		return Uploaded{
-			URL: reply.URL, DirectPath: reply.DirectPath, MediaKey: mediaKey,
-			FileSHA256: sealed.FileSHA256[:], FileEncSHA256: sealed.FileEncSHA256[:], FileLength: uint64(len(data)),
-		}, nil
+		hosts := slices.Clone(conn.Hosts)
+		slices.SortStableFunc(hosts, func(a, b media.Host) int { return cmp.Compare(boolRank(a.Fallback), boolRank(b.Fallback)) })
+		refused := false
+		for _, host := range hosts {
+			reply, err := c.post(ctx, media.UploadURL(host.Hostname, t, sealed.FileEncSHA256[:], conn.Auth, mediaID), sealed.File)
+			if err != nil {
+				failures = append(failures, err)
+				refused = refused || errors.Is(err, errUploadAuth)
+				continue
+			}
+			return Uploaded{
+				URL: reply.URL, DirectPath: reply.DirectPath, MediaKey: mediaKey,
+				FileSHA256: sealed.FileSHA256[:], FileEncSHA256: sealed.FileEncSHA256[:], FileLength: uint64(len(data)),
+			}, nil
+		}
+		if !refused {
+			break
+		}
+		c.mu.Lock()
+		c.media = media.Conn{}
+		c.mu.Unlock()
 	}
 	return Uploaded{}, fmt.Errorf("%w: %w", ErrUpload, errors.Join(failures...))
 }
@@ -86,10 +97,8 @@ func (c *Client) post(ctx context.Context, address string, body []byte) (uploadR
 		return uploadReply{}, err
 	}
 	defer response.Body.Close()
-	if response.StatusCode == http.StatusUnauthorized {
-		c.mu.Lock()
-		c.media = media.Conn{}
-		c.mu.Unlock()
+	if response.StatusCode == http.StatusUnauthorized || response.StatusCode == http.StatusForbidden {
+		return uploadReply{}, fmt.Errorf("%w: %s answered %d", errUploadAuth, request.URL.Host, response.StatusCode)
 	}
 	if response.StatusCode != http.StatusOK {
 		return uploadReply{}, fmt.Errorf("%s answered %d", request.URL.Host, response.StatusCode)

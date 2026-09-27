@@ -80,7 +80,11 @@ func seconds(n node.Node, key string) (time.Duration, error) {
 }
 
 func (c Conn) Fresh(now time.Time) bool {
-	return len(c.Hosts) > 0 && now.Before(c.Fetched.Add(c.TTL))
+	ttl := c.TTL
+	if c.AuthTTL > 0 {
+		ttl = min(ttl, c.AuthTTL)
+	}
+	return len(c.Hosts) > 0 && now.Before(c.Fetched.Add(ttl))
 }
 
 func DownloadURL(hostname, directPath string, fileEncSHA256 []byte, t Type) (string, error) {

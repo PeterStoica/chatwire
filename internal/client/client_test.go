@@ -1345,12 +1345,15 @@ func TestAStaleMediaAuthIsFetchedAgain(t *testing.T) {
 		if _, err := c.Upload(t.Context(), media.Document, []byte("x")); err == nil {
 			t.Fatal("an upload with a stale auth succeeded")
 		}
+		if got := r.mediaConns(); got != 2 {
+			t.Fatalf("%d media_conn queries; a refused upload must fetch a fresh key once and try again", got)
+		}
 		cdn.ExpectAuth(fakecdn.Auth)
 		if _, err := c.Upload(t.Context(), media.Document, []byte("x")); err != nil {
 			t.Fatal(err)
 		}
-		if got := r.mediaConns(); got != 2 {
-			t.Fatalf("%d media_conn queries; a 401 must drop the cached auth", got)
+		if got := r.mediaConns(); got != 3 {
+			t.Fatalf("%d media_conn queries; the key refused twice must not be reused", got)
 		}
 	})
 }
