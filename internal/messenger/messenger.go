@@ -74,6 +74,8 @@ type Messenger struct {
 	failures int
 	retryAt  time.Time
 	outdated func()
+	saving   sync.Mutex
+	current  int
 }
 
 type HistorySync struct {
@@ -106,7 +108,7 @@ func (m *Messenger) keepConnected(ctx context.Context) {
 		m.mu.Unlock()
 		lids, _ := m.store.LIDs(ctx)
 		start := m.link.Now()
-		c, err := client.Connect(ctx, client.Config{LIDs: lids, Link: m.link, HTTP: m.http, Persist: m.save, Receive: m.received, History: m.history, Receipt: m.receipt, Sent: m.sentMessage, Seen: m.seen, TokenOf: m.tokenOf, Tokens: m.tokens, Changed: m.groupChanged, Problem: problem, AppState: m}, state)
+		c, err := client.Connect(ctx, client.Config{LIDs: lids, Link: m.link, HTTP: m.http, Persist: m.saver(), Receive: m.received, History: m.history, Receipt: m.receipt, Sent: m.sentMessage, Seen: m.seen, TokenOf: m.tokenOf, Tokens: m.tokens, Changed: m.groupChanged, Problem: problem, AppState: m}, state)
 		if err == nil {
 			err = m.online(ctx, c)
 		} else {
@@ -174,8 +176,11 @@ func (m *Messenger) WhenLoggedOut(fn func(error)) {
 }
 
 func (m *Messenger) loggedOut(err error) {
+	m.saving.Lock()
+	defer m.saving.Unlock()
 	m.mu.Lock()
 	m.state, m.lastErr = nil, err
+	m.current++
 	gone := m.gone
 	m.mu.Unlock()
 	if gone != nil {
@@ -183,11 +188,23 @@ func (m *Messenger) loggedOut(err error) {
 	}
 }
 
-func (m *Messenger) save(state client.State) error {
+func (m *Messenger) saver() func(client.State) error {
 	m.mu.Lock()
-	m.state = &state
+	m.current++
+	mine := m.current
 	m.mu.Unlock()
-	return m.persist(state)
+	return func(state client.State) error {
+		m.saving.Lock()
+		defer m.saving.Unlock()
+		m.mu.Lock()
+		if mine != m.current || m.state == nil {
+			m.mu.Unlock()
+			return nil
+		}
+		m.state = &state
+		m.mu.Unlock()
+		return m.persist(state)
+	}
 }
 
 func (m *Messenger) keep(ctx context.Context, write func(context.Context) error) {
