@@ -2107,3 +2107,30 @@ func TestAServerLowOnOurPrekeysGetsMore(t *testing.T) {
 		}
 	})
 }
+
+func TestAConnectionThatAcknowledgesNothingIsReplaced(t *testing.T) {
+	synctest.Test(t, func(t *testing.T) {
+		r := newRig(t)
+		r.server.Drop = func(n node.Node) bool { return n.Tag == "message" }
+		c := r.connect()
+		for i := range 2 {
+			if _, err := c.Send(t.Context(), r.bob, &wire.Message{Conversation: new("anyone there?")}); err == nil {
+				t.Fatalf("send %d was acknowledged", i)
+			}
+			synctest.Wait()
+			select {
+			case <-c.Done():
+				if i == 0 {
+					t.Fatal("one missing acknowledgement ended the connection")
+				}
+			default:
+				if i == 1 {
+					t.Fatal("the connection stayed up after two unacknowledged messages")
+				}
+			}
+		}
+		if !errors.Is(c.Err(), client.ErrClosed) || !strings.Contains(c.Err().Error(), "acknowledged none") {
+			t.Fatalf("ended with %v", c.Err())
+		}
+	})
+}

@@ -48,6 +48,7 @@ const (
 	pingWait     = 10 * time.Second
 	maxPingCheck = 5 * time.Second
 	deadAfter    = 75 * time.Second
+	maxUnacked   = 2
 )
 
 var (
@@ -159,6 +160,7 @@ type Client struct {
 	resends     map[string]int
 	recreated   map[address]time.Time
 	given       map[node.JID]time.Time
+	unacked     int
 	groups      map[senderName]*signal.SenderKeys
 	ownKeys     map[node.JID]*signal.SenderKey
 	holders     map[node.JID]map[address]bool
@@ -762,6 +764,9 @@ func (c *Client) deliver(ctx context.Context, stanza node.Node) error {
 		c.mu.Unlock()
 	}()
 	if err := c.online.Session.Send(ctx, stanza); err != nil {
+		if ctx.Err() == nil {
+			c.broken(fmt.Errorf("%w: writing %s failed: %w", ErrClosed, id, err))
+		}
 		return err
 	}
 	timeout, cancel := context.WithTimeout(ctx, ackTimeout)
@@ -771,6 +776,9 @@ func (c *Client) deliver(ctx context.Context, stanza node.Node) error {
 		if !open {
 			return ErrClosed
 		}
+		c.mu.Lock()
+		c.unacked = 0
+		c.mu.Unlock()
 		if failure, _ := ack.Attr("error").Text(); failure != "" {
 			code, err := strconv.Atoi(failure)
 			if err != nil {
@@ -780,8 +788,22 @@ func (c *Client) deliver(ctx context.Context, stanza node.Node) error {
 		}
 		return nil
 	case <-timeout.Done():
+		if ctx.Err() == nil {
+			c.mu.Lock()
+			c.unacked++
+			stuck := c.unacked >= maxUnacked
+			c.mu.Unlock()
+			if stuck {
+				c.broken(fmt.Errorf("%w: WhatsApp acknowledged none of the last %d messages", ErrClosed, maxUnacked))
+			}
+		}
 		return fmt.Errorf("client: no acknowledgement for %s: %w", id, timeout.Err())
 	}
+}
+
+func (c *Client) broken(err error) {
+	c.fail(err)
+	_ = c.online.Close()
 }
 
 func (c *Client) Groups(ctx context.Context) ([]groups.Group, error) {
