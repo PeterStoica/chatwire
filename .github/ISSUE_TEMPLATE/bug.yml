@@ -1,0 +1,26 @@
+name: Something does not work
+description: A bug, an error, or something that behaved differently than you expected
+body:
+  - type: markdown
+    attributes:
+      value: Please leave out phone numbers, names, message text and anything else private.
+  - type: textarea
+    id: what
+    attributes:
+      label: What happened, and what did you expect?
+    validations:
+      required: true
+  - type: textarea
+    id: steps
+    attributes:
+      label: How can it be repeated?
+  - type: input
+    id: version
+    attributes:
+      label: Chatwire version
+      description: The output of `chatwire version`
+  - type: input
+    id: where
+    attributes:
+      label: Computer and AI app
+      description: For example macOS 26 on Apple silicon, Claude Code

@@ -42,9 +42,33 @@ jobs:
           fi
       - name: Vet
         run: go vet ./...
+      - name: Licence notices are up to date
+        run: |
+          sh scripts/notices.sh
+          git diff --exit-code internal/notices
       - name: Race detector
         run: go test -race ./...
       - name: Known vulnerabilities
         run: go run golang.org/x/vuln/cmd/govulncheck@latest ./...
       - name: Secrets in the history
         run: go run github.com/zricethezav/gitleaks/v8@v8.30.0 git --no-banner --redact --config .gitleaks.toml .
+
+  target:
+    if: github.event_name == 'pull_request' && github.base_ref == 'master'
+    runs-on: ubuntu-latest
+    steps:
+      - name: Only release branches of this repository go to master
+        env:
+          HEAD_REPO: ${{ github.event.pull_request.head.repo.full_name }}
+          HEAD_REF: ${{ github.head_ref }}
+          THIS_REPO: ${{ github.repository }}
+        run: |
+          case "$HEAD_REF" in
+          release/*) ;;
+          *) echo "::error::Pull requests to master are only for releases. Please open yours against develop."; exit 1 ;;
+          esac
+          if [ "$HEAD_REPO" != "$THIS_REPO" ]; then
+            echo "::error::Pull requests to master are only for releases. Please open yours against develop."
+            exit 1
+          fi
+

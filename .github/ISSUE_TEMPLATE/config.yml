@@ -1,0 +1,5 @@
+blank_issues_enabled: true
+contact_links:
+  - name: A security problem
+    url: https://github.com/PeterStoica/chatwire/security/advisories/new
+    about: Report it privately instead of in a public issue.

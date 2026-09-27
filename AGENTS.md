@@ -35,10 +35,12 @@ use the full path it printed in the steps below. Developers with Go 1.27 can ins
 chatwire setup --yes --json --client ID
 ```
 
-`ID` is the app you run in: `claude-code`, `claude-desktop`, `codex`, `gemini`, `cursor`, `vscode`, `windsurf`, `cline`,
-`opencode`, `lmstudio` or `zed`. Setup keeps everything else in that app's settings and backs up the file it changes
-once, next to it, with the suffix `.before-chatwire`. It prints one JSON object and opens a page with a live QR code in
-the user's browser. Chatwire can be added to other apps later, when the user asks, with the same command.
+`ID` is the app you run in: `claude-code`, `claude-desktop`, `codex`, `gemini`, `cursor`, `vscode`, `windsurf`,
+`cline`, `opencode` or `lmstudio`. Setup keeps everything else in that app's settings and, for apps it configures
+through a file, backs up the file once, next to it, with the suffix `.before-chatwire`. It prints one JSON object and
+opens a page with a live QR code in the user's browser. If `results` shows your app as `failed` or `skipped`, tell the
+user its `detail`: Chatwire is not in that app until that is fixed. Chatwire can be added to other apps later, when the
+user asks, with the same command.
 
 ## 3. Tell the user
 
@@ -53,7 +55,9 @@ chatwire status --wait 50 --json
 ```
 
 Repeat until `state` is `linked`; a few minutes is normal. The page renews the QR code by itself while it is open. If
-`state` is `expired`, run `chatwire link --json`, show its `say` text, and keep waiting.
+`state` is `expired`, run the same link command again (with `--phone` if you used it), show its `say` text, and keep
+waiting. If status returns a new `code`, show it to the user. If `state` is `failed`, tell the user its `detail` and
+stop.
 
 ## 5. Finish
 
@@ -67,4 +71,6 @@ For example on a remote or headless machine: ask for their WhatsApp mobile numbe
 ## Rules
 
 - Never send, edit or delete WhatsApp messages unless the user asks for that specific action.
-- To undo everything: `chatwire setup --remove --yes`, then remove Chatwire in WhatsApp, Linked devices.
+- To remove Chatwire completely: `chatwire setup --remove --yes`, log it out in WhatsApp's Linked devices, then delete
+  the `chatwire` data folder (`~/Library/Application Support/chatwire` on macOS, `~/.config/chatwire` on Linux,
+  `%AppData%\chatwire` on Windows) and the program itself.
