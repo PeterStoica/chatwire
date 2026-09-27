@@ -23,21 +23,26 @@ esac
 asset="chatwire_${os}_${arch}"
 tmp=$(mktemp -d)
 trap 'rm -rf "$tmp"' EXIT
-fetch() {
-	if command -v curl >/dev/null 2>&1; then
-		curl -fsSL "$1" -o "$2"
-	else
-		wget -qO "$2" "$1"
-	fi
-}
+if command -v curl >/dev/null 2>&1; then
+	fetch() { curl -fsSL "$1" -o "$2"; }
+elif command -v wget >/dev/null 2>&1; then
+	fetch() { wget -qO "$2" "$1"; }
+else
+	echo "chatwire: this installer needs curl or wget to download; install one of them and run it again" >&2
+	exit 1
+fi
+if command -v sha256sum >/dev/null 2>&1; then
+	checksum() { sha256sum "$1" | cut -d' ' -f1; }
+elif command -v shasum >/dev/null 2>&1; then
+	checksum() { shasum -a 256 "$1" | cut -d' ' -f1; }
+else
+	echo "chatwire: this installer needs sha256sum or shasum to check the download; install one of them and run it again" >&2
+	exit 1
+fi
 fetch "$base/$asset" "$tmp/$asset"
 fetch "$base/checksums.txt" "$tmp/checksums.txt"
 want=$(awk -v name="$asset" '$2 == name { print $1 }' "$tmp/checksums.txt")
-if command -v sha256sum >/dev/null 2>&1; then
-	got=$(sha256sum "$tmp/$asset" | cut -d' ' -f1)
-else
-	got=$(shasum -a 256 "$tmp/$asset" | cut -d' ' -f1)
-fi
+got=$(checksum "$tmp/$asset")
 if [ -z "$want" ] || [ "$want" != "$got" ]; then
 	echo "chatwire: the download does not match its checksum; nothing was installed" >&2
 	exit 1

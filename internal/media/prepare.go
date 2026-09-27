@@ -12,6 +12,10 @@ import (
 
 const (
 	jpegQuality     = 92
+	markerSOF0      = 0xC0
+	markerSOF15     = 0xCF
+	markerDQT       = 0xDB
+	markerDRI       = 0xDD
 	markerSOI       = 0xD8
 	markerEOI       = 0xD9
 	markerSOS       = 0xDA
@@ -103,8 +107,12 @@ func CleanJPEG(data []byte) ([]byte, bool) {
 		if marker == markerSOS {
 			return append(out, rest...), true
 		}
-		if marker != markerAPP0 && !(marker >= markerAPP1 && marker <= markerAPP15) && marker != markerCOM {
+		switch {
+		case marker >= markerSOF0 && marker <= markerSOF15, marker == markerDQT, marker == markerDRI:
 			out = append(out, rest[:2+size]...)
+		case marker == markerAPP0, marker >= markerAPP1 && marker <= markerAPP15, marker == markerCOM:
+		default:
+			return nil, false
 		}
 		rest = rest[2+size:]
 	}
