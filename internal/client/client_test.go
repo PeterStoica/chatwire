@@ -2345,6 +2345,52 @@ func TestOurPhoneIsAskedForMessagesSentOnlyToIt(t *testing.T) {
 	})
 }
 
+func TestOneBrokenKeyBundleDoesNotStopAGroupSend(t *testing.T) {
+	synctest.Test(t, func(t *testing.T) {
+		r := newRig(t)
+		carol := node.JID{User: "40733333333", Server: node.ServerUser}
+		carolPhone, err := fakedevice.New(rand.Reader, carol)
+		if err != nil {
+			t.Fatal(err)
+		}
+		if err := carolPhone.Upload(r.keys, 3); err != nil {
+			t.Fatal(err)
+		}
+		r.devices.Set(carol, fakeusync.Device{ID: 0})
+		family := groups.Group{
+			JID: node.JID{User: "120363000000000009", Server: node.ServerGroup}, Subject: "Family", Created: time.Unix(1700000000, 0),
+			Participants: []groups.Participant{{JID: r.account, Admin: true}, {JID: r.bob}, {JID: carol}},
+		}
+		r.server.Groups = fakegroups.New(family)
+		r.server.Members = func(node.JID) []node.JID { return []node.JID{r.bob, carol, r.account, r.world.Phone.JID} }
+		r.server.Override = func(n node.Node) (node.Node, bool) {
+			if xmlns, _ := n.Attr("xmlns").Text(); n.Tag != "iq" || xmlns != "encrypt" {
+				return node.Node{}, false
+			}
+			reply := r.keys.Handle(r.world.Phone.JID, n)
+			list, ok := reply.Child("list")
+			if !ok {
+				return reply, true
+			}
+			for i, user := range list.Children {
+				if device, _ := user.Attr("jid").JID(); device.User == carol.User {
+					user.Children = slices.DeleteFunc(slices.Clone(user.Children), func(child node.Node) bool { return child.Tag == "identity" })
+					list.Children[i] = user
+				}
+			}
+			reply.Children = []node.Node{list}
+			return reply, true
+		}
+		c := r.connect()
+		if _, err := c.SendGroup(t.Context(), family, &wire.Message{Conversation: new("dinner at 8")}); err != nil {
+			t.Fatalf("SendGroup() with one broken bundle = %v", err)
+		}
+		if got := r.deliveredTo(r.bob); len(got) != 1 {
+			t.Fatalf("bob got %d messages", len(got))
+		}
+	})
+}
+
 func TestDeviceListsAreReusedUntilTheyChange(t *testing.T) {
 	synctest.Test(t, func(t *testing.T) {
 		r := newRig(t)

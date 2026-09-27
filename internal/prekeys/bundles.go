@@ -55,7 +55,8 @@ func ParseBundles(reply node.Node) ([]Bundle, map[node.JID]error, error) {
 		}
 		bundle, err := parseBundle(device, user)
 		if err != nil {
-			return nil, nil, err
+			failed[device] = err
+			continue
 		}
 		bundles = append(bundles, bundle)
 	}

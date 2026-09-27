@@ -169,14 +169,19 @@ func (c *Client) fetchSessions(ctx context.Context, devices []node.JID) error {
 func (c *Client) initiate(bundles []prekeys.Bundle) error {
 	c.mu.Lock()
 	defer c.mu.Unlock()
+	var failures []error
 	for _, b := range bundles {
 		address := c.addressLocked(b.Device)
 		session, err := signal.Initiate(c.cfg.Link.Random, c.identity.Signal(), c.sessions[address], b.Keys)
 		if err != nil {
-			return fmt.Errorf("client: session with %s: %w", b.Device, err)
+			failures = append(failures, fmt.Errorf("client: session with %s: %w", b.Device, err))
+			continue
 		}
 		c.sessions[address] = session
 		c.recreated[address] = c.cfg.Link.Now()
+	}
+	if len(failures) == len(bundles) {
+		return errors.Join(failures...)
 	}
 	return nil
 }

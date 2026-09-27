@@ -3,6 +3,7 @@ package prekeys_test
 import (
 	"crypto/rand"
 	"errors"
+	"slices"
 	"testing"
 
 	"github.com/PeterStoica/chatwire/internal/curve"
@@ -128,15 +129,31 @@ func TestMalformedBundlesAreRefused(t *testing.T) {
 		{"not a result", node.Node{Tag: "iq", Attrs: []node.Attr{{Key: "type", Value: node.Text("error")}}}},
 		{"no list", node.Node{Tag: "iq", Attrs: []node.Attr{{Key: "type", Value: node.Text("result")}}}},
 		{"entry without jid", edit(func(user *node.Node) { user.Attrs = nil })},
+	} {
+		t.Run(tt.name, func(t *testing.T) {
+			if _, _, err := prekeys.ParseBundles(tt.reply); !errors.Is(err, prekeys.ErrBundle) {
+				t.Fatalf("ParseBundles() = %v, want %v", err, prekeys.ErrBundle)
+			}
+		})
+	}
+	for _, tt := range []struct {
+		name  string
+		reply node.Node
+	}{
 		{"short registration", edit(replace("registration", node.Node{Tag: "registration", Bytes: []byte{1, 2, 3}}))},
 		{"wrong key type", edit(replace("type", node.Node{Tag: "type", Bytes: []byte{6}}))},
 		{"short identity", edit(replace("identity", node.Node{Tag: "identity", Bytes: make([]byte, 31)}))},
 		{"one-time prekey with short id", edit(replace("key", node.Node{Tag: "key", Children: []node.Node{{Tag: "id", Bytes: []byte{1}}, {Tag: "value", Bytes: make([]byte, 32)}}}))},
 		{"signed prekey without signature", edit(replace("skey", node.Node{Tag: "skey", Children: []node.Node{{Tag: "id", Bytes: []byte{0, 0, 1}}, {Tag: "value", Bytes: make([]byte, 32)}}}))},
 	} {
-		t.Run(tt.name, func(t *testing.T) {
-			if _, _, err := prekeys.ParseBundles(tt.reply); !errors.Is(err, prekeys.ErrBundle) {
-				t.Fatalf("ParseBundles() = %v, want %v", err, prekeys.ErrBundle)
+		t.Run(tt.name+" skips only that device", func(t *testing.T) {
+			list, _ := tt.reply.Child("list")
+			goodList, _ := good.Child("list")
+			both := tt.reply
+			both.Children = []node.Node{{Tag: "list", Children: append(slices.Clone(list.Children), goodList.Children[0].With("jid", node.Address(node.JID{User: "40799999999", Device: 1, Server: node.ServerUser})))}}
+			bundles, failed, err := prekeys.ParseBundles(both)
+			if err != nil || len(bundles) != 1 || bundles[0].Device.User != "40799999999" || !errors.Is(failed[alice.jid], prekeys.ErrBundle) {
+				t.Fatalf("ParseBundles() = %d bundles, failed %v, %v", len(bundles), failed, err)
 			}
 		})
 	}
