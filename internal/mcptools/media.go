@@ -100,7 +100,7 @@ func saveMedia(dir, id string, ref media.Reference, data []byte) (string, error)
 	}
 	name := safeName(id, maxNameLength)
 	if ref.FileName != "" {
-		base := filepath.Base(ref.FileName)
+		base := baseName(ref.FileName)
 		if stem := safeName(strings.TrimSuffix(base, filepath.Ext(base)), maxNameLength); stem != "" && strings.Trim(stem, "_") != "" {
 			name += "-" + stem
 		}
@@ -112,8 +112,12 @@ func saveMedia(dir, id string, ref media.Reference, data []byte) (string, error)
 	return path, os.WriteFile(path, data, 0o600)
 }
 
+func baseName(name string) string {
+	return name[strings.LastIndexAny(name, `/\`)+1:]
+}
+
 func extensionOf(ref media.Reference) string {
-	if extension := strings.TrimPrefix(filepath.Ext(ref.FileName), "."); extension != "" {
+	if extension := strings.TrimPrefix(filepath.Ext(baseName(ref.FileName)), "."); extension != "" {
 		return extension
 	}
 	switch media.Essence(ref.Mimetype) {
