@@ -47,7 +47,7 @@ jobs:
           CHATWIRE_BASE_URL: http://127.0.0.1:8931
           CHATWIRE_INSTALL_DIR: ${{ runner.temp }}/tampered
         run: |
-          sed -i.bak 's/^[0-9a-f]/0/' dist/checksums.txt
+          sed -i.bak -E 's/^[0-9a-f]{64}/0000000000000000000000000000000000000000000000000000000000000000/' dist/checksums.txt
           if sh dist/install.sh; then echo "a tampered download was installed"; exit 1; fi
           test ! -e "$CHATWIRE_INSTALL_DIR/chatwire"
           mv dist/checksums.txt.bak dist/checksums.txt
@@ -66,3 +66,17 @@ jobs:
           New-Item -ItemType Directory -Force (Join-Path $env:USERPROFILE '.codex') | Out-Null
           & $exe setup --client codex --yes --no-link --json
           if (-not (Select-String -Quiet -Path (Join-Path $env:USERPROFILE '.codex\config.toml') -Pattern chatwire)) { exit 1 }
+      - name: Refuse a tampered download on Windows
+        if: runner.os == 'Windows'
+        shell: pwsh
+        env:
+          CHATWIRE_BASE_URL: http://127.0.0.1:8931
+        run: |
+          $env:CHATWIRE_INSTALL_DIR = Join-Path $env:RUNNER_TEMP 'tampered'
+          Copy-Item dist/checksums.txt dist/checksums.txt.bak
+          (Get-Content dist/checksums.txt) -replace '^[0-9a-f]{64}', ('0' * 64) | Set-Content dist/checksums.txt
+          $refused = $false
+          try { ./dist/install.ps1 } catch { $refused = $true }
+          Move-Item -Force dist/checksums.txt.bak dist/checksums.txt
+          if (-not $refused) { Write-Error 'a tampered download was installed'; exit 1 }
+          if (Test-Path (Join-Path $env:CHATWIRE_INSTALL_DIR 'chatwire.exe')) { Write-Error 'a tampered file was left behind'; exit 1 }

@@ -15,7 +15,7 @@ done
 cp scripts/install.sh scripts/install.ps1 "$out/"
 cd "$out"
 if command -v sha256sum >/dev/null 2>&1; then
-	sha256sum chatwire_* > checksums.txt
+	sha256sum chatwire_*
 else
-	shasum -a 256 chatwire_* > checksums.txt
-fi
+	shasum -a 256 chatwire_*
+fi | awk '{ name = $2; sub(/^\*/, "", name); print $1 "  " name }' > checksums.txt

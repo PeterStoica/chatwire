@@ -9,7 +9,7 @@ New-Item -ItemType Directory -Force -Path $dir, $tmp | Out-Null
 try {
     Invoke-WebRequest -UseBasicParsing "$base/$asset" -OutFile (Join-Path $tmp $asset)
     Invoke-WebRequest -UseBasicParsing "$base/checksums.txt" -OutFile (Join-Path $tmp 'checksums.txt')
-    $line = Get-Content (Join-Path $tmp 'checksums.txt') | Where-Object { ($_ -split '\s+')[1] -eq $asset } | Select-Object -First 1
+    $line = Get-Content (Join-Path $tmp 'checksums.txt') | Where-Object { "$(($_ -split '\s+')[1])".TrimStart('*') -eq $asset } | Select-Object -First 1
     $want = if ($line) { ($line -split '\s+')[0] } else { '' }
     $got = (Get-FileHash (Join-Path $tmp $asset) -Algorithm SHA256).Hash.ToLower()
     if (-not $want -or $want -ne $got) { throw 'chatwire: the download does not match its checksum; nothing was installed' }
