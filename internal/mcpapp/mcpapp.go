@@ -15,6 +15,7 @@ import (
 	"os"
 	"os/signal"
 	"path/filepath"
+	"runtime"
 	"runtime/debug"
 	"strings"
 	"sync"
@@ -64,6 +65,9 @@ func defaultState() string {
 }
 
 func run(ctx context.Context, args []string, stdin io.Reader, stdout, stderr io.Writer) error {
+	if exe, err := os.Executable(); err == nil && runtime.GOOS == "windows" {
+		_ = os.Remove(exe + ".old")
+	}
 	command := "stdio"
 	if len(args) > 0 && !strings.HasPrefix(args[0], "-") {
 		command, args = args[0], args[1:]
@@ -78,6 +82,15 @@ func run(ctx context.Context, args []string, stdin io.Reader, stdout, stderr io.
 	case "version", "--version":
 		_, err := fmt.Fprintln(stdout, "chatwire "+version())
 		return err
+	case "update":
+		flags := flag.NewFlagSet(command, flag.ContinueOnError)
+		flags.SetOutput(stderr)
+		check := flags.Bool("check", false, "only say whether a newer version exists")
+		asJSON := flags.Bool("json", false, "print results as JSON")
+		if err := flags.Parse(args); err != nil {
+			return err
+		}
+		return runUpdate(ctx, stdout, *check, *asJSON)
 	}
 	flags := flag.NewFlagSet(command, flag.ContinueOnError)
 	flags.SetOutput(stderr)
@@ -219,6 +232,7 @@ func self() (executable, build string, err error) {
 
 type app struct {
 	lock     *os.File
+	updates  *updates
 	messages *store.Store
 	m        *messenger.Messenger
 	l        *linker.Linker
@@ -261,7 +275,8 @@ func open(ctx context.Context, path string) (*app, error) {
 		_ = lock.Close()
 		return nil, err
 	}
-	a.lock = lock
+	a.lock, a.updates = lock, newUpdates(filepath.Dir(path))
+	go a.updates.watch(ctx)
 	return a, nil
 }
 
@@ -309,7 +324,7 @@ func openLocked(ctx context.Context, path string) (*app, error) {
 }
 
 func (a *app) server() *mcp.Server {
-	return mcptools.NewServer(&mcp.Implementation{Name: "chatwire", Version: version()}, a.l, a.m, mcptools.Options{MediaDir: a.media, Folders: folders(), Private: []string{filepath.Dir(a.media)}, LinkPage: a.linkPage})
+	return mcptools.NewServer(&mcp.Implementation{Name: "chatwire", Version: version()}, a.l, a.m, mcptools.Options{MediaDir: a.media, Folders: folders(), Private: []string{filepath.Dir(a.media)}, LinkPage: a.linkPage, Update: a.updates.available})
 }
 
 func (a *app) close() {

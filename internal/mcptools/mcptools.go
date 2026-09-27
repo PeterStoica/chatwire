@@ -53,6 +53,7 @@ type Options struct {
 	Folders  []string
 	Private  []string
 	LinkPage func(context.Context) (url string, opened bool, err error)
+	Update   func() (latest string, newer bool)
 }
 
 const Instructions = "Reads and sends WhatsApp messages from the user's own account through a linked device. " +
@@ -111,7 +112,7 @@ func Register(server *mcp.Server, l Linker, s Sender, opts Options) {
 	add(server, &mcp.Tool{
 		Name:        "whatsapp_status",
 		Description: "Tell whether WhatsApp is linked and connected. With wait_seconds it waits for a link in progress to finish, so call it right after showing the user a linking code.",
-	}, status(l, s))
+	}, status(l, s, opts))
 }
 
 type refusal struct {

@@ -32,6 +32,7 @@ const usage = `Chatwire connects AI apps to your WhatsApp. Unofficial; not affil
   chatwire link --phone +40 721 234 567
                             link with an 8-character code typed on the phone instead
   chatwire status           show whether WhatsApp is linked and connected
+  chatwire update           install the newest Chatwire (--check only says whether there is one)
   chatwire setup --remove   take Chatwire out of every AI app again
 
 AI apps start Chatwire by themselves; you never need to leave it running.

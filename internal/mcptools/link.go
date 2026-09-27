@@ -35,6 +35,7 @@ type Report struct {
 	Code       string `json:"code,omitempty"`
 	LinkedAs   string `json:"linked_as,omitempty"`
 	Page       string `json:"page,omitempty"`
+	Update     string `json:"update_available,omitempty"`
 	Detail     string `json:"detail"`
 }
 
@@ -56,7 +57,7 @@ func link(l Linker, opts Options) mcp.ToolHandlerFor[LinkInput, Report] {
 	}
 }
 
-func status(l Linker, s Sender) mcp.ToolHandlerFor[StatusInput, Report] {
+func status(l Linker, s Sender, opts Options) mcp.ToolHandlerFor[StatusInput, Report] {
 	return func(ctx context.Context, _ *mcp.CallToolRequest, in StatusInput) (*mcp.CallToolResult, Report, error) {
 		st := l.Status()
 		if st.Phase.InFlight() {
@@ -69,6 +70,12 @@ func status(l Linker, s Sender) mcp.ToolHandlerFor[StatusInput, Report] {
 		report := describe(st)
 		if st.Phase == linker.Linked {
 			report.Connection, report.Detail = connection(s.Connection(), report.Detail)
+		}
+		if opts.Update != nil {
+			if latest, newer := opts.Update(); newer {
+				report.Update = latest
+				report.Detail += fmt.Sprintf(" Chatwire %s is available; the user can install it by running: chatwire update", latest)
+			}
 		}
 		return nil, report, nil
 	}

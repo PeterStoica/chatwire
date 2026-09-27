@@ -2103,3 +2103,22 @@ func unportable(schema any) string {
 	}
 	return ""
 }
+
+func TestStatusMentionsANewerChatwire(t *testing.T) {
+	synctest.Test(t, func(t *testing.T) {
+		w, err := fakeworld.New(91)
+		if err != nil {
+			t.Fatal(err)
+		}
+		newer := true
+		c, _ := connectWith(t, w, mcptools.Options{Update: func() (string, bool) { return "v9.9.9", newer }})
+		report, _ := c.call("whatsapp_status", nil)
+		if report.Update != "v9.9.9" || !strings.Contains(report.Detail, "chatwire update") {
+			t.Fatalf("with a newer release out: %+v", report)
+		}
+		newer = false
+		if report, _ := c.call("whatsapp_status", nil); report.Update != "" || strings.Contains(report.Detail, "chatwire update") {
+			t.Fatalf("when up to date: %+v", report)
+		}
+	})
+}

@@ -30,7 +30,8 @@ chatwire setup
 ```
 
 `chatwire setup` finds the AI apps on your computer, adds Chatwire to them, and walks you through linking WhatsApp.
-`chatwire setup --remove` takes it out again.
+`chatwire setup --remove` takes it out again. `chatwire update` installs a newer version when there is one;
+`whatsapp_status` says when one is out.
 
 ## What your AI can do with it
 
