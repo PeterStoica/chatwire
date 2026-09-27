@@ -1146,13 +1146,21 @@ func (c *Client) Download(ctx context.Context, ref media.Reference) ([]byte, err
 			return nil, err
 		}
 		file, err := c.fetch(ctx, address)
-		if err != nil {
-			failures = append(failures, err)
-			continue
+		if err == nil {
+			var plain []byte
+			if plain, err = media.Decrypt(ref.MediaKey, ref.Type, file, ref.FileEncSHA256, ref.FileSHA256); err == nil {
+				return plain, nil
+			}
 		}
-		return media.Decrypt(ref.MediaKey, ref.Type, file, ref.FileEncSHA256, ref.FileSHA256)
+		failures = append(failures, err)
 	}
-	return nil, fmt.Errorf("%w: %w", ErrDownload, errors.Join(failures...))
+	failed := errors.Join(failures...)
+	if len(failures) > 0 && !slices.ContainsFunc(failures, func(err error) bool {
+		return !errors.Is(err, ErrGone) && !errors.Is(err, media.ErrHash) && !errors.Is(err, media.ErrMAC)
+	}) {
+		return nil, fmt.Errorf("%w: %w", ErrGone, failed)
+	}
+	return nil, fmt.Errorf("%w: %w", ErrDownload, failed)
 }
 
 func (c *Client) mediaConn(ctx context.Context) (media.Conn, error) {
@@ -1190,7 +1198,7 @@ func (c *Client) fetch(ctx context.Context, address string) ([]byte, error) {
 	defer response.Body.Close()
 	switch response.StatusCode {
 	case http.StatusOK:
-	case http.StatusNotFound, http.StatusGone:
+	case http.StatusForbidden, http.StatusNotFound, http.StatusGone:
 		return nil, fmt.Errorf("%w: %s answered %d", ErrGone, request.URL.Host, response.StatusCode)
 	default:
 		return nil, fmt.Errorf("%s answered %d", request.URL.Host, response.StatusCode)

@@ -1377,6 +1377,12 @@ func TestMessageLifecycleFromClaude(t *testing.T) {
 		if asked != 1 {
 			t.Fatalf("the phone was asked %d times; the second open must use the saved path", asked)
 		}
+		pathless := from(&wire.Message{ImageMessage: &wire.Message_ImageMessage{MediaKey: mediaKey,
+			FileSha256: sealed.FileSHA256[:], FileEncSha256: sealed.FileEncSHA256[:], Mimetype: new("image/png")}})
+		synctest.Wait()
+		if fetched, _ := callAs[mcptools.MediaReport](c, "get_whatsapp_media", map[string]any{"message_id": pathless}); fetched.State != "ok" {
+			t.Fatalf("a photo that came without a download path = %+v", fetched)
+		}
 	})
 }
 

@@ -365,9 +365,11 @@ func (m *Messenger) Media(ctx context.Context, id string) (media.Reference, []by
 	if err != nil {
 		return ref, nil, err
 	}
-	data, err := c.Download(ctx, ref)
-	if !errors.Is(err, client.ErrGone) {
-		return ref, data, err
+	if ref.DirectPath != "" {
+		data, err := c.Download(ctx, ref)
+		if !errors.Is(err, client.ErrGone) {
+			return ref, data, err
+		}
 	}
 	path, err := c.RetryMedia(ctx, ref, found.ID, mediaretry.Target{Chat: found.Chat, FromMe: found.FromMe, Participant: found.Author})
 	if err != nil {
@@ -378,7 +380,7 @@ func (m *Messenger) Media(ctx context.Context, id string) (media.Reference, []by
 		return m.store.Apply(ctx, store.Changes{Messages: []store.Message{found}})
 	})
 	ref.DirectPath = path
-	data, err = c.Download(ctx, ref)
+	data, err := c.Download(ctx, ref)
 	return ref, data, err
 }
 

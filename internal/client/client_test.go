@@ -632,6 +632,10 @@ func TestDownloadingMedia(t *testing.T) {
 				http.Error(w, "busy", http.StatusServiceUnavailable)
 				return
 			}
+			if strings.Contains(req.URL.Path, "expired") {
+				http.Error(w, "expired", http.StatusForbidden)
+				return
+			}
 			file, ok := files[req.URL.Path]
 			if !ok {
 				http.NotFound(w, req)
@@ -711,11 +715,21 @@ func TestDownloadingMedia(t *testing.T) {
 		mu.Unlock()
 		edge, over := ref, ref
 		edge.DirectPath, over.DirectPath = "/v/edge.enc", "/v/over.enc"
-		if _, err := c.Download(t.Context(), edge); err == nil || errors.Is(err, client.ErrDownload) {
+		if _, err := c.Download(t.Context(), edge); err == nil || strings.Contains(err.Error(), "more than") || !errors.Is(err, media.ErrHash) && !errors.Is(err, media.ErrMAC) {
 			t.Fatalf("a file of exactly the cap must reach decryption: %v", err)
 		}
 		if _, err := c.Download(t.Context(), over); !errors.Is(err, client.ErrDownload) || !strings.Contains(err.Error(), "more than") {
 			t.Fatalf("a file over the cap: %v", err)
+		}
+		mu.Lock()
+		primaryDown = false
+		mu.Unlock()
+		expired := ref
+		expired.DirectPath = "/v/expired.enc"
+		for name, gone := range map[string]media.Reference{"forbidden everywhere": expired, "wrong on every host": forged, "on no host": missing} {
+			if _, err := c.Download(t.Context(), gone); !errors.Is(err, client.ErrGone) {
+				t.Errorf("%s: %v, want %v so the phone is asked", name, err, client.ErrGone)
+			}
 		}
 	})
 }
@@ -2387,6 +2401,41 @@ func TestOneBrokenKeyBundleDoesNotStopAGroupSend(t *testing.T) {
 		}
 		if got := r.deliveredTo(r.bob); len(got) != 1 {
 			t.Fatalf("bob got %d messages", len(got))
+		}
+	})
+}
+
+func TestAGroupAddressedByPrivateIDsIsSentThatWay(t *testing.T) {
+	synctest.Test(t, func(t *testing.T) {
+		r := newRig(t)
+		ourLID := node.JID{User: r.world.Phone.LID.User, Server: node.ServerLID}
+		bobLID := node.JID{User: "11112222333", Server: node.ServerLID}
+		r.devices.Set(bobLID, fakeusync.Device{ID: 0})
+		r.keys.Alias(bobLID, r.bob)
+		community := groups.Group{
+			JID: node.JID{User: "120363000000000077", Server: node.ServerGroup}, Subject: "Street", Created: time.Unix(1700000000, 0), AddressingMode: "lid",
+			Participants: []groups.Participant{{JID: ourLID, Phone: r.account, Admin: true}, {JID: bobLID, Phone: r.bob}},
+		}
+		r.server.Groups = fakegroups.New(community)
+		r.server.Members = func(node.JID) []node.JID { return []node.JID{bobLID, ourLID, node.JID{User: ourLID.User, Device: r.world.Phone.JID.Device, Server: node.ServerLID}} }
+		c := r.connect()
+		id, err := c.SendGroup(t.Context(), community, &wire.Message{Conversation: new("bins go out tonight")})
+		if err != nil {
+			t.Fatal(err)
+		}
+		stanza := r.sentStanza(id)
+		if mode, _ := stanza.Attr("addressing_mode").Text(); mode != "lid" {
+			t.Fatalf("addressing_mode = %q", mode)
+		}
+		participants, _ := stanza.Child("participants")
+		for _, target := range participants.Children {
+			device, _ := target.Attr("jid").JID()
+			if device.Server != node.ServerLID || device.User == ourLID.User && device.Device == r.world.Phone.JID.Device {
+				t.Fatalf("the sender key went to %s", device)
+			}
+		}
+		if len(r.deliveredTo(bobLID)) == 0 || len(r.deliveredTo(r.account)) == 0 {
+			t.Fatalf("delivered to bob %d, to our phone %d", len(r.deliveredTo(bobLID)), len(r.deliveredTo(r.account)))
 		}
 	})
 }

@@ -172,7 +172,6 @@ func TestMessagesWithoutDownloadableMedia(t *testing.T) {
 		msg  *wire.Message
 	}{
 		{name: "text", msg: &wire.Message{Conversation: new("hi")}},
-		{name: "no direct path", msg: &wire.Message{ImageMessage: &wire.Message_ImageMessage{MediaKey: mediaKey}}},
 		{name: "short media key", msg: &wire.Message{ImageMessage: &wire.Message_ImageMessage{DirectPath: new("/v/x"), MediaKey: mediaKey[:31]}}},
 		{name: "long media key", msg: &wire.Message{ImageMessage: &wire.Message_ImageMessage{DirectPath: new("/v/x"), MediaKey: append(mediaKey, 0)}}},
 		{name: "nil", msg: nil},
@@ -184,6 +183,25 @@ func TestMessagesWithoutDownloadableMedia(t *testing.T) {
 				t.Fatalf("ReferenceOf() = %+v", got)
 			}
 		})
+	}
+}
+
+func TestMediaWithoutAPathCanStillBeFetched(t *testing.T) {
+	t.Parallel()
+	mediaKey := bytes.Repeat([]byte{7}, media.KeySize)
+	for _, tt := range []struct {
+		name string
+		msg  *wire.Message
+		want string
+	}{
+		{name: "only a key: ask the phone", msg: &wire.Message{ImageMessage: &wire.Message_ImageMessage{MediaKey: mediaKey}}},
+		{name: "path taken from the url", msg: &wire.Message{VideoMessage: &wire.Message_VideoMessage{MediaKey: mediaKey, Url: new("https://mmg.whatsapp.net/v/t62.7161-24/abc.enc?ccb=11-4&oh=01")}}, want: "/v/t62.7161-24/abc.enc?ccb=11-4&oh=01"},
+		{name: "a path wins over the url", msg: &wire.Message{AudioMessage: &wire.Message_AudioMessage{MediaKey: mediaKey, DirectPath: new("/v/a.enc"), Url: new("https://mmg.whatsapp.net/v/b.enc")}}, want: "/v/a.enc"},
+	} {
+		got, ok := media.ReferenceOf(tt.msg)
+		if !ok || got.DirectPath != tt.want {
+			t.Errorf("%s: ReferenceOf() = %q, %v; want %q", tt.name, got.DirectPath, ok, tt.want)
+		}
 	}
 }
 

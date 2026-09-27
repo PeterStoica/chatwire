@@ -5,6 +5,7 @@ import (
 	"github.com/PeterStoica/chatwire/internal/wire"
 	"google.golang.org/protobuf/proto"
 	"google.golang.org/protobuf/reflect/protoreflect"
+	"net/url"
 )
 
 type Reference struct {
@@ -21,6 +22,7 @@ type Reference struct {
 
 type source interface {
 	GetDirectPath() string
+	GetUrl() string
 	GetMediaKey() []byte
 	GetFileSha256() []byte
 	GetFileEncSha256() []byte
@@ -85,14 +87,25 @@ func ReferenceOf(m *wire.Message) (Reference, bool) {
 	default:
 		return Reference{}, false
 	}
-	if src.GetDirectPath() == "" || len(src.GetMediaKey()) != KeySize {
+	if len(src.GetMediaKey()) != KeySize {
 		return Reference{}, false
 	}
 	return Reference{
-		Type: kind, DirectPath: src.GetDirectPath(), MediaKey: src.GetMediaKey(),
+		Type: kind, DirectPath: cmp.Or(src.GetDirectPath(), pathOf(src.GetUrl())), MediaKey: src.GetMediaKey(),
 		FileSHA256: src.GetFileSha256(), FileEncSHA256: src.GetFileEncSha256(),
 		Mimetype: src.GetMimetype(), Caption: caption, FileName: name, Length: src.GetFileLength(),
 	}, true
+}
+
+func pathOf(address string) string {
+	parsed, err := url.Parse(address)
+	if err != nil || parsed.Path == "" {
+		return ""
+	}
+	if parsed.RawQuery == "" {
+		return parsed.EscapedPath()
+	}
+	return parsed.EscapedPath() + "?" + parsed.RawQuery
 }
 
 func WithDirectPath(m *wire.Message, path string) *wire.Message {
