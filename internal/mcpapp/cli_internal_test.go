@@ -1,8 +1,11 @@
 package mcpapp
 
 import (
+	"encoding/json/v2"
 	"strings"
 	"testing"
+
+	"github.com/PeterStoica/chatwire/internal/mcptools"
 )
 
 func TestReportsReadAsCommands(t *testing.T) {
@@ -34,5 +37,34 @@ func TestWaitTakesSecondsOrADuration(t *testing.T) {
 		if err := s.Set(bad); err == nil {
 			t.Errorf("Set(%q) was accepted as %v", bad, s.d)
 		}
+	}
+}
+
+func TestTheUserIsToldHowToLinkAndTheRisk(t *testing.T) {
+	t.Parallel()
+	page := mcptools.Report{State: "waiting_for_scan", Page: "http://127.0.0.1:1/abc/", Detail: "for the agent"}
+	raw, err := json.Marshal(linkReport{Report: page, Say: say(page)})
+	if err != nil {
+		t.Fatal(err)
+	}
+	var out map[string]string
+	if err := json.Unmarshal(raw, &out); err != nil {
+		t.Fatal(err)
+	}
+	if out["state"] != page.State || out["page"] != page.Page || out["detail"] != page.Detail {
+		t.Fatalf("the report lost its fields: %s", raw)
+	}
+	for _, want := range []string{page.Page, "Link a device", "unofficial", "stay only on this computer"} {
+		if !strings.Contains(out["say"], want) {
+			t.Errorf("say leaves out %q: %s", want, out["say"])
+		}
+	}
+	code := mcptools.Report{State: "waiting_for_code", Code: "ABCD-EFGH"}
+	if text := say(code); !strings.Contains(text, "ABCD-EFGH") || !strings.Contains(text, "Link with phone number instead") || !strings.Contains(text, "unofficial") {
+		t.Errorf("say for a linking code: %s", text)
+	}
+	linked := mcptools.Report{State: "linked", Detail: "WhatsApp is linked to +40700000000."}
+	if say(linked) != "" || linkText(linked) != linked.Detail {
+		t.Errorf("a linked report says %q", say(linked))
 	}
 }

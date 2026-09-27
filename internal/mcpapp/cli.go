@@ -136,7 +136,7 @@ func (c cli) link(phone string, wait time.Duration) error {
 	if err != nil {
 		return err
 	}
-	c.print(report, linkText(report))
+	c.print(linkReport{Report: report, Say: say(report)}, linkText(report))
 	if !linking(report.State) || wait <= 0 {
 		if linking(report.State) && !c.asJSON {
 			_, _ = fmt.Fprintln(c.out, "Linking goes on in the background. Check with: chatwire status --wait 60")
@@ -165,12 +165,26 @@ func linking(state string) bool {
 	return state == "waiting_for_scan" || state == "waiting_for_code" || state == "starting"
 }
 
-func linkText(r mcptools.Report) string {
+const riskNote = "Chatwire is unofficial: WhatsApp's terms do not allow unofficial apps, so there is a small risk to your account. Your messages stay only on this computer."
+
+type linkReport struct {
+	mcptools.Report
+	Say string `json:"say,omitempty"`
+}
+
+func say(r mcptools.Report) string {
 	switch {
 	case r.Code != "":
-		return fmt.Sprintf("Your linking code: %s\n\nOn your phone, open WhatsApp, then Linked devices, then Link a device, then \"Link with phone number instead\", and type this code.", r.Code)
+		return fmt.Sprintf("Your linking code: %s\n\nOn your phone, open WhatsApp, then Linked devices, then Link a device, then \"Link with phone number instead\", and type this code.\n\n%s", r.Code, riskNote)
 	case r.Page != "":
-		return "A page with the QR code opened in your browser: " + r.Page + "\n\nOn your phone, open WhatsApp, then Linked devices, then Link a device, and scan it."
+		return "Scan the QR code on this page to link your WhatsApp: " + r.Page + " (it may already be open in your browser).\n\nOn your phone, open WhatsApp, then Linked devices, then Link a device, and point it at the code.\n\n" + riskNote
+	}
+	return ""
+}
+
+func linkText(r mcptools.Report) string {
+	if text := say(r); text != "" {
+		return text
 	}
 	return r.Detail
 }

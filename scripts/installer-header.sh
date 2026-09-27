@@ -52,10 +52,8 @@ If you are an AI agent installing this for the user, finish it yourself without 
    It prints which apps were set up, then opens a page with a live QR code in the user's browser; the address is
    in the "page" field.
 
-2. Tell the user in one short message: scan the QR code on the page that just opened: on the phone, open WhatsApp,
-   then Linked devices, then Link a device. If the page did not open, give them the "page" address to open. Add one
-   sentence that Chatwire is unofficial, that WhatsApp's terms do not allow unofficial apps so there is a small risk
-   to the account, and that their messages stay only on this computer.
+2. Show the user the "say" text from that output, word for word, as one message. It has the page address, how to
+   scan, and a note about the risk of an unofficial app that the user must see before linking.
 
 3. Wait for the scan: run "$cw" status --wait 50 --json again and again until "state" is "linked"; a few minutes
    is normal. If "state" is "expired", run "$cw" link --json for a fresh QR code and keep waiting.
@@ -64,8 +62,7 @@ If you are an AI agent installing this for the user, finish it yourself without 
    WhatsApp tools.
 
 Only if the user cannot scan a QR code on this computer: ask for their WhatsApp number with the country code, run
-"$cw" link --phone "+40 721 234 567" --json and show them the 8-character code exactly as returned, to type on the
-phone under Linked devices, Link a device, "Link with phone number instead". Then wait as in step 3.
+"$cw" link --phone "+40 721 234 567" --json and show them its "say" text word for word. Then wait as in step 3.
 
 Never send, edit or delete WhatsApp messages unless the user asks for that specific action.
 To remove everything: "$cw" setup --remove --yes, then remove Chatwire in WhatsApp, Linked devices.
