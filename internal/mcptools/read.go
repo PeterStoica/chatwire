@@ -5,6 +5,7 @@ import (
 	"context"
 	"errors"
 	"fmt"
+	"slices"
 	"strings"
 	"time"
 
@@ -199,7 +200,17 @@ func fetch(ctx context.Context, s Sender, dir directory, q store.Query, unreadOn
 	return s.Messages(ctx, q)
 }
 
+const kindViewOnce = "view_once"
+
 func readDetail(in ReadInput, q store.Query, messages []ReceivedMessage) string {
+	detail := countDetail(in, q, messages)
+	if slices.ContainsFunc(messages, func(m ReceivedMessage) bool { return m.Kind == kindViewOnce }) {
+		detail += " View-once messages open only on the phone."
+	}
+	return detail
+}
+
+func countDetail(in ReadInput, q store.Query, messages []ReceivedMessage) string {
 	switch {
 	case in.Unread && len(messages) == 0:
 		return "No unread messages."
@@ -350,6 +361,8 @@ func describeMessage(dir directory, m store.Message) ReceivedMessage {
 	switch {
 	case m.Revoked:
 		out.Kind, body = "deleted", ""
+	case message.IsViewOnceStub(m.Message):
+		out.Kind = kindViewOnce
 	case hasMedia:
 		out.Kind, out.Media, body = string(ref.Type), true, ref.Caption
 	case isShared:

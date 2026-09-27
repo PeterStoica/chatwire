@@ -18,7 +18,13 @@ const (
 
 func (c *Client) unavailable(n node.Node, in message.Incoming) {
 	child, ok := n.Child("unavailable")
-	if kind, _ := child.Attr("type").Text(); !ok || kind == "view_once" || c.cfg.Link.Now().Sub(in.Timestamp) > placeholderMaxAge {
+	if !ok || c.cfg.Link.Now().Sub(in.Timestamp) > placeholderMaxAge {
+		return
+	}
+	if kind, _ := child.Attr("type").Text(); kind == "view_once" {
+		if c.cfg.Receive != nil && in.ID != "" {
+			c.cfg.Receive(Received{ID: in.ID, Chat: in.Chat, Author: in.Author, Time: in.Timestamp, Name: in.PushName, Message: message.ViewOnceStub(), Pairs: in.Pairs})
+		}
 		return
 	}
 	c.expectResend(in)

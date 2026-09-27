@@ -2334,6 +2334,14 @@ func TestOurPhoneIsAskedForMessagesSentOnlyToIt(t *testing.T) {
 		if err != nil || len(wanted) != 1 || wanted[0].GetMessageKey().GetId() != "3EB0AD" {
 			t.Fatalf("our phone got %v: %v", request, err)
 		}
+		if got := <-r.received; got.ID != "3EB0ONCE" || !message.IsViewOnceStub(got.Message) || got.Chat != r.bob {
+			t.Fatalf("the view-once message came through as %+v", got)
+		}
+		select {
+		case extra := <-r.received:
+			t.Fatalf("also received %+v", extra)
+		default:
+		}
 	})
 }
 

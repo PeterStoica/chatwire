@@ -9,6 +9,7 @@ import (
 	"strings"
 	"testing"
 
+	"github.com/PeterStoica/chatwire/internal/message"
 	"github.com/PeterStoica/chatwire/internal/messenger"
 	"github.com/PeterStoica/chatwire/internal/node"
 	"github.com/PeterStoica/chatwire/internal/store"
@@ -78,6 +79,11 @@ func TestSharedContentReadsAsWhatItIs(t *testing.T) {
 			msg:      &wire.Message{PollCreationMessageV3: &wire.Message_PollCreationMessage{Name: new("Lunch?"), Options: []*wire.Message_PollCreationMessage_Option{{OptionName: new("Pizza")}, {OptionName: new("Sushi")}}}},
 			wantKind: "poll",
 			wantBody: "[poll] Lunch? Options: Pizza / Sushi",
+		},
+		{
+			name:     "view-once kept on the phone",
+			msg:      message.ViewOnceStub(),
+			wantKind: "view_once",
 		},
 	}
 	for _, tt := range tests {
