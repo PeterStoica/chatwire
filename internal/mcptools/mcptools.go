@@ -75,7 +75,7 @@ const Instructions = "Reads and sends WhatsApp messages from the user's own acco
 const ReadOnlyNote = "The user set Chatwire to read-only: it cannot send, react, vote, edit, delete, mark as read or change groups."
 
 const sendFileDescription = "Send a photo, video, voice note (.opus/.ogg) or any document from this computer over WhatsApp, with an optional caption. to is a contact or group name, a mobile number with country code, or me. " +
-	"For safety, files are only sent from the Desktop, Documents, Downloads, Pictures, Movies, Videos, Music and temporary folders (the user can allow more with the CHATWIRE_FILES setting); hidden files never."
+	"For safety, files are only sent from the Desktop, Documents, Downloads, Pictures, Movies, Videos, Music and temporary folders (the user can allow more with the CHATWIRE_FILES setting), and never a file or folder inside them whose name starts with a dot."
 
 func NewServer(impl *mcp.Implementation, l Linker, s Sender, opts Options) *mcp.Server {
 	instructions := Instructions

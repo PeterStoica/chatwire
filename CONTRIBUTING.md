@@ -18,8 +18,9 @@ issue first so we can agree on the approach.
   `main`: it is built, checked by installing it on Linux, macOS and Windows, and only then published.
 - Every pull request runs gofmt, go vet, the tests on Linux, macOS and Windows, the race detector, govulncheck and
   gitleaks. Before you push, run `gofmt -l .`, `go vet ./...` and `go test -race ./...`.
-- Tests describe what Chatwire does, not how, need no phone and pass without a network: `internal/testkit` has a
-  fake WhatsApp server, phone and media CDN, and timing tests use `testing/synctest`.
+- Tests describe what Chatwire does, not how, and need no phone: `internal/testkit` has a fake WhatsApp server,
+  phone and media CDN, and timing tests use `testing/synctest`. They pass without a network, though a few start the
+  real program, which tries to reach WhatsApp and carries on when it cannot.
 - The code has no comments; explain why in the commit message. Commit messages follow Conventional Commits, for
   example `fix(link): answer WhatsApp's pings while linking`.
 

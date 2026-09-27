@@ -61,7 +61,8 @@ stop.
 
 ## 5. Finish
 
-Tell the user to restart your app (or open a new session) to get the WhatsApp tools.
+If setup added Chatwire to your app, tell the user to restart it (or open a new session) to get the WhatsApp tools.
+If it did not, tell them what its `detail` said needs fixing first.
 
 ## If the user cannot scan a QR code on this computer
 
@@ -72,5 +73,5 @@ For example on a remote or headless machine: ask for their WhatsApp mobile numbe
 
 - Never send, edit or delete WhatsApp messages unless the user asks for that specific action.
 - To remove Chatwire completely: `chatwire setup --remove --yes`, log it out in WhatsApp's Linked devices, then delete
-  the `chatwire` data folder (`~/Library/Application Support/chatwire` on macOS, `~/.config/chatwire` on Linux,
-  `%AppData%\chatwire` on Windows) and the program itself.
+  the `chatwire` data folder (`~/Library/Application Support/chatwire` on macOS, `~/.config/chatwire` or
+  `$XDG_CONFIG_HOME/chatwire` on Linux, `%AppData%\chatwire` on Windows) and the program itself.

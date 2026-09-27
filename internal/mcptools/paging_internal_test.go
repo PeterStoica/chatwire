@@ -75,7 +75,7 @@ func TestCatchingUpSaysWhenThereMayBeMore(t *testing.T) {
 	t.Parallel()
 	full := countDetail(ReadInput{Unread: true}, store.Query{}, make([]ReceivedMessage, maxRead))
 	some := countDetail(ReadInput{Unread: true}, store.Query{}, make([]ReceivedMessage, 3))
-	if !strings.Contains(full, "may be more") || !strings.Contains(full, "unread=true") || strings.Contains(some, "may be more") {
+	if !strings.Contains(full, "may be more") || !strings.Contains(full, "before") || strings.Contains(some, "may be more") {
 		t.Fatalf("at the limit: %q; below it: %q", full, some)
 	}
 }

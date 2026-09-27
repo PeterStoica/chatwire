@@ -24,7 +24,7 @@ type ReadInput struct {
 	Query  string `json:"query,omitempty" jsonschema:"only messages containing all these words; case and accents do not matter"`
 	Limit  int    `json:"limit,omitempty" jsonschema:"how many messages to return, newest last (default 20, at most 200)"`
 	Before string `json:"before,omitempty" jsonschema:"to page back: the id of the oldest message already shown, as the earlier result suggests; a time (RFC 3339) also works. In one chat, when this computer has nothing older, the phone is asked for more (a few seconds)"`
-	Unread bool   `json:"unread,omitempty" jsonschema:"only the unread messages, from every chat that has some among the 500 most recent (or only chat), in the order the phone lists the chats, at most 200 at a time; answers what did I miss in one call. Cannot be combined with query, before or from"`
+	Unread bool   `json:"unread,omitempty" jsonschema:"only the unread messages, from every chat that has some among the first 500 chats in the phone's order (or only chat), in the order the phone lists the chats, at most 200 at a time; answers what did I miss in one call. Cannot be combined with query, before or from"`
 }
 
 type ReceivedMessage struct {
@@ -233,7 +233,7 @@ func countDetail(in ReadInput, q store.Query, messages []ReceivedMessage) string
 	case in.Unread && len(messages) == 0:
 		return "No unread messages."
 	case in.Unread && len(messages) >= maxRead:
-		return fmt.Sprintf("%d unread messages, the most one call returns; there may be more: ask for them chat by chat with chat and unread=true.", len(messages))
+		return fmt.Sprintf("%d unread messages, the most one call returns; there may be more: read a chat without unread and page back with before to see the rest.", len(messages))
 	case in.Unread:
 		return fmt.Sprintf("%d unread message(s).", len(messages))
 	case len(messages) == 0 && in.Query != "":

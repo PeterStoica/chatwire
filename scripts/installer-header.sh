@@ -66,8 +66,9 @@ If you are an AI agent installing this for the user:
    --phone if you used it), show its "say" text, and keep waiting. If status returns a new "code", show it to the
    user. If "state" is "failed", tell the user its "detail" and stop.
 
-5. When it is linked, tell the user to restart your app (or open a new session) to get the WhatsApp tools. Chatwire
-   can be added to other apps later with "$cw" setup --yes --client ID.
+5. When it is linked and setup added Chatwire to your app, tell the user to restart it (or open a new session) to
+   get the WhatsApp tools; if setup did not, tell them what its "detail" said needs fixing first. Chatwire can be
+   added to other apps later with "$cw" setup --yes --client ID.
 
 Only if the user cannot scan a QR code on this computer: ask for their WhatsApp number with the country code, run
 "$cw" link --phone "+40 721 234 567" --json, show its "say" text word for word, and wait as in step 4.

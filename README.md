@@ -55,15 +55,16 @@ again. `chatwire help` shows every command.
 
 ## How it works
 
-Chatwire links to your WhatsApp as a companion device, the same way WhatsApp Web does. Your phone stays logged in.
-It is one program with nothing else to install. It keeps your messages on your computer, in your own user folder
-where other users of the computer cannot read them, and talks only to WhatsApp and, once a day, to GitHub to see
-whether there is a newer version. The AI app
-you use it with sends what it reads to its model provider, the same as anything else you show it.
+Chatwire links to your WhatsApp as a companion device, the same way WhatsApp Web does. Your phone stays logged in. It
+is one program with nothing else to install. It keeps your messages on your computer, in your own user folder where
+other users of the computer cannot read them (on Windows, as far as your user profile's permissions allow), and talks
+only to WhatsApp and, once a day, to GitHub to see whether there is a newer version. The AI app you use it with sends
+what it reads to its model provider, the same as anything else you show it.
 
 Your AI can send files only from Desktop, Documents, Downloads, Pictures, Movies, Videos, Music and the temporary
-folder, and never files or folders whose name starts with a dot, so a message crafted to trick it cannot reach your
-SSH keys or app settings. It can still send any ordinary file in those folders, so keep secrets out of them. To allow
+folder, and never a file or folder inside them whose name starts with a dot, so a message crafted to trick it cannot
+reach your SSH keys or app settings. It can still send any ordinary file in those folders, so keep secrets out of
+them. To allow
 more folders,
 set `CHATWIRE_FILES` to a list of full paths (separated by `:`, or `;` on Windows) in the app's MCP settings.
 To let an app only read, set `CHATWIRE_READ_ONLY=1` in its MCP settings: it then gets no tool that sends or changes
@@ -77,11 +78,13 @@ against the release checksums. Your AI apps use it from their next session. To t
 
 ## Uninstall
 
-1. `chatwire setup --remove` takes Chatwire out of your AI apps.
+1. Close your AI apps, then run `chatwire setup --remove` to take Chatwire out of them.
 2. On your phone, open WhatsApp's Linked devices and log Chatwire out.
 3. Delete the `chatwire` folder that holds your messages, media and keys: `~/Library/Application Support/chatwire` on
-   macOS, `~/.config/chatwire` on Linux, `%AppData%\chatwire` on Windows.
+   macOS, `~/.config/chatwire` (or `$XDG_CONFIG_HOME/chatwire`) on Linux, `%AppData%\chatwire` on Windows.
 4. Delete the program: `~/.local/bin/chatwire`, or the `%LOCALAPPDATA%\Programs\chatwire` folder on Windows.
+5. Setup kept a copy of each settings file it changed, next to it, ending in `.before-chatwire`; delete those too if
+   you do not need them.
 
 ## Be aware
 
