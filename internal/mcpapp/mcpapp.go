@@ -244,6 +244,7 @@ type app struct {
 	m        *messenger.Messenger
 	l        *linker.Linker
 	media    string
+	repeats  *mcptools.Repeats
 	mu       sync.Mutex
 	page     *linkpage.Page
 	opened   time.Time
@@ -327,11 +328,11 @@ func openLocked(ctx context.Context, path string) (*app, error) {
 	if linked {
 		m.Start(ctx, state)
 	}
-	return &app{messages: messages, m: m, l: l, media: filepath.Join(filepath.Dir(path), "media")}, nil
+	return &app{messages: messages, m: m, l: l, media: filepath.Join(filepath.Dir(path), "media"), repeats: mcptools.NewRepeats()}, nil
 }
 
 func (a *app) server() *mcp.Server {
-	return mcptools.NewServer(&mcp.Implementation{Name: "chatwire", Version: version()}, a.l, a.m, mcptools.Options{MediaDir: a.media, Folders: folders(), Private: []string{filepath.Dir(a.media)}, LinkPage: a.linkPage, Update: a.updates.available})
+	return mcptools.NewServer(&mcp.Implementation{Name: "chatwire", Version: version()}, a.l, a.m, mcptools.Options{MediaDir: a.media, Folders: folders(), Private: []string{filepath.Dir(a.media)}, LinkPage: a.linkPage, Update: a.updates.available, Repeats: a.repeats})
 }
 
 func (a *app) close() {

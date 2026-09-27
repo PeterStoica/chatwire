@@ -43,60 +43,66 @@ type SendReport struct {
 	Detail string `json:"detail"`
 }
 
-func send(s Sender) mcp.ToolHandlerFor[SendInput, SendReport] {
+func send(s Sender, repeats *Repeats) mcp.ToolHandlerFor[SendInput, SendReport] {
 	return func(ctx context.Context, _ *mcp.CallToolRequest, in SendInput) (*mcp.CallToolResult, SendReport, error) {
 		if _, linked := s.Self(); !linked {
 			return reply(SendReport{State: stateNotLinked, Detail: notLinked})
 		}
-		forward := strings.TrimSpace(in.Forward)
-		if in.Poll != nil {
-			if forward != "" || strings.TrimSpace(in.Text) != "" || strings.TrimSpace(in.ReplyTo) != "" {
-				return reply(SendReport{State: "choose_one", Detail: "Give either text (optionally with reply_to), forward or poll."})
-			}
-			poll := *in.Poll
-			return reply(deliver(ctx, s, in.To, sendTimeout, "poll", "the poll ", func(ctx context.Context, to node.JID, dir directory) (string, error) {
-				return s.SendPoll(ctx, to, poll.Question, poll.Options, poll.MultipleAnswers)
-			}))
-		}
-		switch {
-		case forward != "" && (strings.TrimSpace(in.Text) != "" || strings.TrimSpace(in.ReplyTo) != ""):
-			return reply(SendReport{State: "choose_one", Detail: "Give either text (optionally with reply_to) or forward, not both."})
-		case forward != "":
-			return reply(deliver(ctx, s, in.To, fileTimeout, "message", "the forwarded message ", func(ctx context.Context, to node.JID, dir directory) (string, error) {
-				id, _, err := s.Forward(ctx, to, forward)
-				return id, err
-			}))
-		case strings.TrimSpace(in.Text) == "":
-			return reply(SendReport{State: "empty_message", Detail: "There is no text to send."})
-		}
-		quoted := strings.TrimSpace(in.ReplyTo)
-		if quoted != "" && strings.TrimSpace(in.To) == "" {
-			return reply(replyInPlace(ctx, s, in.Text, quoted))
-		}
-		return reply(deliver(ctx, s, in.To, sendTimeout, "message", "", func(ctx context.Context, to node.JID, dir directory) (string, error) {
-			text, mentions := withMentions(ctx, s, dir, to, in.Text)
-			if quoted != "" {
-				id, _, err := s.Reply(ctx, to, text, quoted, mentions...)
-				return id, err
-			}
-			return s.SendText(ctx, to, text, mentions...)
-		}))
+		return reply(repeats.once(ctx, repeatKey("message", in), func() SendReport { return sendMessage(ctx, s, in) }))
 	}
 }
 
-func sendFile(s Sender, g gate) mcp.ToolHandlerFor[FileInput, SendReport] {
+func sendMessage(ctx context.Context, s Sender, in SendInput) SendReport {
+	forward := strings.TrimSpace(in.Forward)
+	if in.Poll != nil {
+		if forward != "" || strings.TrimSpace(in.Text) != "" || strings.TrimSpace(in.ReplyTo) != "" {
+			return SendReport{State: "choose_one", Detail: "Give either text (optionally with reply_to), forward or poll."}
+		}
+		poll := *in.Poll
+		return deliver(ctx, s, in.To, sendTimeout, "poll", "the poll ", func(ctx context.Context, to node.JID, dir directory) (string, error) {
+			return s.SendPoll(ctx, to, poll.Question, poll.Options, poll.MultipleAnswers)
+		})
+	}
+	switch {
+	case forward != "" && (strings.TrimSpace(in.Text) != "" || strings.TrimSpace(in.ReplyTo) != ""):
+		return SendReport{State: "choose_one", Detail: "Give either text (optionally with reply_to) or forward, not both."}
+	case forward != "":
+		return deliver(ctx, s, in.To, fileTimeout, "message", "the forwarded message ", func(ctx context.Context, to node.JID, dir directory) (string, error) {
+			id, _, err := s.Forward(ctx, to, forward)
+			return id, err
+		})
+	case strings.TrimSpace(in.Text) == "":
+		return SendReport{State: "empty_message", Detail: "There is no text to send."}
+	}
+	quoted := strings.TrimSpace(in.ReplyTo)
+	if quoted != "" && strings.TrimSpace(in.To) == "" {
+		return replyInPlace(ctx, s, in.Text, quoted)
+	}
+	return deliver(ctx, s, in.To, sendTimeout, "message", "", func(ctx context.Context, to node.JID, dir directory) (string, error) {
+		text, mentions := withMentions(ctx, s, dir, to, in.Text)
+		if quoted != "" {
+			id, _, err := s.Reply(ctx, to, text, quoted, mentions...)
+			return id, err
+		}
+		return s.SendText(ctx, to, text, mentions...)
+	})
+}
+
+func sendFile(s Sender, g gate, repeats *Repeats) mcp.ToolHandlerFor[FileInput, SendReport] {
 	return func(ctx context.Context, _ *mcp.CallToolRequest, in FileInput) (*mcp.CallToolResult, SendReport, error) {
 		if _, linked := s.Self(); !linked {
 			return reply(SendReport{State: stateNotLinked, Detail: notLinked})
 		}
-		f, refused := g.open(in.Path)
-		if refused != nil {
-			return reply(SendReport{State: refused.state, Detail: refused.detail})
-		}
-		f.Caption = strings.TrimSpace(in.Caption)
-		what := fmt.Sprintf("%s (%s, %d bytes) ", f.Name, media.KindOf(media.Sniff(f.Name, f.Data)), len(f.Data))
-		return reply(deliver(ctx, s, in.To, fileTimeout, "file", what, func(ctx context.Context, to node.JID, dir directory) (string, error) {
-			return s.SendFile(ctx, to, f)
+		return reply(repeats.once(ctx, repeatKey("file", in), func() SendReport {
+			f, refused := g.open(in.Path)
+			if refused != nil {
+				return SendReport{State: refused.state, Detail: refused.detail}
+			}
+			f.Caption = strings.TrimSpace(in.Caption)
+			what := fmt.Sprintf("%s (%s, %d bytes) ", f.Name, media.KindOf(media.Sniff(f.Name, f.Data)), len(f.Data))
+			return deliver(ctx, s, in.To, fileTimeout, "file", what, func(ctx context.Context, to node.JID, dir directory) (string, error) {
+				return s.SendFile(ctx, to, f)
+			})
 		}))
 	}
 }

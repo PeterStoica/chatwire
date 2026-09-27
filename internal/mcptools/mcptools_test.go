@@ -405,6 +405,19 @@ func TestSendingFromClaudeAfterLinking(t *testing.T) {
 		if err != nil || in.Chat != account || in.ID != sent.ID || m.GetDeviceSentMessage().GetDestinationJid() != account.String() || m.GetDeviceSentMessage().GetMessage().GetConversation() != "note to self" {
 			t.Fatalf("our phone read %v in %v: %v", m, in.Chat, err)
 		}
+		synctest.Sleep(5 * time.Second)
+		again, _ := callAs[mcptools.SendReport](c, "send_whatsapp_message", map[string]any{"to": "Me", "text": "note to self"})
+		if again.State != "sent" || again.ID != sent.ID || !strings.Contains(again.Detail, "already sent 5s ago") {
+			t.Fatalf("a repeated call = %+v, want the first send's result", again)
+		}
+		synctest.Sleep(30 * time.Second)
+		later, _ := callAs[mcptools.SendReport](c, "send_whatsapp_message", map[string]any{"to": "Me", "text": "note to self"})
+		mu.Lock()
+		copies = delivered[account]
+		mu.Unlock()
+		if later.State != "sent" || later.ID == sent.ID || len(copies) != 2 {
+			t.Fatalf("the same text half a minute later = %+v with %d copies, want a second message", later, len(copies))
+		}
 	})
 }
 

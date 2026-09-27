@@ -1,6 +1,7 @@
 package mcptools
 
 import (
+	"cmp"
 	"context"
 	"encoding/json/v2"
 	"fmt"
@@ -60,6 +61,7 @@ type Options struct {
 	Private  []string
 	LinkPage func(context.Context) (url string, opened bool, err error)
 	Update   func() (latest string, newer bool)
+	Repeats  *Repeats
 }
 
 const Instructions = "Reads and sends WhatsApp messages from the user's own account through a linked device. " +
@@ -78,6 +80,7 @@ func NewServer(impl *mcp.Implementation, l Linker, s Sender, opts Options) *mcp.
 }
 
 func Register(server *mcp.Server, l Linker, s Sender, opts Options) {
+	repeats := cmp.Or(opts.Repeats, NewRepeats())
 	add(server, &mcp.Tool{
 		Name:        "get_whatsapp_media",
 		Description: "Open the photo, video, voice note, sticker or document of a WhatsApp message by its id from read_whatsapp_messages. Photos come back as an image; other files are saved and their path is returned.",
@@ -85,11 +88,11 @@ func Register(server *mcp.Server, l Linker, s Sender, opts Options) {
 	add(server, &mcp.Tool{
 		Name:        "send_whatsapp_message",
 		Description: "Send a WhatsApp message from the user's linked account: text, a reply, a forward, or a poll. to is a contact or group name, a mobile number with country code, or me for the user's own chat.",
-	}, send(s))
+	}, send(s, repeats))
 	add(server, &mcp.Tool{
 		Name:        "send_whatsapp_file",
 		Description: sendFileDescription,
-	}, sendFile(s, newGate(opts)))
+	}, sendFile(s, newGate(opts), repeats))
 	add(server, &mcp.Tool{
 		Name: "change_whatsapp_message",
 		Description: "React to a WhatsApp message, vote in a poll, or edit or delete one of the user's own messages, by the message id from read_whatsapp_messages. " +
