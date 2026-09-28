@@ -244,12 +244,16 @@ func TestOnlyOwnRecentMessagesChange(t *testing.T) {
 		{name: "a photo's caption", id: "photo", text: "new caption", wantErr: context.DeadlineExceeded},
 		{name: "a text", id: "fresh", text: "hello", wantErr: context.DeadlineExceeded},
 	} {
-		if _, err := m.Edit(short, tt.id, tt.text); !errors.Is(err, tt.wantErr) {
+		within := ctx
+		if errors.Is(tt.wantErr, context.DeadlineExceeded) {
+			within = short
+		}
+		if _, err := m.Edit(within, tt.id, tt.text); !errors.Is(err, tt.wantErr) {
 			t.Errorf("Edit(%s) error = %v, want %v", tt.name, err, tt.wantErr)
 		}
 	}
 	for _, emoji := range []string{"not an emoji", "👍👍", "a"} {
-		if _, err := m.React(short, "bobs", emoji); !errors.Is(err, ErrNotEmoji) {
+		if _, err := m.React(ctx, "bobs", emoji); !errors.Is(err, ErrNotEmoji) {
 			t.Errorf("React(%q) error = %v, want %v", emoji, err, ErrNotEmoji)
 		}
 	}
