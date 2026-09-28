@@ -2030,7 +2030,7 @@ func TestPrivacyTokensTravelWithPersonalMessages(t *testing.T) {
 	})
 }
 
-func TestOneToOneSendsNameTheRecipientsOtherAddress(t *testing.T) {
+func TestOneToOneSendsAddressEveryDeviceLikeTheChat(t *testing.T) {
 	synctest.Test(t, func(t *testing.T) {
 		r := newRig(t)
 		bobLID := node.JID{User: "11112222333", Server: node.ServerLID}
@@ -2049,23 +2049,37 @@ func TestOneToOneSendsNameTheRecipientsOtherAddress(t *testing.T) {
 		if err != nil {
 			t.Fatal(err)
 		}
-		stanza := r.sentStanza(byNumber)
-		if got, want := attrs(stanza), "id="+byNumber+" to="+r.bob.String()+" type=text peer_recipient_lid="+bobLID.String(); got != want {
-			t.Fatalf("attrs = %s, want %s", got, want)
-		}
-		participants, _ := stanza.Child("participants")
-		for _, target := range participants.Children {
-			if device, _ := target.Attr("jid").JID(); device.User == r.account.User {
-				t.Fatalf("our own devices were addressed by number, not by our private ID: %s", device)
+		addressedAs := func(stanza node.Node, server node.Server) {
+			t.Helper()
+			participants, _ := stanza.Child("participants")
+			ours := 0
+			for _, target := range participants.Children {
+				device, _ := target.Attr("jid").JID()
+				if device.Server != server {
+					t.Fatalf("a %s chat addressed device %s by the other kind of address", server, device)
+				}
+				if device.User == r.account.User || device.User == r.world.Phone.LID.User {
+					ours++
+				}
+			}
+			if ours == 0 {
+				t.Fatalf("our own other devices got no copy: %s", stanza)
 			}
 		}
+		stanza := r.sentStanza(byNumber)
+		if got, want := attrs(stanza), "id="+byNumber+" to="+r.bob.String()+" type=text"; got != want {
+			t.Fatalf("attrs = %s, want %s", got, want)
+		}
+		addressedAs(stanza, node.ServerUser)
 		byLID, err := c.Send(t.Context(), bobLID, &wire.Message{Conversation: new("hi again")})
 		if err != nil {
 			t.Fatal(err)
 		}
-		if got, want := attrs(r.sentStanza(byLID)), "id="+byLID+" to="+bobLID.String()+" type=text peer_recipient_pn="+r.bob.String()+" recipient_pn="+r.bob.String(); got != want {
+		stanza = r.sentStanza(byLID)
+		if got, want := attrs(stanza), "id="+byLID+" to="+bobLID.String()+" type=text peer_recipient_pn="+r.bob.String()+" recipient_pn="+r.bob.String(); got != want {
 			t.Fatalf("attrs = %s, want %s", got, want)
 		}
+		addressedAs(stanza, node.ServerLID)
 	})
 }
 

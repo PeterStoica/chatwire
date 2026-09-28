@@ -623,7 +623,7 @@ func (c *Client) SendWithID(ctx context.Context, to node.JID, id string, m *wire
 	theirs := func(d node.JID) bool { return !c.mine(d) }
 	users := []node.JID{to}
 	if !toSelf {
-		users = append(users, c.ownDevice().WithoutDevice())
+		users = append(users, c.ownDeviceAs(to).WithoutDevice())
 	}
 	targets, err := c.devices(ctx, users)
 	if err != nil {
@@ -760,6 +760,13 @@ func (c *Client) forgetDevicesLocked(users ...node.JID) {
 		delete(c.knownDevices, u.WithoutDevice())
 		delete(c.knownDevices, node.JID(c.addressLocked(u.WithoutDevice())))
 	}
+}
+
+func (c *Client) ownDeviceAs(chat node.JID) node.JID {
+	if chat.Server == node.ServerLID {
+		return c.ownDevice()
+	}
+	return c.Self()
 }
 
 func (c *Client) ownDevice() node.JID {

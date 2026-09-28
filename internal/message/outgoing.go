@@ -165,16 +165,11 @@ func encryptedTargets(parts []Part, m *wire.Message) ([]node.Node, bool) {
 
 func KnownAs(stanza node.Node, other node.JID) node.Node {
 	to, _ := stanza.Attr("to").JID()
-	var peer, recipient []node.Attr
-	switch {
-	case to.Server == node.ServerUser && other.Server == node.ServerLID:
-		peer = []node.Attr{{Key: "peer_recipient_lid", Value: node.Address(other.WithoutDevice())}}
-	case to.Server == node.ServerLID && other.Server == node.ServerUser:
-		peer = []node.Attr{{Key: "peer_recipient_pn", Value: node.Address(other.WithoutDevice())}}
-		recipient = []node.Attr{{Key: "recipient_pn", Value: node.Address(other.WithoutDevice())}}
-	default:
+	if to.Server != node.ServerLID || other.Server != node.ServerUser {
 		return stanza
 	}
+	peer := []node.Attr{{Key: "peer_recipient_pn", Value: node.Address(other.WithoutDevice())}}
+	recipient := []node.Attr{{Key: "recipient_pn", Value: node.Address(other.WithoutDevice())}}
 	at := slices.IndexFunc(stanza.Attrs, func(a node.Attr) bool { return a.Key == attrType }) + 1
 	stanza.Attrs = slices.Concat(stanza.Attrs[:at], peer, stanza.Attrs[at:], recipient)
 	return stanza

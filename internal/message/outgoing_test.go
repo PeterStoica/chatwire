@@ -286,7 +286,7 @@ func TestKnownAsPlacesTheOtherAddressLikeTheOfficialClient(t *testing.T) {
 		other node.JID
 		want  string
 	}{
-		{name: "number with private id", to: pn, other: lid, want: "id,to,type,peer_recipient_lid,edit"},
+		{name: "number with private id", to: pn, other: lid, want: "id,to,type,edit"},
 		{name: "private id with number", to: lid, other: pn, want: "id,to,type,peer_recipient_pn,edit,recipient_pn"},
 		{name: "nothing known", to: pn, want: "id,to,type,edit"},
 		{name: "same kind", to: pn, other: pn, want: "id,to,type,edit"},

@@ -514,6 +514,10 @@ func (w *World) answer(c *Conn, s *Server, n node.Node) {
 	case "iq":
 		w.answerIQ(c, s, n)
 	case "message":
+		if mixesAddresses(n) {
+			c.Send(node.Node{Tag: "ack", Attrs: []node.Attr{{Key: "class", Value: node.Text("message")}, {Key: "id", Value: n.Attr("id")}, {Key: "error", Value: node.Text("400")}}})
+			return
+		}
 		var deliveries map[node.JID]node.Node
 		if to, _ := n.Attr("to").JID(); to.Server == node.ServerGroup {
 			deliveries = fakerelay.DeliverGroup(w.Phone.JID, s.PushName, time.Now(), n, s.Members(to))
@@ -529,6 +533,20 @@ func (w *World) answer(c *Conn, s *Server, n node.Node) {
 		}
 		c.Send(ack)
 	}
+}
+
+func mixesAddresses(n node.Node) bool {
+	to, _ := n.Attr("to").JID()
+	if to.Server != node.ServerUser && to.Server != node.ServerLID {
+		return false
+	}
+	participants, _ := n.Child("participants")
+	for _, target := range participants.Children {
+		if device, _ := target.Attr("jid").JID(); device.Server != to.Server {
+			return true
+		}
+	}
+	return false
 }
 
 func (w *World) phash(s *Server, n node.Node) string {
